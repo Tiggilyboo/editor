@@ -10,7 +10,7 @@ use render::EditorApplication;
 
 
 fn main() {
-    let app = EditorApplication::new("Editor");
+    let mut app = EditorApplication::new("Editor");
 
-    app.run_events();    
+    app.run();    
 }
