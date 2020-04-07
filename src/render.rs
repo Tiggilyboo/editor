@@ -1,6 +1,12 @@
 use std::sync::Arc;
 use std::collections::HashSet;
 
+use vulkano::buffer::{
+    BufferAccess,
+    TypedBufferAccess,
+    CpuBufferPool,
+    BufferUsage,
+};
 use vulkano::instance::{
     Instance,
     InstanceExtensions,
@@ -15,7 +21,7 @@ use vulkano::command_buffer::{
     AutoCommandBufferBuilder,
     DynamicState,
 };
-use vulkano::descriptor::PipelineLayoutAbstract;
+use vulkano::descriptor::descriptor_set::PersistentDescriptorSet;
 use vulkano::device::{
     Device,
     DeviceExtensions,
@@ -48,8 +54,7 @@ use vulkano::image::{
 };
 use vulkano::pipeline::{
     GraphicsPipeline,
-    vertex::BufferlessDefinition,
-    vertex::BufferlessVertices,
+    GraphicsPipelineAbstract,
     viewport::Viewport,
 };
 use vulkano::sync::{
@@ -65,9 +70,18 @@ use winit::event::{ Event, WindowEvent };
 use winit::window::{ WindowBuilder, Window };
 use winit::dpi::LogicalSize;
 
-type ConcreteGraphicsPipeline = 
-    GraphicsPipeline<BufferlessDefinition, Box<dyn PipelineLayoutAbstract + Send + Sync + 'static>, 
-        Arc<dyn RenderPassAbstract + Send + Sync + 'static>>;
+mod queue_indices;
+use queue_indices::QueueFamilyIndices;
+
+mod buffers;
+use buffers::Vertex;
+
+mod uniform_buffer_object;
+use uniform_buffer_object::UniformBufferObject;
+
+mod shaders;
+use shaders::vertex_shader;
+use shaders::fragment_shader;
 
 const VALIDATION_LAYERS: &[&str] = &[
     "VK_LAYER_LUNARG_standard_validation"
@@ -89,24 +103,19 @@ pub struct EditorApplication {
     debug_callback: Option<DebugCallback>,
     events_loop: EventLoop<()>,
     surface: Arc<Surface<Window>>,
-
-    physical_device_id: usize,
     device: Arc<Device>,
-
     graphics_queue: Arc<Queue>,
     present_queue: Arc<Queue>,
-
     swap_chain: Arc<Swapchain<Window>>,
     swap_chain_images: Vec<Arc<SwapchainImage<Window>>>,
-
     render_pass: Arc<dyn RenderPassAbstract + Send + Sync>,
     dynamic_state: DynamicState,
-    graphics_pipeline: Arc<ConcreteGraphicsPipeline>,
-
+    graphics_pipeline: Arc<dyn GraphicsPipelineAbstract + Send + Sync>,
     swap_chain_frame_buffers: Vec<Arc<dyn FramebufferAbstract + Send + Sync>>,
-
     command_buffers: Vec<Arc<AutoCommandBuffer>>,
-
+    vertex_buffer: Arc<dyn BufferAccess + Send + Sync>,
+    index_buffer: Arc<dyn TypedBufferAccess<Content=[u16]> + Send + Sync>,
+    uniform_buffer_pool: Arc<CpuBufferPool<UniformBufferObject>>,
     previous_frame_end: Option<Box<dyn GpuFuture>>,
     recreate_swap_chain: bool,
 }
@@ -125,7 +134,7 @@ impl EditorApplication {
             &_device, &graphics_queue, &present_queue, None);
     
         let render_pass = Self::create_render_pass(&_device, swap_chain.format());
-        let graphics_pipeline = Self::create_graphics_pipeline(&_device, swap_chain.dimensions(), &render_pass);
+        let graphics_pipeline = Self::create_graphics_pipeline(&_device, &render_pass);
         let mut dynamic_state = DynamicState {
             line_width: None,
             viewports: None,
@@ -138,22 +147,25 @@ impl EditorApplication {
 
         let previous_frame_end = Some(Self::create_sync_objects(&_device));
 
+        let vertex_buffer = buffers::create_vertex_buffer(&graphics_queue);
+        let index_buffer = buffers::create_index_buffer(&graphics_queue);
+        let uniform_buffer_pool = Arc::new(CpuBufferPool::<UniformBufferObject>::uniform_buffer(_device.clone()));
+
         let mut app = Self {
             events_loop: _events_loop,
             surface: _surface,
             instance: _instance,
             debug_callback: debug_callback,
 
-            physical_device_id: _physical_device_id,
             device: _device, 
-            graphics_queue: graphics_queue,
-            present_queue: present_queue, 
+            graphics_queue,
+            present_queue, 
 
-            swap_chain: swap_chain,
+            swap_chain,
             swap_chain_images,
             dynamic_state,
 
-            render_pass: render_pass,
+            render_pass,
             graphics_pipeline,
 
             swap_chain_frame_buffers,
@@ -161,6 +173,10 @@ impl EditorApplication {
 
             previous_frame_end,
             recreate_swap_chain: false,
+
+            vertex_buffer,
+            index_buffer,
+            uniform_buffer_pool,
         };
 
         app.create_command_buffers();
@@ -209,6 +225,18 @@ impl EditorApplication {
             self.recreate_swap_chain();
             self.recreate_swap_chain = false;
         }
+
+        let dimensions = self.swap_chain_images[0].dimensions();
+        let uniform_buffer_subbuffer = {    
+            let uniform_data = UniformBufferObject::from_dimensions([dimensions[0] as f32, dimensions[1] as f32]);
+
+            self.uniform_buffer_pool.next(uniform_data).unwrap();
+        };
+
+        let layout = self.graphics_pipeline.descriptor_set_layout(0).unwrap();
+        let set = Arc::new(PersistentDescriptorSet::start(layout.clone()))
+            .add_buffer(uniform_buffer_subbuffer).unwrap()
+            .build().unwrap();
 
         let (image_index, suboptimal, acquire_future) = match acquire_next_image(self.swap_chain.clone(), None) {
             Ok(r) => r,
@@ -322,7 +350,7 @@ impl EditorApplication {
     }       
 
     fn is_device_suitable(surface: &Arc<Surface<Window>>, device: &PhysicalDevice) -> bool {
-        let indices = Self::find_queue_families(surface, device);
+        let indices = QueueFamilyIndices::find_queue_families(surface, device);
         let extensions_supported = Self::check_device_extensions_supported(device);
 
         let swap_chain_adequate = if extensions_supported {
@@ -348,24 +376,6 @@ impl EditorApplication {
         avail_ext.khr_swapchain
     }
 
-    fn find_queue_families(surface: &Arc<Surface<Window>>, device: &PhysicalDevice) -> QueueFamilyIndices {
-        let mut indices = QueueFamilyIndices::new();
-
-        for (index, q_family) in device.queue_families().enumerate() {
-            if q_family.supports_graphics() {
-                indices.graphics_family = index as i32;
-            }
-            if surface.is_supported(q_family).unwrap() {
-                indices.present_family = index as i32;
-            }
-            if indices.is_complete() {
-                break;
-            }
-        }
-
-        return indices;
-    }
-
     fn find_physical_device(instance: &Arc<Instance>, surface: &Arc<Surface<Window>>) -> usize {
         return PhysicalDevice::enumerate(instance)
             .position(|device| Self::is_device_suitable(surface, &device))
@@ -380,7 +390,7 @@ impl EditorApplication {
         use std::iter::FromIterator;
 
         let physical_device = PhysicalDevice::from_index(&instance, physical_device_id).unwrap();
-        let indices = Self::find_queue_families(surface, &physical_device);
+        let indices = QueueFamilyIndices::find_queue_families(surface, &physical_device);
 
         let families = [indices.graphics_family, indices.present_family];
         let unique_queue_families: HashSet<&i32> = HashSet::from_iter(families.iter());
@@ -449,6 +459,7 @@ impl EditorApplication {
         present_queue: &Arc<Queue>,
         old_swapchain: Option<Arc<Swapchain<Window>>>,
     ) -> (Arc<Swapchain<Window>>, Vec<Arc<SwapchainImage<Window>>>) {
+
         let physical_device = PhysicalDevice::from_index(&instance, physical_device_id).unwrap();
         let caps = surface.capabilities(physical_device)
             .expect("failed to get surface capabilities");
@@ -467,7 +478,7 @@ impl EditorApplication {
             .. ImageUsage::none()
         };
 
-        let indices = Self::find_queue_families(&surface, &physical_device);
+        let indices = QueueFamilyIndices::find_queue_families(&surface, &physical_device);
         let sharing: SharingMode = if indices.graphics_family != indices.present_family {
             vec![graphics_queue, present_queue].as_slice().into()
         } else {
@@ -532,44 +543,24 @@ impl EditorApplication {
 
     fn create_graphics_pipeline(
         device: &Arc<Device>, 
-        swap_chain_extent: [u32; 2],
         render_pass: &Arc<dyn RenderPassAbstract + Send + Sync>,
-    ) -> Arc<ConcreteGraphicsPipeline> {
-        mod vertex_shader {
-            vulkano_shaders::shader! {
-                ty: "vertex",
-                path: "shaders/shader.vert"
-            }
-        }
-        mod fragment_shader {
-            vulkano_shaders::shader! {
-                ty: "fragment",
-                path: "shaders/shader.frag"
-            }
-        }
+    ) -> Arc<dyn GraphicsPipelineAbstract + Send + Sync> {
+        
 
         let _vert_shader_mod = vertex_shader::Shader::load(device.clone())
             .expect("failed to create vertex shader module");
         let _frag_shader_mod = fragment_shader::Shader::load(device.clone())
             .expect("failed to create fragment shader module");
        
-        let dimensions = [swap_chain_extent[0] as f32, swap_chain_extent[1] as f32];
-        let viewport = Viewport {
-            origin: [0.0, 0.0],
-            dimensions,
-            depth_range: 0.0 .. 1.0,
-        };
-
         Arc::new(GraphicsPipeline::start()
-            .vertex_input(BufferlessDefinition {})
+            .vertex_input_single_buffer::<Vertex>()
             .vertex_shader(_vert_shader_mod.main_entry_point(), ())
             .triangle_list()
+            .viewports_dynamic_scissors_irrelevant(1)
             .primitive_restart(false)
-            .viewports(vec![viewport])
             .fragment_shader(_frag_shader_mod.main_entry_point(), ())
             .depth_clamp(false)
             .polygon_mode_fill()
-            .line_width(1.0)
             .cull_mode_back()
             .front_face_clockwise()
             .blend_pass_through()
@@ -607,14 +598,12 @@ impl EditorApplication {
 
         self.command_buffers = self.swap_chain_frame_buffers.iter()
             .map(|framebuffer| {
-                let verts = BufferlessVertices { vertices: 3, instances: 1 };
-
                 Arc::new(
                     AutoCommandBufferBuilder::primary_simultaneous_use(self.device.clone(), q_family)
                          .unwrap()
                          .begin_render_pass(framebuffer.clone(), false, vec![[0.0, 0.0, 0.0, 1.0].into()])
                          .unwrap()
-                         .draw(self.graphics_pipeline.clone(), &DynamicState::none(), verts, (), ())
+                         .draw_indexed(self.graphics_pipeline.clone(), &self.dynamic_state, vec![self.vertex_buffer.clone()], self.index_buffer.clone(), (), ())
                          .unwrap()
                          .end_render_pass()
                          .unwrap()
@@ -625,20 +614,4 @@ impl EditorApplication {
     }
 }
 
-struct QueueFamilyIndices {
-  graphics_family: i32,
-  present_family: i32,
-}
-
-impl QueueFamilyIndices {
-    pub fn new() -> Self {
-        return Self { 
-            graphics_family: -1,
-            present_family: -1, 
-        };
-    }
-    pub fn is_complete(&self) -> bool {
-        return self.graphics_family >= 0 && self.present_family >= 0;
-    }
-}
 
