@@ -3,13 +3,13 @@
 pub mod fragment_shader {
     vulkano_shaders::shader! {
         ty: "fragment",
-        path: "shaders/shader.frag"
+        path: "shaders/frag.glsl"
     }
 }
 
 pub mod vertex_shader {
     vulkano_shaders::shader! {
         ty: "vertex",
-        path: "shaders/shader.vert"
+        path: "shaders/vert.glsl"
     }
 }

@@ -1,21 +1,16 @@
 use std::sync::Arc;
-use std::collections::HashSet;
 
+use cgmath::{
+    Point3,
+    Vector2,
+};
 use vulkano::buffer::{
     BufferAccess,
     TypedBufferAccess,
     CpuBufferPool,
     BufferUsage,
 };
-use vulkano::instance::{
-    Instance,
-    InstanceExtensions,
-    PhysicalDevice,
-    layers_list,
-    debug::DebugCallback,
-    debug::MessageType,
-    debug::MessageSeverity,
-};
+
 use vulkano::command_buffer::{
     AutoCommandBuffer,
     AutoCommandBufferBuilder,
@@ -24,54 +19,32 @@ use vulkano::command_buffer::{
 use vulkano::descriptor::descriptor_set::PersistentDescriptorSet;
 use vulkano::device::{
     Device,
-    DeviceExtensions,
-    Queue,
-    Features,
 };
 use vulkano::framebuffer::{
     RenderPassAbstract,
     Subpass,
     FramebufferAbstract,
-    Framebuffer,
 };
 use vulkano::swapchain::{
-    Surface,
-    Capabilities,
-    ColorSpace,
-    SupportedPresentModes,
     SwapchainCreationError,
-    PresentMode,
-    Swapchain,
-    CompositeAlpha,
-    FullscreenExclusive,
-    acquire_next_image,
     AcquireError,
-};
-use vulkano::format::Format;
-use vulkano::image::{
-    ImageUsage,
-    swapchain::SwapchainImage,
 };
 use vulkano::pipeline::{
     GraphicsPipeline,
     GraphicsPipelineAbstract,
-    viewport::Viewport,
 };
 use vulkano::sync::{
     self,
-    SharingMode,
     GpuFuture,
 };
-use vulkano_win::VkSurfaceBuild;
 
-use winit::event_loop::{ EventLoop ,ControlFlow };
+use winit::event::{ 
+    Event, 
+    WindowEvent,
+    DeviceEvent,
+};
+use winit::event_loop::ControlFlow;
 use winit::platform::desktop::EventLoopExtDesktop;
-use winit::event::{ Event, WindowEvent };
-use winit::window::{ WindowBuilder, Window };
-use winit::dpi::LogicalSize;
-
-mod queue_indices;
-use queue_indices::QueueFamilyIndices;
 
 mod buffers;
 use buffers::Vertex;
@@ -83,58 +56,31 @@ mod shaders;
 use shaders::vertex_shader;
 use shaders::fragment_shader;
 
-const VALIDATION_LAYERS: &[&str] = &[
-    "VK_LAYER_LUNARG_standard_validation"
-];
-#[cfg(all(debug_assertions))]
-const ENABLE_VALIDATION_LAYERS: bool = true;
-#[cfg(not(debug_assertions))]
-const ENABLE_VALIDATION_LAYERS: bool = false;
-
-fn device_extensions() -> DeviceExtensions {
-    DeviceExtensions {
-        khr_swapchain: true,
-        .. vulkano::device::DeviceExtensions::none()
-    }
-}
+mod core;
+use self::core::RenderCore;
 
 pub struct EditorApplication {
-    instance: Arc<Instance>,
-    debug_callback: Option<DebugCallback>,
-    events_loop: EventLoop<()>,
-    surface: Arc<Surface<Window>>,
-    device: Arc<Device>,
-    graphics_queue: Arc<Queue>,
-    present_queue: Arc<Queue>,
-    swap_chain: Arc<Swapchain<Window>>,
-    swap_chain_images: Vec<Arc<SwapchainImage<Window>>>,
+    core: RenderCore,
     render_pass: Arc<dyn RenderPassAbstract + Send + Sync>,
-    dynamic_state: DynamicState,
     graphics_pipeline: Arc<dyn GraphicsPipelineAbstract + Send + Sync>,
     swap_chain_frame_buffers: Vec<Arc<dyn FramebufferAbstract + Send + Sync>>,
+
+    dynamic_state: DynamicState,
     command_buffers: Vec<Arc<AutoCommandBuffer>>,
+
     vertex_buffer: Arc<dyn BufferAccess + Send + Sync>,
     index_buffer: Arc<dyn TypedBufferAccess<Content=[u16]> + Send + Sync>,
-    uniform_buffer_pool: Arc<CpuBufferPool<UniformBufferObject>>,
+    uniform_buffer_pool: CpuBufferPool<UniformBufferObject>,
+
     previous_frame_end: Option<Box<dyn GpuFuture>>,
     recreate_swap_chain: bool,
 }
 
 impl EditorApplication {
     pub fn new(title: &str) -> Self {
-        let _instance = Self::create_instance(); 
-        let debug_callback = Self::create_debug_callback(&_instance);
-        let (_events_loop, _surface) = Self::create_surface(title, &_instance);
-        
-        let _physical_device_id = Self::find_physical_device(&_instance, &_surface);
-        let (_device, graphics_queue, present_queue) = Self::create_logical_device(&_instance, &_surface, _physical_device_id);
-
-        let (swap_chain, swap_chain_images) = Self::create_swap_chain(
-            &_instance, &_surface, _physical_device_id, 
-            &_device, &graphics_queue, &present_queue, None);
-    
-        let render_pass = Self::create_render_pass(&_device, swap_chain.format());
-        let graphics_pipeline = Self::create_graphics_pipeline(&_device, &render_pass);
+        let core = RenderCore::new(title);
+        let render_pass = core.create_render_pass(None);
+        let graphics_pipeline = Self::create_graphics_pipeline(&core.get_device(), &render_pass);
         let mut dynamic_state = DynamicState {
             line_width: None,
             viewports: None,
@@ -143,40 +89,32 @@ impl EditorApplication {
             write_mask: None,
             reference: None,
         };
-        let swap_chain_frame_buffers = Self::create_framebuffers(&swap_chain_images, &render_pass, &mut dynamic_state);
+        let swap_chain_frame_buffers = core.create_framebuffers(&render_pass, &mut dynamic_state);
 
-        let previous_frame_end = Some(Self::create_sync_objects(&_device));
+        let device: &Arc<Device> = &core.get_device();
+        let graphics_queue = &core.get_graphics_queue();
+        let vertex_buffer = buffers::create_vertex_buffer(graphics_queue);
+        let index_buffer = buffers::create_index_buffer(graphics_queue);
+        let uniform_buffer_pool = CpuBufferPool::new(device.clone(), BufferUsage::uniform_buffer());
 
-        let vertex_buffer = buffers::create_vertex_buffer(&graphics_queue);
-        let index_buffer = buffers::create_index_buffer(&graphics_queue);
-        let uniform_buffer_pool = Arc::new(CpuBufferPool::<UniformBufferObject>::uniform_buffer(_device.clone()));
+        let previous_frame_end = Some(Self::create_sync_objects(device));
 
         let mut app = Self {
-            events_loop: _events_loop,
-            surface: _surface,
-            instance: _instance,
-            debug_callback: debug_callback,
-
-            device: _device, 
-            graphics_queue,
-            present_queue, 
-
-            swap_chain,
-            swap_chain_images,
-            dynamic_state,
-
-            render_pass,
+            core,
             graphics_pipeline,
-
             swap_chain_frame_buffers,
-            command_buffers: vec![],
 
-            previous_frame_end,
-            recreate_swap_chain: false,
+            dynamic_state,
+            render_pass,
 
             vertex_buffer,
             index_buffer,
             uniform_buffer_pool,
+
+            command_buffers: vec![],
+
+            previous_frame_end,
+            recreate_swap_chain: false,
         };
 
         app.create_command_buffers();
@@ -187,9 +125,10 @@ impl EditorApplication {
 
         let mut done = false;
         let mut recreate = false;
+        let mut mouse_delta = Vector2::<f64>::new(0.0, 0.0);
 
         while !done {
-            self.events_loop.run_return(|event, _, control_flow| {
+            self.core.get_events_loop().run_return(|event, _, control_flow| {
                 *control_flow = ControlFlow::Wait;
                 
                 match event {
@@ -202,6 +141,9 @@ impl EditorApplication {
                     }
                     Event::MainEventsCleared => {
                         *control_flow = ControlFlow::Exit;
+                    },
+                    Event::DeviceEvent { event: DeviceEvent::MouseMotion { delta }, .. } => {
+                        mouse_delta += Vector2 { x: delta.0, y: delta.1 };
                     }
                     _ => (),
                 }
@@ -210,6 +152,7 @@ impl EditorApplication {
             if recreate {
                 self.recreate_swap_chain = recreate;
             }
+            // self.mouse_position += Vector2 { x: mouse_delta.x as f32, y: mouse_delta.y as f32 };
             self.draw_frame();
         }
     }
@@ -226,19 +169,7 @@ impl EditorApplication {
             self.recreate_swap_chain = false;
         }
 
-        let dimensions = self.swap_chain_images[0].dimensions();
-        let uniform_buffer_subbuffer = {    
-            let uniform_data = UniformBufferObject::from_dimensions([dimensions[0] as f32, dimensions[1] as f32]);
-
-            self.uniform_buffer_pool.next(uniform_data).unwrap();
-        };
-
-        let layout = self.graphics_pipeline.descriptor_set_layout(0).unwrap();
-        let set = Arc::new(PersistentDescriptorSet::start(layout.clone()))
-            .add_buffer(uniform_buffer_subbuffer).unwrap()
-            .build().unwrap();
-
-        let (image_index, suboptimal, acquire_future) = match acquire_next_image(self.swap_chain.clone(), None) {
+        let (image_index, suboptimal, acquire_future) = match self.core.get_next_swap_chain_image() {
             Ok(r) => r,
             Err(AcquireError::OutOfDate) => {
                 println!("Setting recreate swap chain to true");
@@ -261,9 +192,9 @@ impl EditorApplication {
 
         let future = self.previous_frame_end.take().unwrap()
             .join(acquire_future)
-            .then_execute(self.graphics_queue.clone(), command_buffer)
+            .then_execute(self.core.get_graphics_queue().clone(), command_buffer)
             .unwrap()
-            .then_swapchain_present(self.present_queue.clone(), self.swap_chain.clone(), image_index)
+            .then_swapchain_present(self.core.get_present_queue().clone(), self.core.swap_chain.clone(), image_index)
             .then_signal_fence_and_flush();
 
         match future {
@@ -272,280 +203,36 @@ impl EditorApplication {
             }
             Err(vulkano::sync::FlushError::OutOfDate) => {
                 self.recreate_swap_chain = true;
-                self.previous_frame_end = Some(Box::new(vulkano::sync::now(self.device.clone())) as Box<_>);
+                self.previous_frame_end = Some(self.core.get_previous_frame_end() as Box<_>);
             }
             Err(e) => {
                 println!("{:?}", e);
-                self.previous_frame_end = Some(Box::new(vulkano::sync::now(self.device.clone())) as Box<_>);
+                self.previous_frame_end = Some(self.core.get_previous_frame_end() as Box<_>);
             }
         }
     }
 
     fn recreate_swap_chain(&mut self) {
-        let dimensions: [u32; 2] = self.surface.window().inner_size().into();
-        let (new_swapchain, new_images) = match self.swap_chain.recreate_with_dimensions(dimensions) {
+        let dimensions: [u32; 2] = self.core.get_window().inner_size().into();
+        let (new_swapchain, new_images) = match self.core.swap_chain.recreate_with_dimensions(dimensions) {
             Ok(r) => r,
             Err(SwapchainCreationError::UnsupportedDimensions) => return,
             Err(err) => panic!("Failed to recreate swapchain: {:?}", err)
         };
 
-        self.swap_chain = new_swapchain;
-        self.swap_chain_images = new_images;
-        self.swap_chain_frame_buffers = Self::create_framebuffers(&self.swap_chain_images, &self.render_pass, &mut self.dynamic_state);
+        self.core.swap_chain = new_swapchain;
+        self.core.swap_chain_images = new_images;
+        self.swap_chain_frame_buffers = self.core.create_framebuffers(
+            &self.render_pass, 
+            &mut self.dynamic_state);
+
         self.create_command_buffers();
-    }
-
-    fn get_required_extensions() -> InstanceExtensions {
-        let mut extensions = vulkano_win::required_extensions();
-
-        if ENABLE_VALIDATION_LAYERS {
-            extensions.ext_debug_utils = true;
-        }
-
-        extensions
-    }
-
-    fn check_validation_layer_support() -> bool {
-        let layers: Vec<_> = layers_list().unwrap()
-            .map(|l| l.name().to_owned())
-            .collect();
-
-        VALIDATION_LAYERS.iter()
-            .all(|layer_name| layers.contains(&layer_name.to_string()))
-    }
-
-    fn create_instance() -> Arc<Instance> {
-        if ENABLE_VALIDATION_LAYERS && !Self::check_validation_layer_support() {
-            println!("Validation layers enabled, but not supported");
-        }
-
-        let supported_exts = InstanceExtensions::supported_by_core()
-            .expect("unable to retrieve supported extensions");
-
-        println!("Supported Extensions: {:?}", supported_exts);
-
-        let app_info = vulkano::app_info_from_cargo_toml!();
-        let req_extensions = Self::get_required_extensions();
-
-        if ENABLE_VALIDATION_LAYERS && Self::check_validation_layer_support() {
-            Instance::new(Some(&app_info), &req_extensions, VALIDATION_LAYERS.iter().cloned())
-                .expect("unable to create new vulkan instance")
-        } else {
-           Instance::new(Some(&app_info), &req_extensions, None) 
-                .expect("unable to create new vulkan instance")
-        }
-    }
-
-    fn create_debug_callback(instance: &Arc<Instance>) -> Option<DebugCallback> {
-        if !ENABLE_VALIDATION_LAYERS {
-            return None;
-        }
-        
-        let msg_types = MessageType::general();
-        let msg_severity = MessageSeverity::errors();
-        
-        DebugCallback::new(&instance, msg_severity, msg_types, |msg| {
-            println!("validation layers: {:?}", msg.description);
-        }).ok() 
-    }       
-
-    fn is_device_suitable(surface: &Arc<Surface<Window>>, device: &PhysicalDevice) -> bool {
-        let indices = QueueFamilyIndices::find_queue_families(surface, device);
-        let extensions_supported = Self::check_device_extensions_supported(device);
-
-        let swap_chain_adequate = if extensions_supported {
-            let caps = surface.capabilities(*device)
-                .expect("failed to get surface capabilities");
-
-            println!("Suppored formats: {:?}, Present Modes: {:?}", caps.supported_formats, caps.present_modes);
-
-            !caps.supported_formats.is_empty() &&
-                caps.present_modes.iter().next().is_some()
-        } else {
-            false
-        };
-
-        println!("{:?}: complete: {:?}, supported: {:?}, adequate: {:?}", device.name(), indices.is_complete(), extensions_supported, swap_chain_adequate);
-
-        indices.is_complete() && extensions_supported && swap_chain_adequate
-    }
-
-    fn check_device_extensions_supported(device: &PhysicalDevice) -> bool {
-        let avail_ext = DeviceExtensions::supported_by_device(*device);
-    
-        avail_ext.khr_swapchain
-    }
-
-    fn find_physical_device(instance: &Arc<Instance>, surface: &Arc<Surface<Window>>) -> usize {
-        return PhysicalDevice::enumerate(instance)
-            .position(|device| Self::is_device_suitable(surface, &device))
-            .expect("failed to find suitable physical device");
-    }
-
-    fn create_logical_device(
-        instance: &Arc<Instance>,
-        surface: &Arc<Surface<Window>>,
-        physical_device_id: usize,
-    ) -> (Arc<Device>, Arc<Queue>, Arc<Queue>) {
-        use std::iter::FromIterator;
-
-        let physical_device = PhysicalDevice::from_index(&instance, physical_device_id).unwrap();
-        let indices = QueueFamilyIndices::find_queue_families(surface, &physical_device);
-
-        let families = [indices.graphics_family, indices.present_family];
-        let unique_queue_families: HashSet<&i32> = HashSet::from_iter(families.iter());
-
-        let queue_families = unique_queue_families.iter().map(|i| {
-            (physical_device.queue_families().nth(**i as usize).unwrap(), 1.0)
-        });
-        let (_device, mut queues) = Device::new(physical_device, &Features::none(), &device_extensions(), queue_families)
-            .expect("failed to create logical device");
-
-        let graphics_queue = queues.next().unwrap();
-        let present_queue = queues.next()
-            .unwrap_or_else(|| graphics_queue.clone());
-
-        (_device, graphics_queue, present_queue) 
-    }
-
-    fn create_surface(title: &str, instance: &Arc<Instance>) -> (EventLoop<()>, Arc<Surface<Window>>) {
-        let _events_loop = EventLoop::new();
-        let _surface = WindowBuilder::new()
-            .with_title(title)
-            .with_resizable(true)
-            .with_inner_size(LogicalSize::new(800.0, 600.0))
-            .build_vk_surface(&_events_loop, instance.clone())
-            .expect("Unable to create window with events loop");
-        
-        (_events_loop, _surface)
-    }
-
-    fn choose_swap_surface_format(avail_formats: &[(Format, ColorSpace)]) -> (Format, ColorSpace) {
-        *avail_formats.iter()
-            .find(|(format, color_space)|
-                  *format == Format::B8G8R8A8Unorm && *color_space == ColorSpace::SrgbNonLinear
-            ).unwrap_or_else(|| &avail_formats[0])
-    }
-
-    fn choose_swap_present_mode(avail_modes: SupportedPresentModes) -> PresentMode {
-        if avail_modes.mailbox {
-            PresentMode::Mailbox
-        } else if avail_modes.immediate {
-            PresentMode::Immediate
-        } else {
-            PresentMode::Fifo
-        }
-    }
-
-    fn choose_swap_extent(caps: &Capabilities) -> [u32; 2] {
-        if let Some(current_extent) = caps.current_extent {
-            return current_extent
-        }
-        let mut actual_extent = [800, 600];
-        actual_extent[0] = caps.min_image_extent[0]
-            .max(caps.max_image_extent[0].min(actual_extent[0]));
-        actual_extent[1] = caps.min_image_extent[1]
-            .max(caps.max_image_extent[1].min(actual_extent[1]));
-
-        actual_extent
-    }
-
-    fn create_swap_chain(
-        instance: &Arc<Instance>,
-        surface: &Arc<Surface<Window>>,
-        physical_device_id: usize,
-        device: &Arc<Device>,
-        graphics_queue: &Arc<Queue>,
-        present_queue: &Arc<Queue>,
-        old_swapchain: Option<Arc<Swapchain<Window>>>,
-    ) -> (Arc<Swapchain<Window>>, Vec<Arc<SwapchainImage<Window>>>) {
-
-        let physical_device = PhysicalDevice::from_index(&instance, physical_device_id).unwrap();
-        let caps = surface.capabilities(physical_device)
-            .expect("failed to get surface capabilities");
-
-        let surface_format = Self::choose_swap_surface_format(&caps.supported_formats);
-        let present_mode = Self::choose_swap_present_mode(caps.present_modes);
-        let extent = Self::choose_swap_extent(&caps);
-
-        let mut image_count = caps.min_image_count + 1;
-        if caps.max_image_count.is_some() && image_count > caps.max_image_count.unwrap() {
-            image_count = caps.max_image_count.unwrap();
-        }
-        
-        let image_usage = ImageUsage {
-            color_attachment: true,
-            .. ImageUsage::none()
-        };
-
-        let indices = QueueFamilyIndices::find_queue_families(&surface, &physical_device);
-        let sharing: SharingMode = if indices.graphics_family != indices.present_family {
-            vec![graphics_queue, present_queue].as_slice().into()
-        } else {
-            graphics_queue.into()
-        };
-
-        if old_swapchain.is_some() {
-            return Swapchain::with_old_swapchain(
-                device.clone(),
-                surface.clone(),
-                image_count,
-                surface_format.0,
-                extent,
-                1, // Layers
-                image_usage,
-                sharing,
-                caps.current_transform,
-                CompositeAlpha::Opaque,
-                present_mode,
-                FullscreenExclusive::Allowed,
-                true, // Clipped
-                surface_format.1,
-                old_swapchain.unwrap(),
-            ).expect("failed to create swap chain");
-
-        }
-        
-        return Swapchain::new(
-            device.clone(),
-            surface.clone(),
-            image_count,
-            surface_format.0,
-            extent,
-            1,
-            image_usage,
-            sharing,
-            caps.current_transform,
-            CompositeAlpha::Opaque,
-            present_mode,
-            FullscreenExclusive::Allowed,
-            true,
-            surface_format.1
-        ).expect("failed to create swap chain");
-    }
-
-    fn create_render_pass(device: &Arc<Device>, color_fmt: Format) -> Arc<dyn RenderPassAbstract + Send + Sync> {
-        Arc::new(vulkano::single_pass_renderpass!(device.clone(),
-            attachments: {
-                color: {
-                    load: Clear,
-                    store: Store,
-                    format: color_fmt,
-                    samples: 1,
-                }
-            },
-            pass: {
-                color: [color],
-                depth_stencil: {}
-            }
-        ).unwrap())
     }
 
     fn create_graphics_pipeline(
         device: &Arc<Device>, 
         render_pass: &Arc<dyn RenderPassAbstract + Send + Sync>,
     ) -> Arc<dyn GraphicsPipelineAbstract + Send + Sync> {
-        
 
         let _vert_shader_mod = vertex_shader::Shader::load(device.clone())
             .expect("failed to create vertex shader module");
@@ -570,40 +257,32 @@ impl EditorApplication {
         )
     }
 
-    fn create_framebuffers(
-        swap_chain_images: &[Arc<SwapchainImage<Window>>],
-        render_pass: &Arc<dyn RenderPassAbstract + Send + Sync>,
-        dynamic_state: &mut DynamicState,
-    ) -> Vec<Arc<dyn FramebufferAbstract + Send + Sync>> {
-        let dimensions = swap_chain_images[0].dimensions();
-        let viewport = Viewport {
-            origin: [0.0, 0.0],
-            dimensions: [dimensions[0] as f32, dimensions[1] as f32],
-            depth_range: 0.0 .. 1.0,
-        };
-        dynamic_state.viewports = Some(vec![viewport]);
-
-        swap_chain_images.iter()
-            .map(|image| {
-                let fba: Arc<dyn FramebufferAbstract + Send + Sync> = 
-                    Arc::new(Framebuffer::start(render_pass.clone())
-                        .add(image.clone()).unwrap()
-                        .build().unwrap());
-                fba
-            }).collect::<Vec<_>>()
-    }
-
     fn create_command_buffers(&mut self) {
-        let q_family = self.graphics_queue.family();
+        let q_family = self.core.get_graphics_queue().family();
+
+        let dimensions = self.core.swap_chain_images[0].dimensions();
+        let layout = self.graphics_pipeline.descriptor_set_layout(0).unwrap();
+
+        let uniform_buffer = {
+            let uniform_subbuffer = UniformBufferObject::from_dimensions(
+                Point3::<f32>::new(0.0, 0.0, 0.0), // TODO MOUSE 
+                [dimensions[0] as f32, dimensions[1] as f32]);
+            
+            self.uniform_buffer_pool.next(uniform_subbuffer).unwrap()
+        };
+        let set = Arc::new(PersistentDescriptorSet::start(layout.clone())
+            .add_buffer(uniform_buffer).unwrap()
+            .build().unwrap());
 
         self.command_buffers = self.swap_chain_frame_buffers.iter()
             .map(|framebuffer| {
                 Arc::new(
-                    AutoCommandBufferBuilder::primary_simultaneous_use(self.device.clone(), q_family)
+                    AutoCommandBufferBuilder::primary_one_time_submit(self.core.get_device().clone(), q_family)
                          .unwrap()
                          .begin_render_pass(framebuffer.clone(), false, vec![[0.0, 0.0, 0.0, 1.0].into()])
                          .unwrap()
-                         .draw_indexed(self.graphics_pipeline.clone(), &self.dynamic_state, vec![self.vertex_buffer.clone()], self.index_buffer.clone(), (), ())
+                         .draw_indexed(self.graphics_pipeline.clone(), &self.dynamic_state, vec![self.vertex_buffer.clone()], 
+                                       self.index_buffer.clone(), set.clone(), ())
                          .unwrap()
                          .end_render_pass()
                          .unwrap()
@@ -613,5 +292,4 @@ impl EditorApplication {
             }).collect();
     }
 }
-
 
