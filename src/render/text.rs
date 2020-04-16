@@ -265,7 +265,7 @@ impl TextContext {
             .begin_render_pass(
                 self.framebuffers[image_num].clone(), 
                 false, 
-                vec![ClearValue::from([0.0, 0.0, 0.0, 1.0])].into(),
+                vec![ClearValue::None],
             ).unwrap();
 
         for text in &mut self.texts.drain(..) {

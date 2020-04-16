@@ -1,3 +1,4 @@
+
 pub mod vertex_shader {
     vulkano_shaders::shader! {
         ty: "vertex",
@@ -11,5 +12,4 @@ pub mod fragment_shader {
         path: "shaders/frag.glsl"
     }
 }
-
 

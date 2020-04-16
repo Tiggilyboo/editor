@@ -75,11 +75,11 @@ pub struct EditorApplication {
     text_context: RefCell<TextContext>,
 
     dynamic_state: DynamicState,
-    command_buffers: Vec<Arc<AutoCommandBuffer>>,
 
     vertex_buffer: Arc<dyn BufferAccess + Send + Sync>,
     index_buffer: Arc<dyn TypedBufferAccess<Content=[u16]> + Send + Sync>,
-    //uniform_buffer_pool: CpuBufferPool<UniformBufferObject>,
+
+    uniform_buffer_pool: CpuBufferPool<UniformBufferObject>,
 
     previous_frame_end: Option<Box<dyn GpuFuture>>,
     recreate_swap_chain: bool,
@@ -114,7 +114,7 @@ impl EditorApplication {
         let graphics_queue = &graphics_queue.clone();
         let vertex_buffer = buffers::create_vertex_buffer(graphics_queue);
         let index_buffer = buffers::create_index_buffer(graphics_queue);
-        //let uniform_buffer_pool = CpuBufferPool::new(device.clone(), BufferUsage::uniform_buffer());
+        let uniform_buffer_pool = CpuBufferPool::new(device.clone(), BufferUsage::uniform_buffer());
 
         let previous_frame_end = Some(Self::create_sync_objects(device));
 
@@ -130,15 +130,13 @@ impl EditorApplication {
 
             vertex_buffer,
             index_buffer,
-            //uniform_buffer_pool,
-
-            command_buffers: vec![],
+           
+            uniform_buffer_pool,
 
             previous_frame_end,
             recreate_swap_chain: false,
         };
 
-        app.create_command_buffers();
         app
     }
 
@@ -192,12 +190,13 @@ impl EditorApplication {
     }
 
     fn draw_frame(&mut self) { 
-        self.previous_frame_end.as_mut().unwrap().cleanup_finished();
 
         if self.recreate_swap_chain {
             self.recreate_swap_chain();
             self.recreate_swap_chain = false;
+            return
         }
+        self.previous_frame_end.as_mut().unwrap().cleanup_finished();
 
         self.text_context.borrow_mut().queue_text(
             200.0, 100.0, 100.0, [1.0, 1.0, 1.0, 1.0], 
@@ -217,16 +216,15 @@ impl EditorApplication {
             println!("Printing suboptimal image, recreating next frame");
             self.recreate_swap_chain = true;
         }
-
-        let command_buffer = self.command_buffers[image_index].clone();
+       
+        let command_buffer = self.create_command_buffer(image_index); 
 
         let future = self.previous_frame_end.take()
             .expect("unable to take previous_frame_end future");
 
         let future = future
             .join(acquire_future)
-            .then_execute(self.core.get_graphics_queue().clone(), command_buffer)
-            .unwrap()
+            .then_execute(self.core.get_graphics_queue().clone(), command_buffer).unwrap()
             .then_swapchain_present(self.core.get_present_queue().clone(), self.core.swap_chain.clone(), image_index)
             .then_signal_fence_and_flush();
 
@@ -255,6 +253,13 @@ impl EditorApplication {
         };
 
         self.core.swap_chain = new_swapchain;
+        self.core.swap_chain_images = new_images;
+        
+        self.render_pass = self.core.create_render_pass(None);
+        self.graphics_pipeline = Self::create_graphics_pipeline(
+            &self.core.get_device(),
+            &self.render_pass);
+
         self.swap_chain_frame_buffers = self.core.create_framebuffers(
             &self.render_pass, 
             &mut self.dynamic_state);
@@ -263,9 +268,9 @@ impl EditorApplication {
             self.core.get_device().clone(), 
             self.core.get_graphics_queue().clone(), 
             self.core.swap_chain.clone(), 
-            &new_images,
+            &self.core.swap_chain_images,
         ));
-        self.core.swap_chain_images = new_images;
+
     }
 
     fn create_graphics_pipeline(
@@ -290,13 +295,13 @@ impl EditorApplication {
         )
     }
 
-    fn create_command_buffers(&mut self) {
+    fn create_command_buffer(&mut self, image_index: usize) -> Arc<AutoCommandBuffer> {
         let q_family = self.core.get_graphics_queue().family();
-
         let dimensions = self.core.swap_chain_images[0].dimensions();
 
-/*
-        let layout = self.graphics_pipeline.descriptor_set_layout(0).unwrap();
+        let layout = self.graphics_pipeline.descriptor_set_layout(0)
+            .expect("unable to get graphics pipeline descriptor layout");
+
         let uniform_buffer = {
             let uniform_subbuffer = UniformBufferObject::from_dimensions(
                 Point3::<f32>::new(0.0, 0.0, 0.0), // TODO MOUSE 
@@ -304,30 +309,30 @@ impl EditorApplication {
             
             self.uniform_buffer_pool.next(uniform_subbuffer).unwrap()
         };
+
         let set = Arc::new(PersistentDescriptorSet::start(layout.clone())
             .add_buffer(uniform_buffer).unwrap()
             .build().unwrap());
+ 
+        let command_buffer = AutoCommandBufferBuilder::primary_one_time_submit(
+                self.core.get_device().clone(),
+                self.core.get_graphics_queue().family()).unwrap()
+            .begin_render_pass(
+                self.swap_chain_frame_buffers[image_index].clone(),
+                false,
+                vec!(ClearValue::from([0.0, 0.0, 0.0, 1.0]))).unwrap()
+            .draw_indexed(
+                self.graphics_pipeline.clone(),
+                &self.dynamic_state,
+                vec!(self.vertex_buffer.clone()),
+                self.index_buffer.clone(),
+                set.clone(),
+                ()).unwrap()
+            .end_render_pass().unwrap()
+            .draw_text(&mut self.text_context.borrow_mut(), image_index)
+            .build().unwrap();
 
-        self.command_buffers = self.swap_chain_frame_buffers
-            .iter()
-            .enumerate()
-            .map(|(image_index, framebuffer)| {
-                Arc::new(
-                    AutoCommandBufferBuilder::primary_one_time_submit(
-                            self.core.get_device().clone(), q_family).unwrap()
-                        .begin_render_pass(
-                            framebuffer.clone(), false, vec!(ClearValue::from([0.0, 0.0, 0.0, 1.0]))).unwrap()
-                        .draw_indexed(
-                            self.graphics_pipeline.clone(), 
-                            &self.dynamic_state, 
-                            vec![self.vertex_buffer.clone()], 
-                            self.index_buffer.clone(), (), ()
-                        ).unwrap()
-                         .end_render_pass().unwrap()
-                         //.draw_text(&mut self.text_context.borrow_mut(), image_index)
-                         .build().unwrap()
-                )
-            }).collect();
+        Arc::new(command_buffer)
     }
 }
 
