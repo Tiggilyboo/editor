@@ -43,6 +43,9 @@ use winit::event::{
     Event, 
     WindowEvent,
     DeviceEvent,
+    VirtualKeyCode,
+    KeyboardInput,
+    ElementState,
 };
 use winit::event_loop::ControlFlow;
 use winit::platform::desktop::EventLoopExtDesktop;
@@ -73,6 +76,7 @@ pub struct EditorApplication {
     swap_chain_frame_buffers: Vec<Arc<dyn FramebufferAbstract + Send + Sync>>,
 
     text_context: RefCell<TextContext>,
+    text: String,
 
     dynamic_state: DynamicState,
 
@@ -132,6 +136,7 @@ impl EditorApplication {
             index_buffer,
            
             uniform_buffer_pool,
+            text: String::from("Chicken "),
 
             previous_frame_end,
             recreate_swap_chain: false,
@@ -146,6 +151,7 @@ impl EditorApplication {
         let mut recreate = false;
         let mut draw = false;
         let mut mouse_delta = Vector2::<f64>::new(0.0, 0.0);
+        let mut text = String::from("");
 
         while !done {
             draw = false;
@@ -170,7 +176,23 @@ impl EditorApplication {
                     },
                     Event::DeviceEvent { event: DeviceEvent::MouseMotion { delta }, .. } => {
                         mouse_delta += Vector2 { x: delta.0, y: delta.1 };
-                    }
+                    },
+                    Event::WindowEvent { 
+                        event: WindowEvent::KeyboardInput { input, .. },
+                        .. 
+                    } => match input {
+                        KeyboardInput {
+                            virtual_keycode: Some(key),
+                            state: ElementState::Released,
+                            ..
+                        } => match key {
+                            VirtualKeyCode::A => {
+                                text = String::from("a");
+                            }
+                            _ => ()
+                        },
+                        _ => (),
+                    },
                     _ => (),
                 }
             });
@@ -180,6 +202,10 @@ impl EditorApplication {
             }
             if draw {
                 // self.mouse_position += Vector2 { x: mouse_delta.x as f32, y: mouse_delta.y as f32 };
+                if text.len() > 0 {
+                    self.text += &text;
+                    text.clear();
+                }
                 self.draw_frame();
             }
         }
@@ -190,17 +216,19 @@ impl EditorApplication {
     }
 
     fn draw_frame(&mut self) { 
+        self.previous_frame_end.as_mut().unwrap().cleanup_finished();
 
         if self.recreate_swap_chain {
             self.recreate_swap_chain();
             self.recreate_swap_chain = false;
             return
         }
-        self.previous_frame_end.as_mut().unwrap().cleanup_finished();
 
-        self.text_context.borrow_mut().queue_text(
-            200.0, 100.0, 100.0, [1.0, 1.0, 1.0, 1.0], 
-            "Chicken");
+        if self.text.len() > 0 {
+            self.text_context.borrow_mut().queue_text(
+                200.0, 100.0, 100.0, [1.0, 1.0, 1.0, 1.0], 
+                &self.text);
+        }
 
         let (image_index, suboptimal, acquire_future) = match self.core.get_next_swap_chain_image() {
             Ok(r) => r,

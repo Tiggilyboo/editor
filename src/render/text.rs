@@ -108,6 +108,7 @@ impl TextContext {
     ) -> Self where W: Send + Sync + 'static {
 
         let font_data = include_bytes!("../../fonts/Hack-Regular.ttf") as &[u8];
+        //let font_data = include_bytes!("../../fonts/DejaVuSans.ttf") as &[u8];
         let font = Font::from_bytes(font_data)
             .expect("unable to load font from data");
 
@@ -265,7 +266,7 @@ impl TextContext {
             .begin_render_pass(
                 self.framebuffers[image_num].clone(), 
                 false, 
-                vec![ClearValue::None],
+                vec!(ClearValue::None),
             ).unwrap();
 
         for text in &mut self.texts.drain(..) {
@@ -288,7 +289,7 @@ impl TextContext {
                         
                         TextVertex::new([rect.max.x, rect.min.y], [uv.max.x, uv.min.y],text.colour),
                         TextVertex::new([rect.max.x, rect.max.y], [uv.max.x, uv.max.y], text.colour),
-                        TextVertex::new([rect.min.x, rect.max.y], [uv.min.x, uv.min.y], text.colour),
+                        TextVertex::new([rect.min.x, rect.max.y], [uv.min.x, uv.max.y], text.colour),
                     ).into_iter()
                 } else {
                     vec!().into_iter()
