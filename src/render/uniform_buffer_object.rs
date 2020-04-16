@@ -22,13 +22,13 @@ impl UniformBufferObject {
         let model = Matrix4::from_angle_z(Rad::from(Deg(0.0)));
 
         let view = Matrix4::look_at(
-            Point3::new(2.0, 2.0, 2.0),
+            Point3::new(0.0, 2.0, 0.0),
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, -1.0)
         );
 
         let proj = cgmath::perspective(
-            Rad::from(Deg(45.0)),
+            Rad::from(Deg(90.0)),
             dimensions[0] as f32 / dimensions[1] as f32,
             0.1,
             10.0

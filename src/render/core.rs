@@ -377,11 +377,10 @@ impl RenderCore {
 
         self.swap_chain_images.iter()
             .map(|image| {
-                let fba: Arc<dyn FramebufferAbstract + Send + Sync> = 
-                    Arc::new(Framebuffer::start(render_pass.clone())
-                        .add(image.clone()).unwrap()
-                        .build().unwrap());
-                fba
+                Arc::new(Framebuffer::start(render_pass.clone())
+                    .add(image.clone()).unwrap()
+                    .build().unwrap()
+                ) as Arc<dyn FramebufferAbstract + Send + Sync>
             }).collect::<Vec<_>>()
     }
 
