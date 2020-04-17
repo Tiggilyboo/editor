@@ -75,7 +75,6 @@ fn device_extensions() -> DeviceExtensions {
 
 pub struct RenderCore {
     instance: Arc<Instance>,
-    events_loop: EventLoop<()>,
     device: Arc<Device>,
     surface: Arc<Surface<Window>>,
 
@@ -91,13 +90,14 @@ pub struct RenderCore {
 }
 
 impl RenderCore {
-    pub fn new(title: &str) -> Self {
+    pub fn new(events_loop: &EventLoop<()>, title: &str) -> Self {
         let instance = Self::create_instance(); 
         let debug_callback = Self::create_debug_callback(&instance);
-        let (events_loop, surface) = Self::create_surface(title, &instance);
+        let surface = Self::create_surface(title, events_loop, &instance);
 
         let _physical_device_id = Self::find_physical_device(&instance, &surface);
-        let (device, graphics_queue, present_queue) = Self::create_logical_device(&instance, &surface, _physical_device_id);
+        let (device, graphics_queue, present_queue) = Self::create_logical_device(
+            &instance, &surface, _physical_device_id);
 
         let (swap_chain, swap_chain_images) = Self::create_swap_chain(
             &instance, &surface, _physical_device_id, 
@@ -106,7 +106,6 @@ impl RenderCore {
         Self {
             instance,
             debug_callback,
-            events_loop,
             surface,
             device,
             graphics_queue,
@@ -203,16 +202,13 @@ impl RenderCore {
             .expect("failed to find suitable physical device");
     }
     
-    fn create_surface(title: &str, instance: &Arc<Instance>) -> (EventLoop<()>, Arc<Surface<Window>>) {
-        let _events_loop = EventLoop::new();
-        let _surface = WindowBuilder::new()
+    fn create_surface(title: &str, events_loop: &EventLoop<()>, instance: &Arc<Instance>) -> Arc<Surface<Window>> {
+        WindowBuilder::new()
             .with_title(title)
             .with_resizable(true)
             .with_inner_size(LogicalSize::new(1024.0, 768.0))
-            .build_vk_surface(&_events_loop, instance.clone())
-            .expect("Unable to create window with events loop");
-        
-        (_events_loop, _surface)
+            .build_vk_surface(&events_loop, instance.clone())
+            .expect("Unable to create window with events loop")
     }
 
     fn create_logical_device(
@@ -398,10 +394,6 @@ impl RenderCore {
 
     pub fn get_present_queue(&self) -> &Arc<Queue> {
         &self.present_queue
-    }
-
-    pub fn get_events_loop(&mut self) -> &mut EventLoop<()> {
-        &mut self.events_loop
     }
 
     pub fn get_window(&self) -> &Window {

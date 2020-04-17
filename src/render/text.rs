@@ -7,7 +7,6 @@ use shaders::{
 
 use std::sync::Arc;
 use std::iter;
-use std::cell::RefCell;
 
 use rusttype::{
     Font,

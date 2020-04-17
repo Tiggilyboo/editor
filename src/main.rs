@@ -6,12 +6,13 @@ extern crate vulkano;
 extern crate vulkano_win;
 extern crate rusttype;
 
-mod render;
 
-use render::EditorApplication;
+mod render;
+mod events;
+
+mod editor;
 
 fn main() {
-    let mut app = EditorApplication::new("Editor");
-
-    app.run();    
+    editor::run("Editor");    
 }
+

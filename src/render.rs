@@ -2,7 +2,6 @@ use std::sync::Arc;
 use std::cell::RefCell;
 use cgmath::{
     Point3,
-    Vector2,
 };
 use vulkano::buffer::{
     BufferAccess,
@@ -39,16 +38,7 @@ use vulkano::sync::{
 };
 use vulkano::format::ClearValue;
 
-use winit::event::{ 
-    Event, 
-    WindowEvent,
-    DeviceEvent,
-    VirtualKeyCode,
-    KeyboardInput,
-    ElementState,
-};
-use winit::event_loop::ControlFlow;
-use winit::platform::desktop::EventLoopExtDesktop;
+use winit::event_loop::EventLoop;
 
 mod buffers;
 use buffers::Vertex;
@@ -69,29 +59,27 @@ use self::text::{
     DrawsText,
 };
 
-pub struct EditorApplication {
+pub struct Renderer {
     core: RenderCore,
     render_pass: Arc<dyn RenderPassAbstract + Send + Sync>,
     graphics_pipeline: Arc<dyn GraphicsPipelineAbstract + Send + Sync>,
     swap_chain_frame_buffers: Vec<Arc<dyn FramebufferAbstract + Send + Sync>>,
 
-    text_context: RefCell<TextContext>,
-    text: String,
-
     dynamic_state: DynamicState,
 
     vertex_buffer: Arc<dyn BufferAccess + Send + Sync>,
     index_buffer: Arc<dyn TypedBufferAccess<Content=[u16]> + Send + Sync>,
-
     uniform_buffer_pool: CpuBufferPool<UniformBufferObject>,
+    
+    text_context: RefCell<TextContext>,
 
     previous_frame_end: Option<Box<dyn GpuFuture>>,
     recreate_swap_chain: bool,
 }
 
-impl EditorApplication {
-    pub fn new(title: &str) -> Self {
-        let core = RenderCore::new(title);
+impl Renderer {
+    pub fn new(events_loop: &EventLoop<()>, title: &str) -> Self {
+        let core = RenderCore::new(events_loop, title);
         let render_pass = core.create_render_pass(None);
         let graphics_pipeline = Self::create_graphics_pipeline(&core.get_device(), &render_pass);
 
@@ -136,7 +124,6 @@ impl EditorApplication {
             index_buffer,
            
             uniform_buffer_pool,
-            text: String::from("Chicken "),
 
             previous_frame_end,
             recreate_swap_chain: false,
@@ -145,77 +132,11 @@ impl EditorApplication {
         app
     }
 
-    pub fn run(&mut self) {
-
-        let mut done = false;
-        let mut recreate = false;
-        let mut draw = false;
-        let mut mouse_delta = Vector2::<f64>::new(0.0, 0.0);
-        let mut text = String::from("");
-
-        while !done {
-            draw = false;
-            recreate = false;
-
-            self.core.get_events_loop().run_return(|event, _, control_flow| {
-                *control_flow = ControlFlow::Wait;
-                
-                match event {
-                    Event::UserEvent(event) => println!("user event: {:?}", event),
-                    Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => {
-                        done = true;
-                    },
-                    Event::WindowEvent { event: WindowEvent::Resized(_), .. } => {
-                        recreate = true;
-                    },
-                    Event::MainEventsCleared => {
-                        *control_flow = ControlFlow::Exit;
-                    },
-                    Event::RedrawEventsCleared => {
-                        draw = true;
-                    },
-                    Event::DeviceEvent { event: DeviceEvent::MouseMotion { delta }, .. } => {
-                        mouse_delta += Vector2 { x: delta.0, y: delta.1 };
-                    },
-                    Event::WindowEvent { 
-                        event: WindowEvent::KeyboardInput { input, .. },
-                        .. 
-                    } => match input {
-                        KeyboardInput {
-                            virtual_keycode: Some(key),
-                            state: ElementState::Released,
-                            ..
-                        } => match key {
-                            VirtualKeyCode::A => {
-                                text = String::from("a");
-                            }
-                            _ => ()
-                        },
-                        _ => (),
-                    },
-                    _ => (),
-                }
-            });
-
-            if recreate {
-                self.recreate_swap_chain = recreate;
-            }
-            if draw {
-                // self.mouse_position += Vector2 { x: mouse_delta.x as f32, y: mouse_delta.y as f32 };
-                if text.len() > 0 {
-                    self.text += &text;
-                    text.clear();
-                }
-                self.draw_frame();
-            }
-        }
-    }
-
     fn create_sync_objects(device: &Arc<Device>) -> Box<dyn GpuFuture> {
         Box::new(sync::now(device.clone())) as Box<dyn GpuFuture>
     }
 
-    fn draw_frame(&mut self) { 
+    pub fn draw_frame(&mut self) { 
         self.previous_frame_end.as_mut().unwrap().cleanup_finished();
 
         if self.recreate_swap_chain {
@@ -224,11 +145,9 @@ impl EditorApplication {
             return
         }
 
-        if self.text.len() > 0 {
-            self.text_context.borrow_mut().queue_text(
-                200.0, 100.0, 100.0, [1.0, 1.0, 1.0, 1.0], 
-                &self.text);
-        }
+        self.text_context
+            .borrow_mut()
+            .queue_text(200.0, 100.0, 100.0, [1.0, 1.0, 1.0, 1.0], "Chicken");
 
         let (image_index, suboptimal, acquire_future) = match self.core.get_next_swap_chain_image() {
             Ok(r) => r,
@@ -324,7 +243,6 @@ impl EditorApplication {
     }
 
     fn create_command_buffer(&mut self, image_index: usize) -> Arc<AutoCommandBuffer> {
-        let q_family = self.core.get_graphics_queue().family();
         let dimensions = self.core.swap_chain_images[0].dimensions();
 
         let layout = self.graphics_pipeline.descriptor_set_layout(0)
@@ -361,6 +279,10 @@ impl EditorApplication {
             .build().unwrap();
 
         Arc::new(command_buffer)
+    }
+
+    pub fn recreate_swap_chain_next_frame(&mut self) {
+        self.recreate_swap_chain = true;
     }
 }
 
