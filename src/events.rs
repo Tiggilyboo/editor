@@ -1,91 +1,60 @@
 use std::sync::Arc;
 use std::cell::RefCell;
 
-use winit::platform::desktop::EventLoopExtDesktop;
-
-use winit::event_loop::{
-    EventLoop,
-    ControlFlow,
-};  
 use winit::event::{
-    WindowEvent,
     Event,
-    DeviceEvent,
-    KeyboardInput,
-    ElementState,
-    VirtualKeyCode,
+    WindowEvent,
 };
-
+use winit::event_loop::EventLoop;
+use winit::event::VirtualKeyCode;
 use crate::render::Renderer;
 
-pub struct EventDelegator {
-    events_loop: EventLoop<()>,
+pub mod state;
+use state::InputState;
+use super::editor::EditorState;
+
+pub type EditorEventLoop = EventLoop<EditorEvent>;
+
+#[derive(Debug)]
+pub struct LineItem {
+    index: usize,
+    item: Option<String>,
 }
 
-impl EventDelegator {
-    pub fn new() -> Self {
-        let events_loop = EventLoop::new();
+#[derive(Debug)]
+pub enum EditorEvent {
+    LineUpdate(LineItem),
+}
 
-        Self {
-            events_loop,
-        }
-    }
+pub fn create_event_loop<'a>() -> EditorEventLoop {
+    EventLoop::<EditorEvent>::with_user_event()
+}
 
-    pub fn run(
-        &mut self, 
-        renderer: RefCell<Renderer>,
-    ) {
-        let mut events_loop = &mut self.get_events_loop();
-        let mut done = false;
-        let mut renderer = renderer
-            .try_borrow_mut()
-            .expect("unable to borrow renderer");
+pub fn handle_input(
+    state: &mut EditorState,
+    event: WindowEvent,
+) {
+    match event {
+        WindowEvent::KeyboardInput { .. }
+        | WindowEvent::MouseInput { .. }
+        | WindowEvent::MouseWheel { .. }
+        | WindowEvent::ModifiersChanged(_) => {
 
-        while !done {
-            events_loop.run_return(|event: Event<'_, ()>, _, control_flow: &mut ControlFlow| {
-                *control_flow = ControlFlow::Wait;
+            let input_state = InputState::from_window_event(event);
 
-                match event {
-                    Event::UserEvent(event) => {
-                        println!("user event: {:?}", event);
-                    },
-                    Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => {
-                        done = true;
-                    },
-                    Event::MainEventsCleared => {
-                        *control_flow = ControlFlow::Exit;
-                    },
-                    Event::WindowEvent { event: WindowEvent::Resized(_), .. } => {
-                        renderer.recreate_swap_chain_next_frame();
-                    },
-                    Event::RedrawEventsCleared => {
-                        renderer.draw_frame();
-                    },
-                    Event::DeviceEvent { event: DeviceEvent::MouseMotion { delta }, .. } => {
-                        //mouse_delta += Vector2 { x: delta.0, y: delta.1 };
-                        ()
-                    },
-                    Event::WindowEvent { event: WindowEvent::KeyboardInput { input, .. }, .. } => match input {
-                        KeyboardInput {
-                            virtual_keycode: Some(key),
-                            state: ElementState::Released,
-                            ..
-                        } => match key {
-                            VirtualKeyCode::A => {
-                                ()
-                                //text = String::from("a");
-                            }
-                            _ => ()
-                        },
-                        _ => (),
-                    },
+            if input_state.keycode.is_some() {
+                match input_state.keycode.unwrap() {
+                    VirtualKeyCode::W => state.move_camera((0.0, 1.0, 0.0)),
+                    VirtualKeyCode::A => state.move_camera((1.0, 0.0, 0.0)),
+                    VirtualKeyCode::S => state.move_camera((0.0, -1.0, 0.0)),
+                    VirtualKeyCode::D => state.move_camera((-1.0, 0.0, 0.0)),
                     _ => (),
                 }
-            });
-        }
-    }
-
-    pub fn get_events_loop(&mut self) -> &mut EventLoop<()> {
-        &mut self.events_loop
+            }
+            if input_state.mouse.line_scroll.1 != 0f32 {
+                state.zoom(input_state.mouse.line_scroll.1);
+            }
+        },
+        _ => (),
     }
 }

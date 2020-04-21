@@ -38,12 +38,10 @@ use vulkano::sync::{
 };
 use vulkano::format::ClearValue;
 
-use winit::event_loop::EventLoop;
-
 mod buffers;
 use buffers::Vertex;
 
-mod uniform_buffer_object;
+pub mod uniform_buffer_object;
 use uniform_buffer_object::UniformBufferObject;
 
 mod shaders;
@@ -58,6 +56,8 @@ use self::text::{
     TextContext,
     DrawsText,
 };
+
+use super::events::EditorEventLoop;
 
 pub struct Renderer {
     core: RenderCore,
@@ -78,7 +78,7 @@ pub struct Renderer {
 }
 
 impl Renderer {
-    pub fn new(events_loop: &EventLoop<()>, title: &str) -> Self {
+    pub fn new(events_loop: &EditorEventLoop, title: &str) -> Self {
         let core = RenderCore::new(events_loop, title);
         let render_pass = core.create_render_pass(None);
         let graphics_pipeline = Self::create_graphics_pipeline(&core.get_device(), &render_pass);
@@ -136,7 +136,13 @@ impl Renderer {
         Box::new(sync::now(device.clone())) as Box<dyn GpuFuture>
     }
 
-    pub fn draw_frame(&mut self) { 
+    pub fn queue_text(&mut self, pos: [f32; 2], size: f32, text: &str) {
+        self.text_context
+            .borrow_mut()
+            .queue_text(pos[0], pos[1], size, [1.0, 1.0, 1.0, 1.0], text);
+    }
+
+    pub fn draw_frame(&mut self, ubo: UniformBufferObject) { 
         self.previous_frame_end.as_mut().unwrap().cleanup_finished();
 
         if self.recreate_swap_chain {
@@ -144,10 +150,6 @@ impl Renderer {
             self.recreate_swap_chain = false;
             return
         }
-
-        self.text_context
-            .borrow_mut()
-            .queue_text(200.0, 100.0, 100.0, [1.0, 1.0, 1.0, 1.0], "Chicken");
 
         let (image_index, suboptimal, acquire_future) = match self.core.get_next_swap_chain_image() {
             Ok(r) => r,
@@ -164,7 +166,7 @@ impl Renderer {
             self.recreate_swap_chain = true;
         }
        
-        let command_buffer = self.create_command_buffer(image_index); 
+        let command_buffer = self.create_command_buffer(image_index, ubo); 
 
         let future = self.previous_frame_end.take()
             .expect("unable to take previous_frame_end future");
@@ -242,18 +244,14 @@ impl Renderer {
         )
     }
 
-    fn create_command_buffer(&mut self, image_index: usize) -> Arc<AutoCommandBuffer> {
+    fn create_command_buffer(&mut self, image_index: usize, ubo: UniformBufferObject) -> Arc<AutoCommandBuffer> {
         let dimensions = self.core.swap_chain_images[0].dimensions();
 
         let layout = self.graphics_pipeline.descriptor_set_layout(0)
             .expect("unable to get graphics pipeline descriptor layout");
 
         let uniform_buffer = {
-            let uniform_subbuffer = UniformBufferObject::from_dimensions(
-                Point3::<f32>::new(0.0, 0.0, 0.0), // TODO MOUSE 
-                [dimensions[0] as f32, dimensions[1] as f32]);
-            
-            self.uniform_buffer_pool.next(uniform_subbuffer).unwrap()
+            self.uniform_buffer_pool.next(ubo).unwrap()
         };
 
         let set = Arc::new(PersistentDescriptorSet::start(layout.clone())
@@ -283,6 +281,10 @@ impl Renderer {
 
     pub fn recreate_swap_chain_next_frame(&mut self) {
         self.recreate_swap_chain = true;
+    }
+
+    pub fn get_screen_dimensions(&self) -> [f32; 2] {
+        self.core.get_window().inner_size().into()
     }
 }
 
