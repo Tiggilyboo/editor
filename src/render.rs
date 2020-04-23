@@ -1,8 +1,5 @@
 use std::sync::Arc;
 use std::cell::RefCell;
-use cgmath::{
-    Point3,
-};
 use vulkano::buffer::{
     BufferAccess,
     TypedBufferAccess,
@@ -16,9 +13,7 @@ use vulkano::command_buffer::{
     DynamicState,
 };
 use vulkano::descriptor::descriptor_set::PersistentDescriptorSet;
-use vulkano::device::{
-    Device,
-};
+use vulkano::device::Device;
 use vulkano::framebuffer::{
     RenderPassAbstract,
     Subpass,
@@ -53,9 +48,11 @@ use self::core::RenderCore;
 
 mod text;
 use self::text::{
-    TextContext,
     DrawsText,
+    TextContext,
 };
+
+pub mod ui;
 
 use super::events::EditorEventLoop;
 
@@ -96,7 +93,7 @@ impl Renderer {
         let device = core.get_device();
         let graphics_queue = core.get_graphics_queue();
 
-        let mut text_context = RefCell::<TextContext>::new(TextContext::new(
+        let text_context = RefCell::<TextContext>::new(TextContext::new(
             device.clone(), 
             graphics_queue.clone(), 
             core.swap_chain.clone(), 
@@ -110,7 +107,7 @@ impl Renderer {
 
         let previous_frame_end = Some(Self::create_sync_objects(device));
 
-        let mut app = Self {
+        Self {
             core,
             graphics_pipeline,
             swap_chain_frame_buffers,
@@ -127,19 +124,17 @@ impl Renderer {
 
             previous_frame_end,
             recreate_swap_chain: false,
-        };
-
-        app
+        }
     }
 
     fn create_sync_objects(device: &Arc<Device>) -> Box<dyn GpuFuture> {
         Box::new(sync::now(device.clone())) as Box<dyn GpuFuture>
     }
 
-    pub fn queue_text(&mut self, pos: [f32; 2], size: f32, text: &str) {
+    pub fn queue_text(&mut self, pos: [f32; 2], colour: [f32; 4], font_size: f32, text: &str) {
         self.text_context
             .borrow_mut()
-            .queue_text(pos[0], pos[1], size, [1.0, 1.0, 1.0, 1.0], text);
+            .queue_text(pos[0], pos[1], font_size, colour, text)
     }
 
     pub fn draw_frame(&mut self, ubo: UniformBufferObject) { 

@@ -23,9 +23,9 @@ impl UniformBufferObject {
         
         let model = Matrix4::from_angle_z(Rad::from(Deg(0.0)));
 
-        let view = Matrix4::look_at(
+        let view = Matrix4::look_at_dir(
             eye_position,
-            Point3::new(look_direction.x, look_direction.y, look_direction.z),
+            look_direction,
             Vector3::new(0.0, 0.0, -1.0),
         );
 

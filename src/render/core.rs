@@ -44,13 +44,10 @@ use vulkano::sync::{
     NowFuture,
     SharingMode,
 };
-use vulkano::command_buffer::{
-    DynamicState,
-};
+use vulkano::command_buffer::DynamicState;
 use vulkano::pipeline::viewport::Viewport;
 
 use vulkano_win::VkSurfaceBuild;
-use winit::event_loop::{ EventLoop };
 
 use winit::window::{ WindowBuilder, Window };
 use winit::dpi::LogicalSize;
