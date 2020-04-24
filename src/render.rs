@@ -231,6 +231,7 @@ impl Renderer {
             .vertex_input_single_buffer::<Vertex>()
             .vertex_shader(_vert_shader_mod.main_entry_point(), ())
             .triangle_list()
+            //.primitive_topology(PrimitiveTopology::LineList)
             .viewports_dynamic_scissors_irrelevant(1)
             .fragment_shader(_frag_shader_mod.main_entry_point(), ())
             .render_pass(Subpass::from(render_pass.clone(), 0).unwrap())

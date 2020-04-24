@@ -11,6 +11,7 @@ pub struct UniformBufferObject {
     pub model: Matrix4<f32>,
     pub view: Matrix4<f32>,
     pub proj: Matrix4<f32>,
+    pub eye_position: Point3<f32>,
 }
 
 impl UniformBufferObject {
@@ -33,9 +34,14 @@ impl UniformBufferObject {
             Rad::from(Deg(pitch)),
             dimensions[0] as f32 / dimensions[1] as f32,
             0.1,
-            10.0,
+            100.0,
         );
 
-        UniformBufferObject { model, view, proj }
+        UniformBufferObject { 
+            model, 
+            view, 
+            proj,
+            eye_position,
+        }
     }
 }
