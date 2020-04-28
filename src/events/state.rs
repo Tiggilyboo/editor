@@ -13,7 +13,8 @@ pub struct MouseState {
     pub state: Option<ElementState>,
     pub button: Option<MouseButton>,
     pub line_scroll: (f32, f32),
-    pub position: (f64, f64),
+    pub position: (f32, f32),
+    pub delta: (f32, f32),
 }
 
 impl Default for MouseState {
@@ -23,26 +24,35 @@ impl Default for MouseState {
             button: None,
             line_scroll: (0.0, 0.0),
             position: (0.0, 0.0),
+            delta: (0.0, 0.0),
         }
     }
 }
 
 impl MouseState {
-    pub fn from_window_event(input: WindowEvent) -> Self {
-        let mut mouse = MouseState::default();
-
+    pub fn update_via_window_event(&mut self, input: WindowEvent, window_dimensions: [f32; 2]) {
         match input {
             WindowEvent::MouseInput { state, button, .. } => {
-                mouse.state = Some(state);
-                mouse.button = Some(button);
+                self.state = Some(state);
+                self.button = Some(button);
             },
             WindowEvent::MouseWheel { delta: MouseScrollDelta::LineDelta(x, y), .. } => {
-                mouse.line_scroll = (x, y);
+                self.line_scroll = (x, y);
             },
-            _ => return MouseState::default(),
-        }
+            WindowEvent::CursorMoved { position, .. } => {
+                let (half_x, half_y) = (window_dimensions[0] / 2.0, window_dimensions[1] / 2.0); 
+                let (x, y) = (position.x as f32, position.y as f32);
+                let x = x + half_x;
+                let y = y - half_y;
 
-        mouse
+                self.delta.0 = self.position.0 - x;
+                self.delta.1 = self.position.1 - y;
+
+                self.position.0 = x;
+                self.position.1 = y;
+            },
+            _ => (),
+        }
     }
 }
 
@@ -54,26 +64,32 @@ pub struct InputState {
 }
 
 impl InputState {
-    pub fn from_window_event(event: WindowEvent) -> Self {
+    pub fn new() -> Self {
         Self {
-            keycode: match event {
-                WindowEvent::KeyboardInput { input, .. } => {
-                    if input.state == ElementState::Pressed {
-                        input.virtual_keycode
-                    } else {
-                        None
-                    }
-                },
-                _ => None,
-            },
-            modifiers: match event {
-                WindowEvent::ModifiersChanged(mods) => {
-                    mods
-                },
-                _ => ModifiersState::empty(),
-            },
-            mouse: MouseState::from_window_event(event), 
+            keycode: None,
+            modifiers: ModifiersState::default(),
+            mouse: MouseState::default(),
         }
+    }
+
+    pub fn update(&mut self, event: WindowEvent, window_dimensions: [f32; 2]) { 
+        self.keycode = match event {
+            WindowEvent::KeyboardInput { input, .. } => {
+                if input.state == ElementState::Pressed {
+                    input.virtual_keycode
+                } else {
+                    None
+                }
+            },
+            _ => None,
+        };
+        self.modifiers = match event {
+            WindowEvent::ModifiersChanged(mods) => {
+                mods
+            },
+            _ => ModifiersState::empty(),
+        };
+        self.mouse.update_via_window_event(event, window_dimensions); 
     }
 }
 

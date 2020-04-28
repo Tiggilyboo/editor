@@ -26,6 +26,7 @@ use vulkano::swapchain::{
 use vulkano::pipeline::{
     GraphicsPipeline,
     GraphicsPipelineAbstract,
+    input_assembly::PrimitiveTopology,
 };
 use vulkano::sync::{
     self,
@@ -36,13 +37,18 @@ use vulkano::format::ClearValue;
 mod buffers;
 use buffers::Vertex;
 
+pub mod camera;
+
 pub mod uniform_buffer_object;
 use uniform_buffer_object::UniformBufferObject;
 
 mod shaders;
 use shaders::vertex_shader;
 use shaders::fragment_shader;
-
+/*
+use shaders::tesselate_eval_shader;
+use shaders::tesselate_ctrl_shader;
+*/
 mod core;
 use self::core::RenderCore;
 
@@ -224,14 +230,23 @@ impl Renderer {
 
         let _vert_shader_mod = vertex_shader::Shader::load(device.clone())
             .expect("failed to create vertex shader module");
+        /*
+        let _tess_ctrl_shader_mod = tesselate_ctrl_shader::Shader::load(device.clone())
+            .expect("failed to create tess ctrl shader module");
+        let _tess_eval_shader_mod = tesselate_eval_shader::Shader::load(device.clone())
+            .expect("failed to create tess eval shader module");
+        */
         let _frag_shader_mod = fragment_shader::Shader::load(device.clone())
             .expect("failed to create fragment shader module");
        
         Arc::new(GraphicsPipeline::start()
             .vertex_input_single_buffer::<Vertex>()
             .vertex_shader(_vert_shader_mod.main_entry_point(), ())
+            /*
+            .tessellation_shaders(_tess_ctrl_shader_mod.main_entry_point(), (), _tess_eval_shader_mod.main_entry_point(), ())
+            .patch_list(3)
+            */
             .triangle_list()
-            //.primitive_topology(PrimitiveTopology::LineList)
             .viewports_dynamic_scissors_irrelevant(1)
             .fragment_shader(_frag_shader_mod.main_entry_point(), ())
             .render_pass(Subpass::from(render_pass.clone(), 0).unwrap())

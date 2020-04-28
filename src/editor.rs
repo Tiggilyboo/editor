@@ -1,7 +1,9 @@
 use std::cell::RefCell;
 use std::str;
-use std::time::Instant;
-
+use std::time::{
+    Instant,
+    Duration,
+};
 use super::render::Renderer;
 use super::events::{
     EditorEvent,
@@ -23,38 +25,51 @@ use super::render::ui::widget::{
     Widget,
     WidgetKind,
 };
+use super::render::ui::update_ui;
+use super::events::state::InputState;
+use super::render::camera::Camera;
 
 pub struct EditorState {
-    camera_pos: Point3<f32>,
-    camera_direction: Vector3<f32>,
-    camera_pitch: f32,
+    camera: Camera,
     show_info: bool,
+    time: Instant,
     
-    widgets: Vec<WidgetKind>, 
+    pub widgets: Vec<WidgetKind>, 
 }
 
 impl EditorState {
     pub fn new() -> Self {
+        let camera = Camera::default();
         Self {
-            camera_pos: Point3::<f32>::new(2.0, 2.0, 2.0),
-            camera_direction: Vector3::new(-1.0, -1.0, -1.0),
-            camera_pitch: 45.0,
+            camera,
             show_info: true,
             widgets: vec!(),
+            time: Instant::now(),
         }
     }
+    
+    pub fn time_elapsed(&self) -> Duration {
+        self.time.elapsed()
+    }
 
-    pub fn move_camera(&mut self, delta: (f32, f32, f32)) {
-        let delta_vec = Vector3::<f32>::new(delta.0, delta.1, delta.2);
-        self.camera_pos += delta_vec;
+    pub fn translate_camera(&mut self, delta: (f32, f32), time_delta: f32) {
+        self.camera.move_camera(delta, time_delta);
+    }
+
+    pub fn get_camera_position(&self) -> Point3<f32> {
+        self.camera.position
+    }
+
+    pub fn get_camera_direction(&self) -> Vector3<f32> {
+        self.camera.front
     }
 
     pub fn zoom(&mut self, delta: f32) {
-        self.camera_pos.z += delta;
+        self.camera.zoom(delta)
     }
 
-    pub fn pitch(&mut self, delta: f32) {
-        self.camera_pitch += delta;
+    pub fn camera_direction(&mut self, mouse_delta: (f32, f32)) {
+        self.camera.direction(mouse_delta);
     }
 
     pub fn toggle_info(&mut self) {
@@ -70,69 +85,11 @@ impl EditorState {
         }
     }
 
-    pub fn get_widget(&mut self, index: usize) -> &mut WidgetKind {
-        let widget = self.widgets.get_mut(index)
-            .expect("unable to get widget from state");
-
-        widget
-    }
-
     pub fn to_uniform_buffer(&self, dimensions: [f32; 2]) -> UniformBufferObject {
         UniformBufferObject::new(
-            self.camera_pos,
-            self.camera_direction,
-            self.camera_pitch,
+            &self.camera,
             dimensions,
         )
-    }
-}
-
-fn update_ui(editor_state: &mut EditorState, renderer: &mut Renderer, fps: f32) {
-    fn format_slice(prefix: &str, vec: &[f32]) -> String {
-        let mut text = String::from(prefix);
-        let len = vec.len();
-        text.push('[');
-
-        for (i, v) in vec.iter().enumerate() {
-            text.push_str(v.to_string().as_str());
-            if i != len - 1 {
-                text.push_str(", ");
-            }
-        }
-        text.push(']');
-
-        text
-    }
- 
-    let mut new_content: [String; 3] = [
-        String::with_capacity(32),
-        String::with_capacity(32),
-        String::with_capacity(32),
-    ]; 
-
-    let pos = editor_state.camera_pos;
-    let pos = format_slice("Position: ", &[pos.x, pos.y, pos.z]); 
-    new_content[0] = pos;
-    
-    let pos = editor_state.camera_direction;
-    let pos = format_slice("Direction: ", &[pos.x, pos.y, pos.z]); 
-    new_content[1] = pos;
-    
-    let mut fps_str = String::from("FPS: ");
-    fps_str.push_str(fps.to_string().as_str());
-    new_content[2] = fps_str;
-
-    let mut i = 0;
-    for w in editor_state.widgets.iter_mut() {
-        match w {
-            WidgetKind::Text(text_widget) => {
-                text_widget.set_content(new_content[i].as_str());
-                text_widget.draw(renderer);
-            },
-            _ => (),
-        }
-
-        i += 1;
     }
 }
 
@@ -140,6 +97,7 @@ pub fn run(title: &str) {
     let events_loop = &mut events::create_event_loop();
     let renderer = RefCell::from(Renderer::new(&events_loop, title));
     let mut editor_state = EditorState::new();
+    let mut input_state = InputState::new();
     let mut last_frame = Instant::now();
     let mut done = false;
     let mut screen_dimensions: [f32; 2] = renderer.borrow().get_screen_dimensions();
@@ -189,8 +147,10 @@ pub fn run(title: &str) {
                     WindowEvent::KeyboardInput { .. }
                     | WindowEvent::MouseInput { .. }
                     | WindowEvent::MouseWheel { .. }
+                    | WindowEvent::CursorMoved { .. }
                     | WindowEvent::ModifiersChanged(_) => {
-                        events::handle_input(&mut editor_state, event, screen_dimensions);
+                        input_state.update(event, screen_dimensions);
+                        events::handle_input(&mut editor_state, &input_state, screen_dimensions);
                     },
                     _ => (),
                 },

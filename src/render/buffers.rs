@@ -38,9 +38,9 @@ fn vertices<'a>() -> Vec<Vertex> {
         for y in 0..SIZE {
             verts.push(Vertex { 
                 position: [
-                    -16.0 * (x as f32 / SIZE as f32) + 16.0, 
-                    -16.0 * (y as f32 / SIZE as f32) + 16.0, 
-                    0.0
+                    -160.0 * (x as f32 / SIZE as f32) + 160.0, 
+                    0.0,
+                    -160.0 * (y as f32 / SIZE as f32) + 160.0, 
                 ],
                 colour: [0.25, 0.4, 0.25, 1.0]
             });
