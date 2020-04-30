@@ -25,16 +25,16 @@ pub struct Camera {
 impl Default for Camera {
     fn default() -> Self {
         let mut camera = Camera {
-            position: Point3::new(0.0, 0.0, 0.0),
+            position: Point3::new(0.0, 0.0, 10.0),
             front: vec3(0.0, 0.0, 1.0),
             up: Vector3::zero(),
             right: Vector3::zero(),
-            world_up: Vector3::unit_y(),
-            yaw: -90.0,
-            pitch: 45.0,
-            move_speed: 0.005,
-            mouse_speed: 0.25,
-            zoom: 45.0,
+            world_up: -Vector3::unit_z(),
+            yaw: 90.0, 
+            pitch: -45.0,
+            move_speed: 0.01,
+            mouse_speed: 0.01,
+            zoom: 1.0,
         };
         camera.update();
 
@@ -44,21 +44,21 @@ impl Default for Camera {
 
 impl Camera {
     pub fn view_matrix(&self) -> Matrix4 {
-        Matrix4::look_at_dir(self.position, self.front, self.up)
+        Matrix4::look_at_dir(self.position, self.front, self.world_up)
     }
 
     pub fn move_camera(&mut self, direction: (f32, f32), delta_time: f32) {
         let velocity = self.move_speed * delta_time;
 
-        if direction.0 > 0.0 {
+        if direction.1 > 0.0 {
             self.position += self.front * velocity;
-        } else if direction.0 < 0.0 {
+        } else if direction.1 < 0.0 {
             self.position -= self.front * velocity;
         }
 
-        if direction.1 > 0.0 {
+        if direction.0 > 0.0 {
             self.position += self.right * velocity;
-        } else if direction.1 < 0.0 {
+        } else if direction.0 < 0.0 {
             self.position -= self.right * velocity;
         }
     }
@@ -75,13 +75,14 @@ impl Camera {
         }
     }
 
-    pub fn direction(&mut self, mouse_delta: (f32, f32)) {
+    pub fn direction(&mut self, delta: (f32, f32), delta_time: f32) {
+        let velocity = self.mouse_speed * delta_time;
         let (x, y) = (
-            mouse_delta.0 * self.mouse_speed,
-            mouse_delta.1 * self.mouse_speed);
-        
+            delta.0 * velocity,
+            delta.1 * velocity);
+
+        self.pitch -= y;
         self.yaw += x;
-        self.pitch += y;
 
         if self.pitch > 89.0 {
             self.pitch = 89.0;
@@ -96,8 +97,8 @@ impl Camera {
     fn update(&mut self){
         let front = Vector3 {
             x: self.yaw.to_radians().cos() * self.pitch.to_radians().cos(),
-            y: self.pitch.to_radians().sin(),
-            z: self.yaw.to_radians().sin() * self.pitch.to_radians().cos(),
+            y: self.yaw.to_radians().sin() * self.pitch.to_radians().cos(),
+            z: self.pitch.to_radians().sin(),
         };
 
         self.front = front.normalize();

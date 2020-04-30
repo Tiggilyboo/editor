@@ -42,8 +42,6 @@ pub fn handle_input(
         editor_state.zoom(input_state.mouse.line_scroll.1);
     }
     if input_state.mouse.position != (0.0, 0.0) {
-        let x_dim = input_state.mouse.position.0 / window_dimensions[0];
-        let y_dim = input_state.mouse.position.1 / window_dimensions[1];
-        editor_state.camera_direction((x_dim, y_dim));
+        editor_state.camera_direction(input_state.mouse.delta, delta_time);
     }
 }

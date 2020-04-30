@@ -242,11 +242,11 @@ impl Renderer {
         Arc::new(GraphicsPipeline::start()
             .vertex_input_single_buffer::<Vertex>()
             .vertex_shader(_vert_shader_mod.main_entry_point(), ())
+            .triangle_list()
             /*
             .tessellation_shaders(_tess_ctrl_shader_mod.main_entry_point(), (), _tess_eval_shader_mod.main_entry_point(), ())
             .patch_list(3)
             */
-            .triangle_list()
             .viewports_dynamic_scissors_irrelevant(1)
             .fragment_shader(_frag_shader_mod.main_entry_point(), ())
             .render_pass(Subpass::from(render_pass.clone(), 0).unwrap())

@@ -68,8 +68,8 @@ impl EditorState {
         self.camera.zoom(delta)
     }
 
-    pub fn camera_direction(&mut self, mouse_delta: (f32, f32)) {
-        self.camera.direction(mouse_delta);
+    pub fn camera_direction(&mut self, mouse_delta: (f32, f32), delta_time: f32) {
+        self.camera.direction(mouse_delta, delta_time);
     }
 
     pub fn toggle_info(&mut self) {

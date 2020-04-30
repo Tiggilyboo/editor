@@ -42,8 +42,8 @@ impl MouseState {
             WindowEvent::CursorMoved { position, .. } => {
                 let (half_x, half_y) = (window_dimensions[0] / 2.0, window_dimensions[1] / 2.0); 
                 let (x, y) = (position.x as f32, position.y as f32);
-                let x = x + half_x;
-                let y = y - half_y;
+                let x = half_x - x;
+                let y = half_y - y;
 
                 self.delta.0 = self.position.0 - x;
                 self.delta.1 = self.position.1 - y;
