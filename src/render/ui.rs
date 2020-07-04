@@ -40,12 +40,10 @@ pub fn update_ui(editor_state: &mut EditorState, renderer: &mut Renderer, fps: f
         String::with_capacity(32),
     ]; 
 
-    let pos = editor_state.get_camera_position();
-    let pos = format_slice("Position: ", &[pos.x, pos.y, pos.z]); 
+    let pos = String::from("Position: wooooooooop");
     new_content[0] = pos;
     
-    let pos = editor_state.get_camera_direction();
-    let pos = format_slice("Direction: ", &[pos.x, pos.y, pos.z]); 
+    let pos = String::from("Direction: unknown?");
     new_content[1] = pos;
     
     let mut fps_str = String::from("FPS: ");

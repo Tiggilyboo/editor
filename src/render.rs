@@ -26,7 +26,6 @@ use vulkano::swapchain::{
 use vulkano::pipeline::{
     GraphicsPipeline,
     GraphicsPipelineAbstract,
-    input_assembly::PrimitiveTopology,
 };
 use vulkano::sync::{
     self,
@@ -54,7 +53,6 @@ use self::core::RenderCore;
 
 mod text;
 use self::text::{
-    DrawsText,
     TextContext,
 };
 
@@ -243,10 +241,6 @@ impl Renderer {
             .vertex_input_single_buffer::<Vertex>()
             .vertex_shader(_vert_shader_mod.main_entry_point(), ())
             .triangle_list()
-            /*
-            .tessellation_shaders(_tess_ctrl_shader_mod.main_entry_point(), (), _tess_eval_shader_mod.main_entry_point(), ())
-            .patch_list(3)
-            */
             .viewports_dynamic_scissors_irrelevant(1)
             .fragment_shader(_frag_shader_mod.main_entry_point(), ())
             .render_pass(Subpass::from(render_pass.clone(), 0).unwrap())
@@ -256,8 +250,6 @@ impl Renderer {
     }
 
     fn create_command_buffer(&mut self, image_index: usize, ubo: UniformBufferObject) -> Arc<AutoCommandBuffer> {
-        let dimensions = self.core.swap_chain_images[0].dimensions();
-
         let layout = self.graphics_pipeline.descriptor_set_layout(0)
             .expect("unable to get graphics pipeline descriptor layout");
 
@@ -269,9 +261,11 @@ impl Renderer {
             .add_buffer(uniform_buffer).unwrap()
             .build().unwrap());
  
-        let command_buffer = AutoCommandBufferBuilder::primary_one_time_submit(
+        let mut builder = AutoCommandBufferBuilder::primary_one_time_submit(
                 self.core.get_device().clone(),
-                self.core.get_graphics_queue().family()).unwrap()
+                self.core.get_graphics_queue().family()).unwrap();
+
+        builder
             .begin_render_pass(
                 self.swap_chain_frame_buffers[image_index].clone(),
                 false,
@@ -283,9 +277,11 @@ impl Renderer {
                 self.index_buffer.clone(),
                 set.clone(),
                 ()).unwrap()
-            .end_render_pass().unwrap()
-            .draw_text(&mut self.text_context.borrow_mut(), image_index)
-            .build().unwrap();
+            .end_render_pass().unwrap();
+
+        self.text_context.borrow_mut().draw_text(&mut builder, image_index);
+
+        let command_buffer = builder.build().unwrap();
 
         Arc::new(command_buffer)
     }

@@ -17,10 +17,6 @@ use winit::event::{
     Event,
 };
 use super::render::uniform_buffer_object::UniformBufferObject;
-use cgmath::{
-    Point3, 
-    Vector3,
-};
 use super::render::ui::widget::{
     Widget,
     WidgetKind,
@@ -50,26 +46,6 @@ impl EditorState {
     
     pub fn time_elapsed(&self) -> Duration {
         self.time.elapsed()
-    }
-
-    pub fn translate_camera(&mut self, delta: (f32, f32), time_delta: f32) {
-        self.camera.move_camera(delta, time_delta);
-    }
-
-    pub fn get_camera_position(&self) -> Point3<f32> {
-        self.camera.position
-    }
-
-    pub fn get_camera_direction(&self) -> Vector3<f32> {
-        self.camera.front
-    }
-
-    pub fn zoom(&mut self, delta: f32) {
-        self.camera.zoom(delta)
-    }
-
-    pub fn camera_direction(&mut self, mouse_delta: (f32, f32), delta_time: f32) {
-        self.camera.direction(mouse_delta, delta_time);
     }
 
     pub fn toggle_info(&mut self) {

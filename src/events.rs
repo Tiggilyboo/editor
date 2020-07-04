@@ -26,22 +26,8 @@ pub fn handle_input(
 
     if input_state.keycode.is_some() {
         match input_state.keycode.unwrap() {
-            VirtualKeyCode::W 
-                | VirtualKeyCode::Up => editor_state.translate_camera((0.0, 1.0), delta_time),
-            VirtualKeyCode::A 
-                | VirtualKeyCode::Left => editor_state.translate_camera((-1.0, 0.0), delta_time),
-            VirtualKeyCode::S
-                | VirtualKeyCode::Down => editor_state.translate_camera((0.0, -1.0), delta_time),
-            VirtualKeyCode::D 
-                | VirtualKeyCode::Right => editor_state.translate_camera((1.0, 0.0), delta_time),
             VirtualKeyCode::F1 => editor_state.toggle_info(),
             _ => (),
         }
-    }
-    if input_state.mouse.line_scroll.1 != 0f32 {
-        editor_state.zoom(input_state.mouse.line_scroll.1);
-    }
-    if input_state.mouse.position != (0.0, 0.0) {
-        editor_state.camera_direction(input_state.mouse.delta, delta_time);
     }
 }

@@ -1,22 +1,21 @@
 use vulkano;
 
+use cgmath::Matrix4;
+
 #[derive(Default, Debug, Clone)]
 pub struct TextVertex {
-    position: [f32; 2],
-    tex_position: [f32; 2],
-    colour: [f32; 4],
+    pub left_top: [f32; 3],
+    pub right_bottom: [f32; 2],
+    pub tex_left_top: [f32; 2],
+    pub tex_right_bottom: [f32; 2],
+    pub colour: [f32; 4],
 }
-vulkano::impl_vertex!(TextVertex, position, tex_position, colour);
 
-impl TextVertex {
-    pub fn new(position: [f32; 2], tex_position: [f32; 2], colour: [f32; 4]) -> Self {
-        Self {
-            position,
-            tex_position,
-            colour,
-        }
-    }
+pub struct TextTransform {
+    pub transform: Matrix4<f32>
 }
+
+vulkano::impl_vertex!(TextVertex, left_top, right_bottom, tex_left_top, tex_right_bottom, colour);
 
 pub mod vertex_shader {
     vulkano_shaders::shader!{

@@ -172,11 +172,6 @@ impl RenderCore {
         let indices = QueueFamilyIndices::find_queue_families(surface, device);
         let extensions_supported = Self::check_device_extensions_supported(device);
 
-        let features = device.supported_features();
-        if !features.tessellation_shader {
-            println!("Device does not support tesselation shaders, disabling shaders");
-        }
-
         let swap_chain_adequate = if extensions_supported {
             let caps = surface.capabilities(*device)
                 .expect("failed to get surface capabilities");
@@ -232,7 +227,6 @@ impl RenderCore {
             (physical_device.queue_families().nth(**i as usize).unwrap(), 1.0)
         });
         let features = Features {
-            tessellation_shader: true,
             .. Features::none()
         };
         let (_device, mut queues) = Device::new(physical_device, &features, &device_extensions(), queue_families)

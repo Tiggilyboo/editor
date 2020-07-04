@@ -25,13 +25,13 @@ pub struct Camera {
 impl Default for Camera {
     fn default() -> Self {
         let mut camera = Camera {
-            position: Point3::new(0.0, 0.0, 10.0),
+            position: Point3::new(0.0, 0.0, 0.0),
             front: vec3(0.0, 0.0, 1.0),
             up: Vector3::zero(),
             right: Vector3::zero(),
             world_up: -Vector3::unit_z(),
             yaw: 90.0, 
-            pitch: -45.0,
+            pitch: 0.0,
             move_speed: 0.01,
             mouse_speed: 0.01,
             zoom: 1.0,
