@@ -16,17 +16,14 @@ use winit::event::{
     WindowEvent,
     Event,
 };
-use super::render::uniform_buffer_object::UniformBufferObject;
 use super::render::ui::widget::{
     Widget,
     WidgetKind,
 };
 use super::render::ui::update_ui;
 use super::events::state::InputState;
-use super::render::camera::Camera;
 
 pub struct EditorState {
-    camera: Camera,
     show_info: bool,
     time: Instant,
     
@@ -35,9 +32,7 @@ pub struct EditorState {
 
 impl EditorState {
     pub fn new() -> Self {
-        let camera = Camera::default();
         Self {
-            camera,
             show_info: true,
             widgets: vec!(),
             time: Instant::now(),
@@ -59,13 +54,6 @@ impl EditorState {
             },
             _ => (),
         }
-    }
-
-    pub fn to_uniform_buffer(&self, dimensions: [f32; 2]) -> UniformBufferObject {
-        UniformBufferObject::new(
-            &self.camera,
-            dimensions,
-        )
     }
 }
 
@@ -109,8 +97,7 @@ pub fn run(title: &str) {
                     screen_dimensions[1] = size.height as f32;
                 },
                 Event::RedrawEventsCleared => {
-                    let ubo = editor_state.to_uniform_buffer(screen_dimensions);
-                    renderer.borrow_mut().draw_frame(ubo);
+                    renderer.borrow_mut().draw_frame();
                     
                     let fps_val = frames as f32 / last_frame.elapsed().as_secs_f32();
                     frames = 0;
@@ -126,7 +113,7 @@ pub fn run(title: &str) {
                     | WindowEvent::CursorMoved { .. }
                     | WindowEvent::ModifiersChanged(_) => {
                         input_state.update(event, screen_dimensions);
-                        events::handle_input(&mut editor_state, &input_state, screen_dimensions);
+                        events::handle_input(&mut editor_state, &input_state, &renderer.borrow_mut());
                     },
                     _ => (),
                 },

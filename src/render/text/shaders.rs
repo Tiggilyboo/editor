@@ -10,12 +10,11 @@ pub struct TextVertex {
     pub tex_right_bottom: [f32; 2],
     pub colour: [f32; 4],
 }
+vulkano::impl_vertex!(TextVertex, left_top, right_bottom, tex_left_top, tex_right_bottom, colour);
 
 pub struct TextTransform {
     pub transform: Matrix4<f32>
 }
-
-vulkano::impl_vertex!(TextVertex, left_top, right_bottom, tex_left_top, tex_right_bottom, colour);
 
 pub mod vertex_shader {
     vulkano_shaders::shader!{

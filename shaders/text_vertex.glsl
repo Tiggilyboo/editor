@@ -1,12 +1,5 @@
 #version 450
 
-const mat4 INVERT_Y_AXIS = mat4(
-    vec4(1.0, 0.0, 0.0, 0.0),
-    vec4(0.0, -1.0, 0.0, 0.0),
-    vec4(0.0, 0.0, 1.0, 0.0),
-    vec4(0.0, 0.0, 0.0, 1.0)
-);
-
 layout(set = 1, binding = 0) uniform TextTransform {
   mat4 transform;
 } ubo;
@@ -47,5 +40,5 @@ void main() {
     }
 
     f_colour = colour;
-    gl_Position = INVERT_Y_AXIS * ubo.transform * vec4(pos, left_top.z, 1.0);
+    gl_Position = ubo.transform * vec4(pos, left_top.z, 1.0);
 }

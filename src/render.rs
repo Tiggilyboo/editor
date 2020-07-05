@@ -1,53 +1,25 @@
 use std::sync::Arc;
 use std::cell::RefCell;
-use vulkano::buffer::{
-    BufferAccess,
-    TypedBufferAccess,
-    CpuBufferPool,
-    BufferUsage,
-};
 
 use vulkano::command_buffer::{
     AutoCommandBuffer,
     AutoCommandBufferBuilder,
     DynamicState,
 };
-use vulkano::descriptor::descriptor_set::PersistentDescriptorSet;
 use vulkano::device::Device;
 use vulkano::framebuffer::{
     RenderPassAbstract,
-    Subpass,
     FramebufferAbstract,
 };
 use vulkano::swapchain::{
     SwapchainCreationError,
     AcquireError,
 };
-use vulkano::pipeline::{
-    GraphicsPipeline,
-    GraphicsPipelineAbstract,
-};
 use vulkano::sync::{
     self,
     GpuFuture,
 };
-use vulkano::format::ClearValue;
 
-mod buffers;
-use buffers::Vertex;
-
-pub mod camera;
-
-pub mod uniform_buffer_object;
-use uniform_buffer_object::UniformBufferObject;
-
-mod shaders;
-use shaders::vertex_shader;
-use shaders::fragment_shader;
-/*
-use shaders::tesselate_eval_shader;
-use shaders::tesselate_ctrl_shader;
-*/
 mod core;
 use self::core::RenderCore;
 
@@ -63,26 +35,18 @@ use super::events::EditorEventLoop;
 pub struct Renderer {
     core: RenderCore,
     render_pass: Arc<dyn RenderPassAbstract + Send + Sync>,
-    graphics_pipeline: Arc<dyn GraphicsPipelineAbstract + Send + Sync>,
     swap_chain_frame_buffers: Vec<Arc<dyn FramebufferAbstract + Send + Sync>>,
-
     dynamic_state: DynamicState,
-
-    vertex_buffer: Arc<dyn BufferAccess + Send + Sync>,
-    index_buffer: Arc<dyn TypedBufferAccess<Content=[u16]> + Send + Sync>,
-    uniform_buffer_pool: CpuBufferPool<UniformBufferObject>,
-    
-    text_context: RefCell<TextContext>,
-
     previous_frame_end: Option<Box<dyn GpuFuture>>,
     recreate_swap_chain: bool,
+
+    text_context: RefCell<TextContext>,
 }
 
 impl Renderer {
     pub fn new(events_loop: &EditorEventLoop, title: &str) -> Self {
         let core = RenderCore::new(events_loop, title);
         let render_pass = core.create_render_pass(None);
-        let graphics_pipeline = Self::create_graphics_pipeline(&core.get_device(), &render_pass);
 
         let mut dynamic_state = DynamicState {
             line_width: None,
@@ -104,27 +68,16 @@ impl Renderer {
             &core.swap_chain_images)); 
 
         let device: &Arc<Device> = &device.clone();
-        let graphics_queue = &graphics_queue.clone();
-        let vertex_buffer = buffers::create_vertex_buffer(graphics_queue);
-        let index_buffer = buffers::create_index_buffer(graphics_queue);
-        let uniform_buffer_pool = CpuBufferPool::new(device.clone(), BufferUsage::uniform_buffer());
-
         let previous_frame_end = Some(Self::create_sync_objects(device));
 
         Self {
             core,
-            graphics_pipeline,
             swap_chain_frame_buffers,
 
             text_context,
 
             dynamic_state,
             render_pass,
-
-            vertex_buffer,
-            index_buffer,
-           
-            uniform_buffer_pool,
 
             previous_frame_end,
             recreate_swap_chain: false,
@@ -136,12 +89,11 @@ impl Renderer {
     }
 
     pub fn queue_text(&mut self, pos: [f32; 2], colour: [f32; 4], font_size: f32, text: &str) {
-        self.text_context
-            .borrow_mut()
+        self.text_context.borrow_mut()
             .queue_text(pos[0], pos[1], font_size, colour, text)
     }
 
-    pub fn draw_frame(&mut self, ubo: UniformBufferObject) { 
+    pub fn draw_frame(&mut self) { 
         self.previous_frame_end.as_mut().unwrap().cleanup_finished();
 
         if self.recreate_swap_chain {
@@ -165,7 +117,7 @@ impl Renderer {
             self.recreate_swap_chain = true;
         }
        
-        let command_buffer = self.create_command_buffer(image_index, ubo); 
+        let command_buffer = self.create_command_buffer(image_index); 
 
         let future = self.previous_frame_end.take()
             .expect("unable to take previous_frame_end future");
@@ -204,84 +156,29 @@ impl Renderer {
         self.core.swap_chain_images = new_images;
         
         self.render_pass = self.core.create_render_pass(None);
-        self.graphics_pipeline = Self::create_graphics_pipeline(
-            &self.core.get_device(),
-            &self.render_pass);
 
         self.swap_chain_frame_buffers = self.core.create_framebuffers(
             &self.render_pass, 
             &mut self.dynamic_state);
 
-        self.text_context = RefCell::<TextContext>::new(TextContext::new(
-            self.core.get_device().clone(), 
-            self.core.get_graphics_queue().clone(), 
-            self.core.swap_chain.clone(), 
+        self.text_context = RefCell::from(TextContext::new(
+            self.core.get_device().clone(),
+            self.core.get_graphics_queue().clone(),
+            self.core.swap_chain.clone(),
             &self.core.swap_chain_images,
         ));
-
     }
 
-    fn create_graphics_pipeline(
-        device: &Arc<Device>, 
-        render_pass: &Arc<dyn RenderPassAbstract + Send + Sync>,
-    ) -> Arc<dyn GraphicsPipelineAbstract + Send + Sync> {
-
-        let _vert_shader_mod = vertex_shader::Shader::load(device.clone())
-            .expect("failed to create vertex shader module");
-        /*
-        let _tess_ctrl_shader_mod = tesselate_ctrl_shader::Shader::load(device.clone())
-            .expect("failed to create tess ctrl shader module");
-        let _tess_eval_shader_mod = tesselate_eval_shader::Shader::load(device.clone())
-            .expect("failed to create tess eval shader module");
-        */
-        let _frag_shader_mod = fragment_shader::Shader::load(device.clone())
-            .expect("failed to create fragment shader module");
-       
-        Arc::new(GraphicsPipeline::start()
-            .vertex_input_single_buffer::<Vertex>()
-            .vertex_shader(_vert_shader_mod.main_entry_point(), ())
-            .triangle_list()
-            .viewports_dynamic_scissors_irrelevant(1)
-            .fragment_shader(_frag_shader_mod.main_entry_point(), ())
-            .render_pass(Subpass::from(render_pass.clone(), 0).unwrap())
-            .build(device.clone())
-            .unwrap()
-        )
-    }
-
-    fn create_command_buffer(&mut self, image_index: usize, ubo: UniformBufferObject) -> Arc<AutoCommandBuffer> {
-        let layout = self.graphics_pipeline.descriptor_set_layout(0)
-            .expect("unable to get graphics pipeline descriptor layout");
-
-        let uniform_buffer = {
-            self.uniform_buffer_pool.next(ubo).unwrap()
-        };
-
-        let set = Arc::new(PersistentDescriptorSet::start(layout.clone())
-            .add_buffer(uniform_buffer).unwrap()
-            .build().unwrap());
- 
+    fn create_command_buffer(&mut self, image_index: usize) -> Arc<AutoCommandBuffer> {
         let mut builder = AutoCommandBufferBuilder::primary_one_time_submit(
                 self.core.get_device().clone(),
-                self.core.get_graphics_queue().family()).unwrap();
-
-        builder
-            .begin_render_pass(
-                self.swap_chain_frame_buffers[image_index].clone(),
-                false,
-                vec!(ClearValue::from([0.0, 0.0, 0.0, 1.0]))).unwrap()
-            .draw_indexed(
-                self.graphics_pipeline.clone(),
-                &self.dynamic_state,
-                vec!(self.vertex_buffer.clone()),
-                self.index_buffer.clone(),
-                set.clone(),
-                ()).unwrap()
-            .end_render_pass().unwrap();
+                self.core.get_graphics_queue().family()
+        ).expect("unable to create AutoCommandBufferBuilder");
 
         self.text_context.borrow_mut().draw_text(&mut builder, image_index);
 
-        let command_buffer = builder.build().unwrap();
+        let command_buffer = builder.build()
+            .expect("unable to build command buffer from builder");
 
         Arc::new(command_buffer)
     }
@@ -292,6 +189,21 @@ impl Renderer {
 
     pub fn get_screen_dimensions(&self) -> [f32; 2] {
         self.core.get_window().inner_size().into()
+    }
+
+    pub fn write_cache_to_file(&self) {
+        let buffer = self.text_context.borrow_mut().cache_pixel_buffer.clone();
+        let dimensions = self.text_context.borrow_mut().cache_dimensions;
+
+        let mut image_buffer = image::ImageBuffer::new(dimensions.0 as u32, dimensions.1 as u32);
+        for (x, y, pixel) in image_buffer.enumerate_pixels_mut() {
+            let bufx = y * dimensions.1 as u32 + x;
+            let bufv = buffer[bufx as usize];
+            *pixel = image::Rgb([bufv, bufv, bufv]);
+        }
+
+        image_buffer.save_with_format("text_cache.bmp", image::ImageFormat::Bmp)
+            .unwrap();
     }
 }
 
