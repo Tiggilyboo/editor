@@ -62,9 +62,6 @@ use ab_glyph::{
 };
 use glyph_brush::{ * };
 
-const CACHE_WIDTH: usize = 1024;
-const CACHE_HEIGHT: usize = 1024;
-
 #[derive(Debug)]
 struct TextData {
     section: OwnedSection,
@@ -76,6 +73,7 @@ pub struct TextContext {
     queue: Arc<Queue>,
     glyph_brush: GlyphBrush<TextVertex>,
     cache_pixel_buffer: Vec<u8>,
+    cache_dimensions: (usize, usize),
     pipeline: Arc<GraphicsPipeline<SingleBufferDefinition<TextVertex>, 
         Box<dyn PipelineLayoutAbstract + Send + Sync>, 
         Arc<dyn RenderPassAbstract + Send + Sync>>>,
@@ -104,7 +102,6 @@ pub fn into_vertex(GlyphVertex {
     }
     if rect.min.x < bounds.min.x {
         let old_w = rect.width();
-        rect.min.x = bounds.min.x;
         tex_coords.max.x = tex_coords.min.x - tex_coords.width() * rect.width() / old_w;
     }
     if rect.max.y > bounds.max.y {
@@ -169,7 +166,9 @@ impl TextContext {
         let glyph_brush = GlyphBrushBuilder::using_font(font)
             .build();
 
-        let cache_pixel_buffer = vec![0; CACHE_WIDTH * CACHE_HEIGHT];
+        let cache_dimensions = glyph_brush.texture_dimensions();
+        let cache_dimensions = (cache_dimensions.0 as usize, cache_dimensions.1 as usize);
+        let cache_pixel_buffer = vec![0; cache_dimensions.0 * cache_dimensions.1];
 
         println!("Creating render_pass...");
         let render_pass = Arc::new(vulkano::single_pass_renderpass!(device.clone(),
@@ -224,6 +223,7 @@ impl TextContext {
             device: device.clone(),
             queue,
             glyph_brush,
+            cache_dimensions,
             cache_pixel_buffer,
             pipeline,
             framebuffers,
@@ -257,12 +257,12 @@ impl TextContext {
         self.texts.push(data);
     }
 
-    fn update_texture(cache_pixel_buffer: &mut Vec<u8>, rect: Rectangle<u32>, src_data: &[u8]) {
-
+    fn update_texture(cache_dimensions: (usize, usize), cache_pixel_buffer: &mut Vec<u8>, rect: Rectangle<u32>, src_data: &[u8]) {
         println!("TextContext update_texture at rect: {} {} {} {}", rect.min[0], rect.min[1], rect.max[0], rect.max[1]);
+
         let w = (rect.max[0] - rect.min[0]) as usize;
         let h = (rect.max[1] - rect.min[1]) as usize;
-        let mut dst_id = rect.min[1] as usize * CACHE_WIDTH + rect.min[0] as usize;
+        let mut dst_id = rect.min[1] as usize * cache_dimensions.0 + rect.min[0] as usize;
         let mut src_id = 0;
 
         for _ in 0..h {
@@ -270,9 +270,34 @@ impl TextContext {
             let src = &src_data[src_id..src_id+w];
             dst.copy_from_slice(src);
 
-            dst_id += CACHE_WIDTH;
+            dst_id += cache_dimensions.0;
             src_id += w;
         }
+    }
+
+    fn get_max_image_demension(device: Arc<Device>) -> usize {
+        let phys_dev = device.physical_device();
+        let limits = phys_dev.limits();
+        
+        limits.max_image_dimension_2d() as usize
+    }
+
+    fn resize_cache(&mut self, width: usize, height: usize) {
+        let max_image_dimension = Self::get_max_image_demension(self.device.clone());
+        let glyph_dimensions = self.glyph_brush.texture_dimensions();
+        let cache_dimensions = if (width > max_image_dimension || height > max_image_dimension)
+            && ((glyph_dimensions.0 as usize) < max_image_dimension || (glyph_dimensions.1 as usize) < max_image_dimension)
+        {
+            (max_image_dimension, max_image_dimension)
+        } else {
+            (width, height)
+        };
+
+        println!("Resizing glyph texture: {}x{}", cache_dimensions.0, cache_dimensions.1);
+
+        self.cache_dimensions = cache_dimensions;
+        self.cache_pixel_buffer = vec![0; cache_dimensions.0 * cache_dimensions.1];
+        self.glyph_brush.resize_texture(cache_dimensions.0 as u32, cache_dimensions.1 as u32);
     }
     
     pub fn draw_text<'a>(
@@ -281,19 +306,20 @@ impl TextContext {
         image_num: usize
     ) -> &'a mut AutoCommandBufferBuilder {
 
-        
-
+        let cache_dimensions = self.cache_dimensions;
         let cache_pixel_buffer = &mut self.cache_pixel_buffer; 
         
         let glyph_action = self.glyph_brush.process_queued(
-            |rect, tex_data| Self::update_texture(cache_pixel_buffer, rect, tex_data),
+            |rect, tex_data| Self::update_texture(cache_dimensions, cache_pixel_buffer, rect, tex_data),
             into_vertex,
         );
  
         match glyph_action {
             Ok(_) => {},
             Err(BrushError::TextureTooSmall { suggested, .. }) => {
-                println!("TextureTooSmall: w {} x h {}", suggested.0, suggested.1)
+                println!("TextureTooSmall: w {} x h {}", suggested.0, suggested.1);
+                
+                self.resize_cache(suggested.0 as usize, suggested.1 as usize);
             }
         }
         match glyph_action.unwrap() {
@@ -307,9 +333,10 @@ impl TextContext {
                     cache_pixel_buffer.iter().cloned()
                 ).unwrap();
 
+                let cache_dimensions = self.cache_dimensions;
                 let (cache_tex, cache_tex_write) = ImmutableImage::uninitialized(
                     self.device.clone(),
-                    Dimensions::Dim2d { width: CACHE_WIDTH as u32, height: CACHE_HEIGHT as u32 },
+                    Dimensions::Dim2d { width: cache_dimensions.0 as u32, height: cache_dimensions.1 as u32 },
                     R8Unorm,
                     1,
                     ImageUsage {
