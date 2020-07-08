@@ -26,6 +26,9 @@ impl TextWidget {
     pub fn set_content(&mut self, content: &str) {
         self.content = String::from(content);
     }
+    pub fn get_content(&self) -> &str {
+        self.content.as_str()
+    }
 }
 
 impl Widget for TextWidget {
@@ -39,6 +42,7 @@ impl Widget for TextWidget {
 
     fn draw(&self, renderer: &mut Renderer) {
         renderer.queue_text(
+            self.index,
             self.position,
             self.colour,
             self.font_size,

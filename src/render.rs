@@ -88,9 +88,9 @@ impl Renderer {
         Box::new(sync::now(device.clone())) as Box<dyn GpuFuture>
     }
 
-    pub fn queue_text(&mut self, pos: [f32; 2], colour: [f32; 4], font_size: f32, text: &str) {
+    pub fn queue_text(&mut self, index: usize, pos: [f32; 2], colour: [f32; 4], font_size: f32, text: &str) {
         self.text_context.borrow_mut()
-            .queue_text(pos[0], pos[1], font_size, colour, text)
+            .queue_text(index, pos[0], pos[1], font_size, colour, text)
     }
 
     pub fn draw_frame(&mut self) { 
@@ -189,6 +189,10 @@ impl Renderer {
 
     pub fn get_screen_dimensions(&self) -> [f32; 2] {
         self.core.get_window().inner_size().into()
+    }
+
+    pub fn request_redraw(&self) {
+        self.core.get_window().request_redraw();
     }
 }
 

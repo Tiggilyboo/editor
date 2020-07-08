@@ -1,5 +1,6 @@
 mod shaders;
 use shaders::{
+    Vertex,
     TextVertex,
     TextTransform,
     vertex_shader,
@@ -30,13 +31,14 @@ use vulkano::descriptor::pipeline_layout::{
 use vulkano::buffer::{
     BufferUsage,
     CpuAccessibleBuffer,
+    ImmutableBuffer,
     CpuBufferPool,
+    TypedBufferAccess,
 };
 use vulkano::swapchain::Swapchain;
 use vulkano::image::{
     SwapchainImage,
     ImmutableImage,
-    immutable::ImmutableImageInitialization,
     ImageLayout,
     ImageUsage,
     Dimensions,
@@ -72,15 +74,16 @@ pub struct TextContext {
     device: Arc<Device>,
     queue: Arc<Queue>,
     glyph_brush: GlyphBrush<TextVertex>,
-    pipeline: Arc<GraphicsPipeline<SingleBufferDefinition<TextVertex>, 
+    pipeline: Arc<GraphicsPipeline<SingleBufferDefinition<Vertex>, 
         Box<dyn PipelineLayoutAbstract + Send + Sync>, 
         Arc<dyn RenderPassAbstract + Send + Sync>>>,
     framebuffers: Vec<Arc<dyn FramebufferAbstract + Send + Sync>>,
     uniform_buffer_pool: CpuBufferPool<TextTransform>,
     texts: Vec<TextData>,
-    vertex_buffer: Option<Arc<CpuAccessibleBuffer<[TextVertex]>>>,
-    vertex_count: u32,
+    vertex_buffer: Option<Arc<CpuAccessibleBuffer<[Vertex]>>>,
+    index_buffer: Option<Arc<TypedBufferAccess<Content=[u16]> + Send + Sync>>,
     texture: TextureCache,
+    background_colour: [f32; 4],
 }
 
 struct TextureCache {
@@ -128,8 +131,9 @@ pub fn into_vertex(GlyphVertex {
     }
 
     TextVertex {
-        left_top: [gl_rect.min.x, gl_rect.max.y, extra.z],
+        left_top: [gl_rect.min.x, gl_rect.max.y],
         right_bottom: [gl_rect.max.x, gl_rect.min.y], 
+        depth: extra.z,
         tex_left_top: [tex_coords.min.x, tex_coords.max.y],
         tex_right_bottom: [tex_coords.max.x, tex_coords.min.y],
         colour: [
@@ -158,7 +162,6 @@ fn calculate_transform(left: f32, right: f32, bottom: f32, top: f32, near: f32, 
 }
 
 impl TextContext {
-
     pub fn new<W>(
         device: Arc<Device>, 
         queue: Arc<Queue>,
@@ -192,7 +195,7 @@ impl TextContext {
         let render_pass = Arc::new(vulkano::single_pass_renderpass!(device.clone(),
             attachments: {
                 color: {
-                    load: Load,
+                    load: Clear,
                     store: Store,
                     format: swapchain.format(),
                     samples: 1,
@@ -215,7 +218,7 @@ impl TextContext {
 
         println!("Creating pipeline...");
         let pipeline = Arc::new(GraphicsPipeline::start()
-            .vertex_input_single_buffer::<TextVertex>()
+            .vertex_input_single_buffer::<Vertex>()
             .vertex_shader(vertex_shader.main_entry_point(), ())
             .triangle_list()
             .viewports(iter::once(Viewport {
@@ -263,27 +266,33 @@ impl TextContext {
             texts: vec!(),
             uniform_buffer_pool,
             vertex_buffer: None, 
-            vertex_count: 0,
+            index_buffer: None,
+            background_colour: [0.1, 0.1, 0.1, 1.0],
         }
     }
 
-    pub fn queue_text(&mut self, x: f32, y: f32, font_size: f32, colour: [f32; 4], text: &str) {
+    pub fn queue_text(&mut self, index: usize, x: f32, y: f32, font_size: f32, colour: [f32; 4], text: &str) {
         let dimensions = self.framebuffers[0].dimensions();
-        let section = Section::default()
-            .add_text(
-            Text::new(text)
-                .with_scale(font_size * 10.0)
-                .with_color(colour),
-        )
-        .with_bounds((dimensions[0] as f32, dimensions[1] as f32))
-        .with_layout(
-            Layout::default()
-                .v_align(VerticalAlign::Center)
-                .line_breaker(BuiltInLineBreaker::AnyCharLineBreaker),
-        )
-        .with_screen_position((x, y))
-        .to_owned();
 
+        let section = if self.texts.len() > index {
+            let mut cached = self.texts[index].section.clone();
+            cached.screen_position = (x, y);
+            cached.bounds = (dimensions[0] as f32, dimensions[1] as f32);
+            // TODO: index??
+            cached.text[0].text = String::from(text);
+            cached.text[0].scale = PxScale::from(font_size);
+
+            cached
+        } else {
+            Section::default()
+                .add_text(Text::new(text)
+                    .with_scale(font_size)
+                    .with_color(colour))
+                .with_bounds((dimensions[0] as f32, dimensions[1] as f32))
+                .with_layout(Layout::default())
+                .with_screen_position((x, y))
+                .to_owned()
+        };
         self.glyph_brush.queue(section.to_borrowed());
 
         let data = TextData {
@@ -374,17 +383,25 @@ impl TextContext {
     }
 
     fn upload_vertices(& mut self, vertices: Vec<TextVertex>) {
-        println!("Uploading {} verts", vertices.len());
-
+        let mut indices = vec!();
         let mut quadrupled_verts = vec!();
         let mut i = 0;
-        for v in vertices.iter() {
-            quadrupled_verts.push(v.clone());
-            quadrupled_verts.push(v.clone());
-            quadrupled_verts.push(v.clone());
-            quadrupled_verts.push(v.clone());
 
-            println!("v{}: {:?}", i, v);
+        for v in vertices.iter() {
+            let glyph_verts = v.to_verts();
+            quadrupled_verts.push(glyph_verts[0]);
+            quadrupled_verts.push(glyph_verts[1]);
+            quadrupled_verts.push(glyph_verts[2]);
+            quadrupled_verts.push(glyph_verts[3]);
+
+            let ic = i * 4;
+            indices.push(ic);
+            indices.push(ic+1);
+            indices.push(ic+2);
+
+            indices.push(ic+1);
+            indices.push(ic+2);
+            indices.push(ic+3);
             i += 1;
         }
 
@@ -394,6 +411,14 @@ impl TextContext {
             false,
             quadrupled_verts.into_iter()
         ).expect("TextContext: unable to create vertex buffer"));
+
+        let (index_buffer, _future) = ImmutableBuffer::from_iter(
+            indices.into_iter(),
+            BufferUsage::index_buffer(),
+            self.queue.clone(),
+        ).expect("TextContext: unable to create index buffer");
+         
+        self.index_buffer = Some(index_buffer);
     }
 
     pub fn draw_text<'a>(
@@ -457,13 +482,14 @@ impl TextContext {
             .begin_render_pass(
                 self.framebuffers[image_num].clone(), 
                 false, 
-                vec!(ClearValue::None),
+                vec![self.background_colour.into()],
             ).expect("unable to copy buffer to image")
 
-            .draw(
+            .draw_indexed(
                 self.pipeline.clone(),
                 &DynamicState::none(),
                 self.vertex_buffer.clone().unwrap(),
+                self.index_buffer.clone().unwrap(),
                 set.clone(), 
                 ()
             ).expect("unable to draw to command buffer for glyph")

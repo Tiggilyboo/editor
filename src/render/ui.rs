@@ -11,7 +11,7 @@ pub fn create_initial_ui_state(screen_size: [f32; 2]) -> Vec<WidgetKind> {
     fn white() -> [f32; 4] { [1.0, 1.0, 1.0, 1.0] }
 
     vec![
-        WidgetKind::Text(TextWidget::new(0, String::default(), [screen_size[0] / 2.0, screen_size[1] / 2.0], 20.0, white())),
+        WidgetKind::Text(TextWidget::new(0, String::default(), [20.0, 20.0], 20.0, white())),
     ]
 }
 
@@ -35,16 +35,21 @@ pub fn update_ui(editor_state: &mut EditorState, renderer: &mut Renderer, fps: f
     let mut new_content: [String; 1] = [
         String::with_capacity(32),
     ]; 
+    let fps_val = fps as u32;
 
-    let pos = String::from("ABC");
-    new_content[0] = pos;
+    new_content[0] = format_slice("FPS: ", &[fps_val as f32]);
     
     let mut i = 0;
     for w in editor_state.widgets.iter_mut() {
         match w {
             WidgetKind::Text(text_widget) => {
-                text_widget.set_content(new_content[i].as_str());
-                text_widget.draw(renderer);
+                let old_content = text_widget.get_content();
+
+                if old_content != new_content[i] {
+                    text_widget.set_content(new_content[i].as_str());
+                    text_widget.draw(renderer);
+                    renderer.request_redraw();
+                }
             },
             _ => (),
         }

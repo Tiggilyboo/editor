@@ -98,14 +98,15 @@ pub fn run(title: &str) {
                     screen_dimensions[1] = size.height as f32;
                 },
                 Event::RedrawEventsCleared => {
-                    renderer.borrow_mut().draw_frame();
-                    
                     let fps_val = frames as f32 / last_frame.elapsed().as_secs_f32();
                     frames = 0;
 
                     if editor_state.show_info {
                         update_ui(&mut editor_state, &mut renderer.borrow_mut(), fps_val); 
                     }
+                },
+                Event::RedrawRequested(_window_id) => {
+                    renderer.borrow_mut().draw_frame();
                 },
                 Event::WindowEvent { event, .. } => match event {
                     WindowEvent::KeyboardInput { .. }
