@@ -8,7 +8,6 @@ use shaders::{
 
 use std::sync::Arc;
 use std::iter;
-
 use vulkano::device::{
     Device,
     Queue,
@@ -37,6 +36,7 @@ use vulkano::swapchain::Swapchain;
 use vulkano::image::{
     SwapchainImage,
     ImmutableImage,
+    immutable::ImmutableImageInitialization,
     ImageLayout,
     ImageUsage,
     Dimensions,
@@ -72,14 +72,22 @@ pub struct TextContext {
     device: Arc<Device>,
     queue: Arc<Queue>,
     glyph_brush: GlyphBrush<TextVertex>,
-    pub cache_pixel_buffer: Vec<u8>,
-    pub cache_dimensions: (usize, usize),
     pipeline: Arc<GraphicsPipeline<SingleBufferDefinition<TextVertex>, 
         Box<dyn PipelineLayoutAbstract + Send + Sync>, 
         Arc<dyn RenderPassAbstract + Send + Sync>>>,
     framebuffers: Vec<Arc<dyn FramebufferAbstract + Send + Sync>>,
-    texts: Vec<TextData>,
     uniform_buffer_pool: CpuBufferPool<TextTransform>,
+    texts: Vec<TextData>,
+    vertex_buffer: Option<Arc<CpuAccessibleBuffer<[TextVertex]>>>,
+    vertex_count: u32,
+    texture: TextureCache,
+}
+
+struct TextureCache {
+    pub cache_pixel_buffer: Vec<u8>,
+    pub cache_dimensions: (usize, usize),
+    image: Option<Arc<ImmutableImage<R8Unorm>>>,
+    sampler: Arc<Sampler>,
 }
 
 #[inline]
@@ -89,39 +97,49 @@ pub fn into_vertex(GlyphVertex {
     bounds,
     extra,
 }: GlyphVertex) -> TextVertex {
-    let mut rect = Rect {
-        min: point(pixel_coords.min.x as f32, pixel_coords.min.y),
-        max: point(pixel_coords.max.x as f32, pixel_coords.max.y),
+   
+    let gl_bounds = bounds;
+
+    let mut gl_rect = Rect {
+        min: point(pixel_coords.min.x as f32, pixel_coords.min.y as f32),
+        max: point(pixel_coords.max.x as f32, pixel_coords.max.y as f32),
     };
 
-    // handle overlapping bounds, preserve texture aspect
-    if rect.max.x > bounds.max.x {
-        let old_w = rect.width();
-        rect.max.x = bounds.max.x;
-        tex_coords.max.x = tex_coords.min.x + tex_coords.width() * rect.width() / old_w;
+    // handle overlapping bounds, modify uv_rect to preserve texture aspect
+    if gl_rect.max.x > gl_bounds.max.x {
+        let old_width = gl_rect.width();
+        gl_rect.max.x = gl_bounds.max.x;
+        tex_coords.max.x = tex_coords.min.x + tex_coords.width() * gl_rect.width() / old_width;
     }
-    if rect.min.x < bounds.min.x {
-        let old_w = rect.width();
-        tex_coords.min.x = tex_coords.max.x - tex_coords.width() * rect.width() / old_w;
+    if gl_rect.min.x < gl_bounds.min.x {
+        let old_width = gl_rect.width();
+        gl_rect.min.x = gl_bounds.min.x;
+        tex_coords.min.x = tex_coords.max.x - tex_coords.width() * gl_rect.width() / old_width;
     }
-    if rect.max.y > bounds.max.y {
-        let old_h = rect.height();
-        rect.max.y = bounds.max.y;
-        tex_coords.max.y = tex_coords.min.y + tex_coords.height() * rect.height() / old_h;
+    if gl_rect.max.y > gl_bounds.max.y {
+        let old_height = gl_rect.height();
+        gl_rect.max.y = gl_bounds.max.y;
+        tex_coords.max.y = tex_coords.min.y + tex_coords.height() * gl_rect.height() / old_height;
     }
-    if rect.min.y < bounds.min.y {
-        let old_h = rect.width();
-        rect.min.y = bounds.min.y;
-        tex_coords.max.y = tex_coords.max.y - tex_coords.height() * rect.height() / old_h;
+    if gl_rect.min.y < gl_bounds.min.y {
+        let old_height = gl_rect.height();
+        gl_rect.min.y = gl_bounds.min.y;
+        tex_coords.min.y = tex_coords.max.y - tex_coords.height() * gl_rect.height() / old_height;
     }
 
     TextVertex {
-        left_top: [rect.min.x, rect.max.y, extra.z],
-        right_bottom: [rect.max.x, rect.min.y],
+        left_top: [gl_rect.min.x, gl_rect.max.y, extra.z],
+        right_bottom: [gl_rect.max.x, gl_rect.min.y], 
         tex_left_top: [tex_coords.min.x, tex_coords.max.y],
         tex_right_bottom: [tex_coords.max.x, tex_coords.min.y],
-        colour: extra.color,
+        colour: [
+            extra.color[0],
+            extra.color[1],
+            extra.color[2],
+            extra.color[3]
+        ],
     }
+
 }
 
 fn calculate_transform(left: f32, right: f32, bottom: f32, top: f32, near: f32, far: f32) -> TextTransform {
@@ -199,7 +217,7 @@ impl TextContext {
         let pipeline = Arc::new(GraphicsPipeline::start()
             .vertex_input_single_buffer::<TextVertex>()
             .vertex_shader(vertex_shader.main_entry_point(), ())
-            .triangle_strip()
+            .triangle_list()
             .viewports(iter::once(Viewport {
                 origin: [0.0, 0.0],
                 depth_range: 0.0..1.0,
@@ -218,33 +236,53 @@ impl TextContext {
         println!("Creating uniform_buffer_pool...");
         let uniform_buffer_pool = CpuBufferPool::new(device.clone(), BufferUsage::uniform_buffer());
 
+        let sampler = Sampler::new(
+            device.clone(),
+            Filter::Linear,
+            Filter::Linear,
+            MipmapMode::Nearest,
+            SamplerAddressMode::Repeat,
+            SamplerAddressMode::Repeat,
+            SamplerAddressMode::Repeat,
+            0.0, 1.0, 0.0, 0.0
+        ).unwrap();
+
         println!("Loaded TextContext");
         TextContext {
             device: device.clone(),
             queue,
             glyph_brush,
-            cache_dimensions,
-            cache_pixel_buffer,
+            texture: TextureCache {
+                image: None,
+                cache_dimensions,
+                cache_pixel_buffer,
+                sampler,
+            },
             pipeline,
             framebuffers,
             texts: vec!(),
             uniform_buffer_pool,
+            vertex_buffer: None, 
+            vertex_count: 0,
         }
     }
 
     pub fn queue_text(&mut self, x: f32, y: f32, font_size: f32, colour: [f32; 4], text: &str) {
         let dimensions = self.framebuffers[0].dimensions();
-        let layout = Layout::default();
         let section = Section::default()
             .add_text(
-                Text::new(text)
-                    .with_scale(font_size * 10.0)
-                    .with_color(colour),
-                )
-            .with_bounds((dimensions[0] as f32, dimensions[1] as f32))
-            .with_layout(layout)
-           .with_screen_position((0.0, 0.0))
-           .to_owned();
+            Text::new(text)
+                .with_scale(font_size * 10.0)
+                .with_color(colour),
+        )
+        .with_bounds((dimensions[0] as f32, dimensions[1] as f32))
+        .with_layout(
+            Layout::default()
+                .v_align(VerticalAlign::Center)
+                .line_breaker(BuiltInLineBreaker::AnyCharLineBreaker),
+        )
+        .with_screen_position((x, y))
+        .to_owned();
 
         self.glyph_brush.queue(section.to_borrowed());
 
@@ -256,7 +294,15 @@ impl TextContext {
         self.texts.push(data);
     }
 
-    fn update_texture(cache_dimensions: (usize, usize), cache_pixel_buffer: &mut Vec<u8>, rect: Rectangle<u32>, src_data: &[u8]) {
+    fn update_texture(
+        device: Arc<Device>,
+        queue: Arc<Queue>, 
+        builder: &mut AutoCommandBufferBuilder,
+        cache_dimensions: (usize, usize), 
+        cache_pixel_buffer: &mut Vec<u8>, 
+        rect: Rectangle<u32>, 
+        src_data: &[u8],
+    ) -> Arc<ImmutableImage<R8Unorm>> {
         println!("TextContext update_texture at rect: {} {} {} {}", rect.min[0], rect.min[1], rect.max[0], rect.max[1]);
 
         let w = (rect.max[0] - rect.min[0]) as usize;
@@ -269,12 +315,40 @@ impl TextContext {
             let src = &src_data[src_id..src_id+w];
             dst.copy_from_slice(src);
 
-            dst_id += cache_dimensions.0;
+            dst_id += cache_dimensions.0 as usize;
             src_id += w;
         }
+
+        let buffer = CpuAccessibleBuffer::<[u8]>::from_iter(
+            device.clone(),
+            BufferUsage::all(),
+            false,
+            cache_pixel_buffer.iter().cloned()
+        ).unwrap();
+
+        let (cache_tex, cache_tex_write) = ImmutableImage::uninitialized(
+            device.clone(),
+            Dimensions::Dim2d { width: cache_dimensions.0 as u32, height: cache_dimensions.1 as u32 },
+            R8Unorm,
+            1,
+            ImageUsage {
+                sampled: true,
+                transfer_destination: true,
+                .. ImageUsage::none()
+            },
+            ImageLayout::General,
+            Some(queue.family())
+        ).expect("Unable to create unintialised immutable image");
+
+        builder.copy_buffer_to_image(
+            buffer.clone(),
+            cache_tex_write)
+        .expect("unable to copy cache_pixel_buffer to cache_tex texture");
+
+        cache_tex
     }
 
-    fn get_max_image_demension(device: Arc<Device>) -> usize {
+    fn get_max_image_dimension(device: Arc<Device>) -> usize {
         let phys_dev = device.physical_device();
         let limits = phys_dev.limits();
         
@@ -282,7 +356,7 @@ impl TextContext {
     }
 
     fn resize_cache(&mut self, width: usize, height: usize) {
-        let max_image_dimension = Self::get_max_image_demension(self.device.clone());
+        let max_image_dimension = Self::get_max_image_dimension(self.device.clone());
         let glyph_dimensions = self.glyph_brush.texture_dimensions();
         let cache_dimensions = if (width > max_image_dimension || height > max_image_dimension)
             && ((glyph_dimensions.0 as usize) < max_image_dimension || (glyph_dimensions.1 as usize) < max_image_dimension)
@@ -294,81 +368,92 @@ impl TextContext {
 
         println!("Resizing glyph texture: {}x{}", cache_dimensions.0, cache_dimensions.1);
 
-        self.cache_dimensions = cache_dimensions;
-        self.cache_pixel_buffer = vec![0; cache_dimensions.0 * cache_dimensions.1];
+        self.texture.cache_dimensions = cache_dimensions;
+        self.texture.cache_pixel_buffer = vec![0; cache_dimensions.0 * cache_dimensions.1];
         self.glyph_brush.resize_texture(cache_dimensions.0 as u32, cache_dimensions.1 as u32);
     }
-    
-    fn upload_vertices<'a>(&'a mut self, 
-        builder: &'a mut AutoCommandBufferBuilder, 
-        vertices: Vec<TextVertex>,
-        image_num: usize,
-    ) -> &'a mut AutoCommandBufferBuilder {
-        let cache_pixel_buffer = &mut self.cache_pixel_buffer;
 
-        let buffer = CpuAccessibleBuffer::<[u8]>::from_iter(
+    fn upload_vertices(& mut self, vertices: Vec<TextVertex>) {
+        println!("Uploading {} verts", vertices.len());
+
+        let mut quadrupled_verts = vec!();
+        let mut i = 0;
+        for v in vertices.iter() {
+            quadrupled_verts.push(v.clone());
+            quadrupled_verts.push(v.clone());
+            quadrupled_verts.push(v.clone());
+            quadrupled_verts.push(v.clone());
+
+            println!("v{}: {:?}", i, v);
+            i += 1;
+        }
+
+        self.vertex_buffer = Some(CpuAccessibleBuffer::from_iter(
             self.device.clone(),
-            BufferUsage::all(),
+            BufferUsage::vertex_buffer(),
             false,
-            cache_pixel_buffer.iter().cloned()
-        ).unwrap();
+            quadrupled_verts.into_iter()
+        ).expect("TextContext: unable to create vertex buffer"));
+    }
 
-        let cache_dimensions = self.cache_dimensions;
-        let (cache_tex, cache_tex_write) = ImmutableImage::uninitialized(
-            self.device.clone(),
-            Dimensions::Dim2d { width: cache_dimensions.0 as u32, height: cache_dimensions.1 as u32 },
-            R8Unorm,
-            1,
-            ImageUsage {
-                sampled: true,
-                transfer_destination: true,
-                .. ImageUsage::none()
+    pub fn draw_text<'a>(
+        &'a mut self, 
+        builder: &'a mut AutoCommandBufferBuilder, 
+        image_num: usize
+    ) -> &'a mut AutoCommandBufferBuilder {
+
+        let cache_dimensions = self.texture.cache_dimensions;
+        let cache_pixel_buffer = &mut self.texture.cache_pixel_buffer; 
+        let device = self.device.clone();
+        let queue = self.queue.clone();
+        let mut updated_texture = self.texture.image.clone();
+        
+        let glyph_action = self.glyph_brush.process_queued(
+            |rect, tex_data| {
+                updated_texture = Some(Self::update_texture(
+                    device.clone(),
+                    queue.clone(),
+                    builder, 
+                    cache_dimensions, 
+                    cache_pixel_buffer, 
+                    rect, tex_data));
             },
-            ImageLayout::General,
-            Some(self.queue.family())
-        ).expect("Unable to create unintialised immutable image");
+            into_vertex,
+        );
+        self.texture.image = updated_texture;
+ 
+        match glyph_action {
+            Ok(BrushAction::Draw(vertices)) => self.upload_vertices(vertices),
+            Ok(BrushAction::ReDraw) => {},
+            Err(BrushError::TextureTooSmall { suggested, .. }) => {
+                self.resize_cache(suggested.0 as usize, suggested.1 as usize);
+            },
+        }
 
-        let sampler = Sampler::new(
-            self.device.clone(),
-            Filter::Linear,
-            Filter::Linear,
-            MipmapMode::Linear,
-            SamplerAddressMode::ClampToEdge,
-            SamplerAddressMode::ClampToEdge,
-            SamplerAddressMode::ClampToEdge,
-            0.0, 1.0, 0.0, 0.0
-        ).unwrap();
-
-        let dimensions = self.framebuffers[0].dimensions();
+        let dimensions = self.framebuffers[image_num].dimensions();
         let transform = calculate_transform(0.0, dimensions[0] as f32, 0.0, dimensions[1] as f32, 1.0, -1.0);
         let uniform_buffer = {
             self.uniform_buffer_pool.next(transform).unwrap()
         };
 
-        let image_set = Arc::new(
-            PersistentDescriptorSet::start(self.pipeline.descriptor_set_layout(0).unwrap().clone())
-            .add_sampled_image(cache_tex.clone(), sampler)
-            .expect("could not add sampled image to PersistentDescriptorSet 0")
-            .build()
-            .expect("TextContext: unable to create PersistentDescriptorSet 0")
-        );
-        let uniform_set = Arc::new(
-            PersistentDescriptorSet::start(self.pipeline.descriptor_set_layout(1).unwrap().clone())
-            .add_buffer(uniform_buffer)
-            .expect("could not add uniform buffer to PersistentDescriptorSet 1")
-            .build()
-            .expect("TextContext: unable to create PersistentDescriptorSet 1")
-        );
+        // Image not loaded yet
+        if self.texture.image.is_none() {
+            println!("Waiting for text cache image to load...");
+            return builder;
+        }
 
-        let vertex_buffer = CpuAccessibleBuffer::from_iter(
-            self.device.clone(),
-            BufferUsage::vertex_buffer(),
-            false,
-            vertices.into_iter()
-        ).expect("TextContext: unable to create vertex buffer");
+        let cache_tex = self.texture.image.clone().unwrap();
+        let set = Arc::new(
+            PersistentDescriptorSet::start(self.pipeline.descriptor_set_layout(0).unwrap().clone())
+                .add_sampled_image(cache_tex, self.texture.sampler.clone())
+                .expect("could not add sampled image to PersistentDescriptorSet binding 0")
+                .add_buffer(uniform_buffer)
+                .expect("could not add uniform buffer to PersistentDescriptorSet binding 1")
+                .build()
+                .expect("TextContext: unable to create PersistentDescriptorSet 0")
+        );
 
         builder 
-            .copy_buffer_to_image(buffer.clone(), cache_tex_write).unwrap()
             .begin_render_pass(
                 self.framebuffers[image_num].clone(), 
                 false, 
@@ -378,41 +463,13 @@ impl TextContext {
             .draw(
                 self.pipeline.clone(),
                 &DynamicState::none(),
-                vertex_buffer.clone(),
-                (image_set, uniform_set),
+                self.vertex_buffer.clone().unwrap(),
+                set.clone(), 
                 ()
             ).expect("unable to draw to command buffer for glyph")
 
             .end_render_pass()
-            .expect("unable to end render pass") 
-    }
-
-    pub fn draw_text<'a>(
-        &'a mut self, 
-        builder: &'a mut AutoCommandBufferBuilder, 
-        image_num: usize
-    ) -> &'a mut AutoCommandBufferBuilder {
-
-        let cache_dimensions = self.cache_dimensions;
-        let cache_pixel_buffer = &mut self.cache_pixel_buffer; 
-        
-        let glyph_action = self.glyph_brush.process_queued(
-            |rect, tex_data| Self::update_texture(cache_dimensions, cache_pixel_buffer, rect, tex_data),
-            into_vertex,
-        );
- 
-        match glyph_action {
-            Ok(BrushAction::Draw(vertices)) => {
-                self.upload_vertices(builder, vertices, image_num)
-            },
-            Ok(BrushAction::ReDraw) => {
-                builder
-            },
-            Err(BrushError::TextureTooSmall { suggested, .. }) => {
-                self.resize_cache(suggested.0 as usize, suggested.1 as usize);
-                builder
-            },
-        }
+            .expect("unable to end render pass")
     }
 }
 

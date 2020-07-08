@@ -11,8 +11,7 @@ pub fn create_initial_ui_state(screen_size: [f32; 2]) -> Vec<WidgetKind> {
     fn white() -> [f32; 4] { [1.0, 1.0, 1.0, 1.0] }
 
     vec![
-        WidgetKind::Text(TextWidget::new(0, String::default(), [20.0, 20.0], 20.0, white())),
-        WidgetKind::Text(TextWidget::new(1, String::default(), [20.0, 50.0], 20.0, white())),
+        WidgetKind::Text(TextWidget::new(0, String::default(), [screen_size[0] / 2.0, screen_size[1] / 2.0], 20.0, white())),
     ]
 }
 
@@ -33,18 +32,13 @@ pub fn update_ui(editor_state: &mut EditorState, renderer: &mut Renderer, fps: f
         text
     }
  
-    let mut new_content: [String; 2] = [
-        String::with_capacity(32),
+    let mut new_content: [String; 1] = [
         String::with_capacity(32),
     ]; 
 
-    let pos = String::from("Direction: unknown?");
+    let pos = String::from("ABC");
     new_content[0] = pos;
     
-    let mut fps_str = String::from("FPS: ");
-    fps_str.push_str(fps.to_string().as_str());
-    new_content[1] = fps_str;
-
     let mut i = 0;
     for w in editor_state.widgets.iter_mut() {
         match w {

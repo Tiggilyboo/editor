@@ -5,8 +5,6 @@ extern crate winit;
 extern crate vulkano;
 extern crate vulkano_win;
 
-extern crate image;
-
 mod render;
 mod events;
 mod editor;

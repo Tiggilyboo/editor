@@ -190,20 +190,5 @@ impl Renderer {
     pub fn get_screen_dimensions(&self) -> [f32; 2] {
         self.core.get_window().inner_size().into()
     }
-
-    pub fn write_cache_to_file(&self) {
-        let buffer = self.text_context.borrow_mut().cache_pixel_buffer.clone();
-        let dimensions = self.text_context.borrow_mut().cache_dimensions;
-
-        let mut image_buffer = image::ImageBuffer::new(dimensions.0 as u32, dimensions.1 as u32);
-        for (x, y, pixel) in image_buffer.enumerate_pixels_mut() {
-            let bufx = y * dimensions.1 as u32 + x;
-            let bufv = buffer[bufx as usize];
-            *pixel = image::Rgb([bufv, bufv, bufv]);
-        }
-
-        image_buffer.save_with_format("text_cache.bmp", image::ImageFormat::Bmp)
-            .unwrap();
-    }
 }
 

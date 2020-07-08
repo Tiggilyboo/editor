@@ -1,6 +1,6 @@
 #version 450
 
-layout(set = 1, binding = 0) uniform TextTransform {
+layout(set = 0, binding = 1) uniform TextTransform {
   mat4 transform;
 } ubo;
 
@@ -15,6 +15,7 @@ layout(location = 1) out vec4 f_colour;
 
 void main() {
     vec2 pos = vec2(0.0);
+
     float left = left_top.x;
     float right = right_bottom.x;
     float top = left_top.y;

@@ -82,6 +82,7 @@ pub fn run(title: &str) {
                 Event::UserEvent(event) => {
                     match event {
                         EditorEvent::OpenWidget(widget) => {
+                            println!("OpenWidget!");
                         },
                     }
                 },
@@ -113,7 +114,7 @@ pub fn run(title: &str) {
                     | WindowEvent::CursorMoved { .. }
                     | WindowEvent::ModifiersChanged(_) => {
                         input_state.update(event, screen_dimensions);
-                        events::handle_input(&mut editor_state, &input_state, &renderer.borrow_mut());
+                        events::handle_input(&mut editor_state, &input_state);
                     },
                     _ => (),
                 },
