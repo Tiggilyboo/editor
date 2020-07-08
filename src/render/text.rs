@@ -195,7 +195,7 @@ impl TextContext {
         let render_pass = Arc::new(vulkano::single_pass_renderpass!(device.clone(),
             attachments: {
                 color: {
-                    load: Clear,
+                    load: Load,
                     store: Store,
                     format: swapchain.format(),
                     samples: 1,
@@ -447,13 +447,17 @@ impl TextContext {
         );
         self.texture.image = updated_texture;
  
-        match glyph_action {
-            Ok(BrushAction::Draw(vertices)) => self.upload_vertices(vertices),
-            Ok(BrushAction::ReDraw) => {},
+        let requires_clear = match glyph_action {
+            Ok(BrushAction::Draw(vertices)) => {
+                self.upload_vertices(vertices);
+                true
+            },
+            Ok(BrushAction::ReDraw) => false,
             Err(BrushError::TextureTooSmall { suggested, .. }) => {
                 self.resize_cache(suggested.0 as usize, suggested.1 as usize);
+                true
             },
-        }
+        };
 
         let dimensions = self.framebuffers[image_num].dimensions();
         let transform = calculate_transform(0.0, dimensions[0] as f32, 0.0, dimensions[1] as f32, 1.0, -1.0);
@@ -477,6 +481,11 @@ impl TextContext {
                 .build()
                 .expect("TextContext: unable to create PersistentDescriptorSet 0")
         );
+
+
+        if requires_clear {
+            // TODO: Clear the framebuffers
+        }
 
         builder 
             .begin_render_pass(

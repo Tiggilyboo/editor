@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::thread;
 use std::str;
 use std::time::{
     Instant,
@@ -58,12 +59,10 @@ impl EditorState {
 }
 
 pub fn run(title: &str) {
-    let events_loop = &mut events::create_event_loop();
+    let events_loop = events::create_event_loop();
     let renderer = RefCell::from(Renderer::new(&events_loop, title));
     let mut editor_state = EditorState::new();
     let mut input_state = InputState::new();
-    let mut last_frame = Instant::now();
-    let mut done = false;
     let mut screen_dimensions: [f32; 2] = renderer.borrow().get_screen_dimensions();
 
     let mut initial_widgets = super::render::ui::create_initial_ui_state(
@@ -73,57 +72,54 @@ pub fn run(title: &str) {
         editor_state.add_widget(w);
     }
 
-    let mut frames: usize = 0;
-    while !done {
-        events_loop.run_return(|event: Event<'_, EditorEvent>, _, control_flow: &mut ControlFlow| {
-            *control_flow = ControlFlow::Wait;
+    events_loop.run(move |event: Event<'_, EditorEvent>, _, control_flow: &mut ControlFlow| {
+        *control_flow = ControlFlow::Wait;
 
-            match event {
-                Event::UserEvent(event) => {
-                    match event {
-                        EditorEvent::OpenWidget(widget) => {
-                            println!("OpenWidget!");
-                        },
-                    }
-                },
-                Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => {
-                    done = true;
-                },
-                Event::MainEventsCleared => {
-                    *control_flow = ControlFlow::Exit;
-                },
-                Event::WindowEvent { event: WindowEvent::Resized(size), .. } => {
-                    renderer.borrow_mut().recreate_swap_chain_next_frame();
-                    screen_dimensions[0] = size.width as f32;
-                    screen_dimensions[1] = size.height as f32;
-                },
-                Event::RedrawEventsCleared => {
-                    let fps_val = frames as f32 / last_frame.elapsed().as_secs_f32();
-                    frames = 0;
-
-                    if editor_state.show_info {
-                        update_ui(&mut editor_state, &mut renderer.borrow_mut(), fps_val); 
-                    }
-                },
-                Event::RedrawRequested(_window_id) => {
-                    renderer.borrow_mut().draw_frame();
-                },
-                Event::WindowEvent { event, .. } => match event {
-                    WindowEvent::KeyboardInput { .. }
-                    | WindowEvent::MouseInput { .. }
-                    | WindowEvent::MouseWheel { .. }
-                    | WindowEvent::CursorMoved { .. }
-                    | WindowEvent::ModifiersChanged(_) => {
-                        input_state.update(event, screen_dimensions);
-                        events::handle_input(&mut editor_state, &input_state);
+        match event {
+            Event::UserEvent(event) => {
+                match event {
+                    EditorEvent::OpenWidget(widget) => {
+                        println!("OpenWidget!");
                     },
-                    _ => (),
+                }
+            },
+            Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => {
+                println!("CloseRequested");
+                *control_flow = ControlFlow::Exit;
+            },
+            Event::MainEventsCleared => {
+                println!("MainEventsCleared");
+            },
+            Event::WindowEvent { event: WindowEvent::Resized(size), .. } => {
+                println!("WindowEvent::Resized");
+                renderer.borrow_mut().recreate_swap_chain_next_frame();
+                screen_dimensions[0] = size.width as f32;
+                screen_dimensions[1] = size.height as f32;
+            },
+            Event::RedrawEventsCleared => {
+                println!("RedrawEventsCleared");
+                if editor_state.show_info {
+                    update_ui(&mut editor_state, &mut renderer.borrow_mut(), 123.45); 
+                }
+            },
+            Event::RedrawRequested(_window_id) => {
+                println!("RedrawRequested");
+                renderer.borrow_mut().draw_frame();
+            },
+            Event::WindowEvent { event, .. } => match event {
+                WindowEvent::KeyboardInput { .. }
+                | WindowEvent::MouseInput { .. }
+                | WindowEvent::MouseWheel { .. }
+                | WindowEvent::CursorMoved { .. }
+                | WindowEvent::ModifiersChanged(_) => {
+                    if input_state.update(event, screen_dimensions) {
+                        renderer.borrow().request_redraw();
+                    }
+                    events::handle_input(&mut editor_state, &input_state);
                 },
                 _ => (),
-            }
-        });
-        
-        last_frame = Instant::now();
-        frames += 1;
-    }
+            },
+            _ => (),
+        }
+    });
 }

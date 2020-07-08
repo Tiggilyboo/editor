@@ -30,14 +30,20 @@ impl Default for MouseState {
 }
 
 impl MouseState {
-    pub fn update_via_window_event(&mut self, input: WindowEvent, window_dimensions: [f32; 2]) {
+    // update_via_window_event returns true when the state has changed
+    pub fn update_via_window_event(&mut self, input: WindowEvent, window_dimensions: [f32; 2]) -> bool {
         match input {
             WindowEvent::MouseInput { state, button, .. } => {
+                let change = self.state != Some(state) || self.button != Some(button);
+
                 self.state = Some(state);
                 self.button = Some(button);
+                change
             },
             WindowEvent::MouseWheel { delta: MouseScrollDelta::LineDelta(x, y), .. } => {
+                let change = self.line_scroll != (x, y);
                 self.line_scroll = (x, y);
+                change
             },
             WindowEvent::CursorMoved { position, .. } => {
                 let (half_x, half_y) = (window_dimensions[0] / 2.0, window_dimensions[1] / 2.0); 
@@ -48,10 +54,12 @@ impl MouseState {
                 self.delta.0 = self.position.0 - x;
                 self.delta.1 = self.position.1 - y;
 
+                let change = self.position.0 != x || self.position.1 != y;
                 self.position.0 = x;
                 self.position.1 = y;
+                change
             },
-            _ => (),
+            _ => false,
         }
     }
 }
@@ -72,7 +80,12 @@ impl InputState {
         }
     }
 
-    pub fn update(&mut self, event: WindowEvent, window_dimensions: [f32; 2]) { 
+    // update the input state with passed events
+    // returns whether the state has changed or not
+    pub fn update(&mut self, event: WindowEvent, window_dimensions: [f32; 2]) -> bool { 
+        let old_keycode = self.keycode.clone();
+        let old_mods = self.modifiers;
+
         self.keycode = match event {
             WindowEvent::KeyboardInput { input, .. } => {
                 if input.state == ElementState::Pressed {
@@ -89,7 +102,12 @@ impl InputState {
             },
             _ => ModifiersState::empty(),
         };
-        self.mouse.update_via_window_event(event, window_dimensions); 
+        let mouse_changed = self.mouse.update_via_window_event(event, window_dimensions); 
+
+        // Change detected?
+        old_keycode != self.keycode
+            || old_mods != self.modifiers
+            || mouse_changed
     }
 }
 
