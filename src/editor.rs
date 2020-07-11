@@ -1,5 +1,4 @@
 use std::cell::RefCell;
-use std::thread;
 use std::str;
 use std::time::{
     Instant,
@@ -12,7 +11,6 @@ use super::events::{
 };
 
 use winit::event_loop::ControlFlow;
-use winit::platform::desktop::EventLoopExtDesktop;
 use winit::event::{
     WindowEvent,
     Event,
@@ -68,6 +66,7 @@ pub fn run(title: &str) {
     let mut initial_widgets = super::render::ui::create_initial_ui_state(
         screen_dimensions,
     );
+
     for w in initial_widgets.drain(..) {
         editor_state.add_widget(w);
     }
@@ -88,22 +87,20 @@ pub fn run(title: &str) {
                 *control_flow = ControlFlow::Exit;
             },
             Event::MainEventsCleared => {
-                println!("MainEventsCleared");
             },
             Event::WindowEvent { event: WindowEvent::Resized(size), .. } => {
                 println!("WindowEvent::Resized");
                 renderer.borrow_mut().recreate_swap_chain_next_frame();
                 screen_dimensions[0] = size.width as f32;
                 screen_dimensions[1] = size.height as f32;
+
+                update_ui(&mut editor_state, &mut renderer.borrow_mut());
             },
             Event::RedrawEventsCleared => {
-                println!("RedrawEventsCleared");
-                if editor_state.show_info {
-                    update_ui(&mut editor_state, &mut renderer.borrow_mut(), 123.45); 
-                }
             },
             Event::RedrawRequested(_window_id) => {
                 println!("RedrawRequested");
+                
                 renderer.borrow_mut().draw_frame();
             },
             Event::WindowEvent { event, .. } => match event {
@@ -112,10 +109,12 @@ pub fn run(title: &str) {
                 | WindowEvent::MouseWheel { .. }
                 | WindowEvent::CursorMoved { .. }
                 | WindowEvent::ModifiersChanged(_) => {
-                    if input_state.update(event, screen_dimensions) {
-                        renderer.borrow().request_redraw();
-                    }
+                    let redraw = input_state.update(event, screen_dimensions);
                     events::handle_input(&mut editor_state, &input_state);
+
+                    if redraw {
+                        update_ui(&mut editor_state, &mut renderer.borrow_mut());
+                    }
                 },
                 _ => (),
             },

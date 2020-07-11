@@ -15,45 +15,23 @@ pub fn create_initial_ui_state(screen_size: [f32; 2]) -> Vec<WidgetKind> {
     ]
 }
 
-pub fn update_ui(editor_state: &mut EditorState, renderer: &mut Renderer, fps: f32) {
-    fn format_slice(prefix: &str, vec: &[f32]) -> String {
-        let mut text = String::from(prefix);
-        let len = vec.len();
-        text.push('[');
-
-        for (i, v) in vec.iter().enumerate() {
-            text.push_str(v.to_string().as_str());
-            if i != len - 1 {
-                text.push_str(", ");
-            }
-        }
-        text.push(']');
-
-        text
-    }
- 
-    let mut new_content: [String; 1] = [
-        String::with_capacity(32),
-    ]; 
-    let fps_val = fps as u32;
-
-    new_content[0] = format_slice("FPS: ", &[fps_val as f32]);
-    
-    let mut i = 0;
+pub fn update_ui(editor_state: &mut EditorState, renderer: &mut Renderer) {
+    let mut requires_redraw = false;
     for w in editor_state.widgets.iter_mut() {
         match w {
             WidgetKind::Text(text_widget) => {
-                let old_content = text_widget.get_content();
-
-                if old_content != new_content[i] {
-                    text_widget.set_content(new_content[i].as_str());
-                    text_widget.draw(renderer);
-                    renderer.request_redraw();
+                if text_widget.dirty() {
+                    println!("update_ui: queuing text for redraw");
+                    text_widget.queue_draw(renderer);
+                    text_widget.set_dirty(false);
+                    requires_redraw = true;
                 }
             },
             _ => (),
         }
+    }
 
-        i += 1;
+    if requires_redraw {
+        renderer.request_redraw();
     }
 }

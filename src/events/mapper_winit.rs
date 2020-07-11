@@ -1,6 +1,5 @@
 use winit::event::{
     ModifiersState,
-    KeyboardInput,
     VirtualKeyCode,
 };
 
@@ -107,10 +106,11 @@ fn kc_numeric_symbols(modifiers: ModifiersState, kc: VirtualKeyCode) -> Option<S
     Some(ret.to_string())
 }
 
-pub fn key_into_string(modifiers: ModifiersState, input: KeyboardInput) -> Option<String> {
-    if input.virtual_keycode.is_none() {
+pub fn input_into_string(modifiers: ModifiersState, virtual_keycode: Option<VirtualKeyCode>) -> Option<String> {
+    if virtual_keycode.is_none() {
         return None;
     }
+    let kc = virtual_keycode.unwrap();
 
     let alt = modifiers.alt();
     let ctrl = modifiers.ctrl();
@@ -120,5 +120,10 @@ pub fn key_into_string(modifiers: ModifiersState, input: KeyboardInput) -> Optio
         return None
     }
 
-    kc_alpha(input.virtual_keycode.unwrap(), shift)
+    let alpha = kc_alpha(kc, shift);
+    if alpha.is_some() {
+        alpha
+    } else {
+        kc_numeric_symbols(modifiers, kc)
+    } 
 }

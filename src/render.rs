@@ -175,7 +175,9 @@ impl Renderer {
                 self.core.get_graphics_queue().family()
         ).expect("unable to create AutoCommandBufferBuilder");
 
-        self.text_context.borrow_mut().draw_text(&mut builder, image_index);
+        self.text_context
+            .borrow_mut()
+            .draw_text(&mut builder, image_index);
 
         let command_buffer = builder.build()
             .expect("unable to build command buffer from builder");

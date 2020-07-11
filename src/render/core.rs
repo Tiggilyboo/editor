@@ -347,7 +347,7 @@ impl RenderCore {
         Arc::new(vulkano::single_pass_renderpass!(self.device.clone(),
             attachments: {
                 color: {
-                    load: Load,
+                    load: Clear,
                     store: Store,
                     format: color_fmt.unwrap_or(self.swap_chain.format()),
                     samples: 1,

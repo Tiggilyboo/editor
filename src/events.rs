@@ -1,7 +1,10 @@
+pub mod state;
+mod mapper_winit;
+
 use winit::event_loop::EventLoop;
 use winit::event::VirtualKeyCode;
+use mapper_winit::input_into_string;
 
-pub mod state;
 use state::InputState;
 use super::editor::EditorState;
 
@@ -26,9 +29,30 @@ pub fn handle_input(
     if input_state.keycode.is_some() {
         match input_state.keycode.unwrap() {
             VirtualKeyCode::F1 => {
-                editor_state.toggle_info()
+                editor_state.toggle_info();
             },
-            _ => (),
+            _ => {
+                let input_string = input_into_string(input_state.modifiers, input_state.keycode);
+                if input_string.is_some() {
+                    let widget = editor_state.widgets.iter_mut()
+                        .next().unwrap();
+
+                    match widget {
+                        WidgetKind::Text(text_widget) => {
+                            let mut content = String::from(text_widget.content());
+                            content.push_str(input_string.unwrap().as_str());
+                            println!("content is now: {}", content);
+
+                            text_widget.set_content(content.as_str());
+                            text_widget.set_dirty(true);
+                        },
+                        _ => (),
+                    }
+                    
+
+
+                }
+            },
         }
     }
 }
