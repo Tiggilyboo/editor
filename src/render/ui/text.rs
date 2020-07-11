@@ -34,7 +34,6 @@ impl TextWidget {
 
     pub fn set_dirty(&mut self, dirty: bool) {
         self.dirty = dirty;
-        println!("Set dirty: {}", dirty);
     }
 }
 
@@ -48,7 +47,6 @@ impl Widget for TextWidget {
     }
     
     fn dirty(&self) -> bool {
-        println!("Is dirty: {}", self.dirty);
         self.dirty
     }
 

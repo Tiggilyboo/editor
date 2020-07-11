@@ -1,4 +1,7 @@
+mod xi_thread;
+
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::str;
 use std::time::{
     Instant,
@@ -22,12 +25,24 @@ use super::render::ui::widget::{
 use super::render::ui::update_ui;
 use super::events::state::InputState;
 
+type ViewId = String;
+
 pub struct EditorState {
     show_info: bool,
     time: Instant,
+
+    focused: Option<ViewId>,
+    views: HashMap<ViewId, ViewState>,
     
     pub widgets: Vec<WidgetKind>, 
 }
+
+#[derive(Clone)]
+struct ViewState {
+    id: usize,
+    filename: Option<String>,
+}
+
 
 impl EditorState {
     pub fn new() -> Self {
@@ -35,6 +50,8 @@ impl EditorState {
             show_info: true,
             widgets: vec!(),
             time: Instant::now(),
+            focused: Default::default(),
+            views: HashMap::new(),
         }
     }
     

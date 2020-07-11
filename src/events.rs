@@ -41,16 +41,12 @@ pub fn handle_input(
                         WidgetKind::Text(text_widget) => {
                             let mut content = String::from(text_widget.content());
                             content.push_str(input_string.unwrap().as_str());
-                            println!("content is now: {}", content);
 
                             text_widget.set_content(content.as_str());
                             text_widget.set_dirty(true);
                         },
                         _ => (),
                     }
-                    
-
-
                 }
             },
         }
