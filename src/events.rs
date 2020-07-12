@@ -32,15 +32,25 @@ pub fn handle_input(
                 editor_state.toggle_info();
             },
             _ => {
-                let input_string = input_into_string(input_state.modifiers, input_state.keycode);
-                if input_string.is_some() {
-                    let widget = editor_state.widgets.iter_mut().next().unwrap();
+                let should_keydown = input_state.keycode.is_some();
+                let should_mouse = input_state.mouse.button.is_some()
+                    || input_state.mouse.line_scroll.1 != 0.0;
 
-                    match widget {
-                        WidgetKind::Text(text_widget) => {
-                            text_widget.set_dirty(true);
-                        },
-                        _ => (),
+                if !should_keydown && !should_mouse {
+                    return;
+                }
+
+                if let Some(widget_view) = &mut editor_state.widgets.iter_mut().filter_map(|w| {
+                    match w {
+                        WidgetKind::View(view) => Some(view),
+                        _ => None,
+                    }
+                }).next() {
+                    if should_keydown {
+                        let _handled = widget_view.keydown(input_state.keycode.unwrap(), input_state.modifiers);
+                    }
+                    if should_mouse {
+                        widget_view.mouse_scroll(input_state.mouse.line_scroll.1);
                     }
                 }
             },

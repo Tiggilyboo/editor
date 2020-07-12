@@ -1,12 +1,12 @@
 mod shaders;
 use shaders::{
     Vertex,
-    TextVertex,
     TextTransform,
     vertex_shader,
     fragment_shader,
 };
 
+use std::cell::RefCell;
 use std::sync::Arc;
 use std::iter;
 use vulkano::device::{
@@ -72,10 +72,21 @@ pub struct TextContext {
     vertex_buffer: Option<Arc<CpuAccessibleBuffer<[Vertex]>>>,
     index_buffer: Option<Arc<dyn TypedBufferAccess<Content=[u16]> + Send + Sync>>,
     
-    glyph_brush: GlyphBrush<TextVertex>,
+    glyph_brush: RefCell<GlyphBrush<TextVertex>>,
     texture: TextureCache,
     background_colour: [f32; 4],
 }
+
+#[derive(Default, Debug, Clone)]
+pub struct TextVertex {
+    pub left_top: [f32; 2],
+    pub right_bottom: [f32; 2],
+    pub depth: f32,
+    pub tex_left_top: [f32; 2],
+    pub tex_right_bottom: [f32; 2],
+    pub colour: [f32; 4],
+}
+
 
 struct TextureCache {
     pub cache_pixel_buffer: Vec<u8>,
@@ -153,6 +164,18 @@ fn calculate_transform(left: f32, right: f32, bottom: f32, top: f32, near: f32, 
     }
 }
 
+#[inline]
+pub fn to_verts(text_vertex: &TextVertex) -> [Vertex; 4] {
+    [
+        // 1  2  5  6
+        // 3  4  7  8
+        Vertex::new([text_vertex.left_top[0], text_vertex.left_top[1]], text_vertex.tex_left_top, text_vertex.colour),
+        Vertex::new([text_vertex.left_top[0], text_vertex.right_bottom[1]], [text_vertex.tex_left_top[0], text_vertex.tex_right_bottom[1]], text_vertex.colour),
+        Vertex::new([text_vertex.right_bottom[0], text_vertex.left_top[1]], [text_vertex.tex_right_bottom[0], text_vertex.tex_left_top[1]], text_vertex.colour),
+        Vertex::new([text_vertex.right_bottom[0], text_vertex.right_bottom[1]], text_vertex.tex_right_bottom, text_vertex.colour),
+    ]
+}
+
 impl TextContext {
     pub fn new<W>(
         device: Arc<Device>, 
@@ -176,10 +199,10 @@ impl TextContext {
             .expect("unable to load font");
 
         println!("Loading GlyphBrushBuilder...");
-        let glyph_brush = GlyphBrushBuilder::using_font(font)
-            .build();
+        let glyph_brush = RefCell::from(GlyphBrushBuilder::using_font(font)
+            .build());
 
-        let cache_dimensions = glyph_brush.texture_dimensions();
+        let cache_dimensions = glyph_brush.borrow().texture_dimensions();
         let cache_dimensions = (cache_dimensions.0 as usize, cache_dimensions.1 as usize);
         let cache_pixel_buffer = vec![0; cache_dimensions.0 * cache_dimensions.1];
 
@@ -263,7 +286,7 @@ impl TextContext {
     }
 
     pub fn queue_text(&mut self, section: &Section) {
-        self.glyph_brush.queue(section);
+        self.glyph_brush.borrow_mut().queue(section);
     }
 
     fn update_texture(
@@ -329,7 +352,7 @@ impl TextContext {
 
     fn resize_cache(&mut self, width: usize, height: usize) {
         let max_image_dimension = Self::get_max_image_dimension(self.device.clone());
-        let glyph_dimensions = self.glyph_brush.texture_dimensions();
+        let glyph_dimensions = self.glyph_brush.borrow().texture_dimensions();
         let cache_dimensions = if (width > max_image_dimension || height > max_image_dimension)
             && ((glyph_dimensions.0 as usize) < max_image_dimension || (glyph_dimensions.1 as usize) < max_image_dimension)
         {
@@ -342,7 +365,8 @@ impl TextContext {
 
         self.texture.cache_dimensions = cache_dimensions;
         self.texture.cache_pixel_buffer = vec![0; cache_dimensions.0 * cache_dimensions.1];
-        self.glyph_brush.resize_texture(cache_dimensions.0 as u32, cache_dimensions.1 as u32);
+        self.glyph_brush.borrow_mut()
+            .resize_texture(cache_dimensions.0 as u32, cache_dimensions.1 as u32);
     }
 
     fn upload_vertices(& mut self, vertices: Vec<TextVertex>) {
@@ -351,7 +375,7 @@ impl TextContext {
         let mut i = 0;
 
         for v in vertices.iter() {
-            let glyph_verts = v.to_verts();
+            let glyph_verts = to_verts(v);
             quadrupled_verts.push(glyph_verts[0]);
             quadrupled_verts.push(glyph_verts[1]);
             quadrupled_verts.push(glyph_verts[2]);
@@ -396,8 +420,8 @@ impl TextContext {
         let queue = self.queue.clone();
         let mut updated_texture = self.texture.image.clone();
         
-        let glyph_action = self.glyph_brush.process_queued(
-            |rect, tex_data| {
+        let glyph_action = self.glyph_brush.borrow_mut()
+            .process_queued(|rect, tex_data| {
                 updated_texture = Some(Self::update_texture(
                     device.clone(),
                     queue.clone(),
@@ -466,6 +490,27 @@ impl TextContext {
 
             .end_render_pass()
             .expect("unable to end render pass")
+    }
+
+    pub fn hit_test(&self, section: &Section, x: f32, y: f32) -> usize {
+        if let Some(glyph_in_position) = self.glyph_brush.borrow_mut().glyphs(section).filter(|section_glyph| {
+            let pos = section_glyph.glyph.position;
+            if pos.x > x {
+                false
+            } else if pos.y > y {
+                false
+            } else {
+                true
+            }
+        }).next() {
+            glyph_in_position.byte_index
+        } else {
+            if let Some(last_glyph) = self.glyph_brush.borrow_mut().glyphs(section).last() {
+               last_glyph.byte_index 
+            } else {
+                0
+            }
+        }
     }
 }
 

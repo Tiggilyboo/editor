@@ -1,5 +1,6 @@
 use std::sync::Arc;
 use std::cell::RefCell;
+use std::cell::RefMut;
 
 use vulkano::command_buffer::{
     AutoCommandBuffer,

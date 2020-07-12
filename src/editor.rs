@@ -96,7 +96,7 @@ pub fn run(title: &str) {
         match event {
             Event::UserEvent(event) => {
                 match event {
-                    EditorEvent::OpenWidget(widget) => {
+                    EditorEvent::OpenWidget(_widget) => {
                         println!("OpenWidget!");
                     },
                 }

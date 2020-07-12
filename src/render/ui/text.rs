@@ -1,18 +1,21 @@
 use super::widget::Widget;
 use crate::render::Renderer;
 
+use glyph_brush::{
+    Layout,
+    Section,
+};
+
 use crate::editor::linecache::{
     Line,
     StyleSpan,
 };
+use crate::render::text::TextContext;
 use glyph_brush::{
     OwnedSection,
-    Section,
     Text,
-    Layout,
 };
 
-#[derive(Debug, Clone)]
 pub struct TextWidget {
     index: usize,
     dirty: bool,
@@ -42,8 +45,16 @@ impl TextWidget {
         }
     }
 
-    pub fn set_dirty(&mut self, dirty: bool) {
-        self.dirty = dirty;
+    pub fn set_position(&mut self, x: f32, y: f32) {
+       self.section.screen_position = (x, y);
+    }
+
+    pub fn hit_test(&mut self, text_context: &TextContext, x: f32, y: f32) -> usize {
+        text_context.hit_test(&self.section.to_borrowed(), x, y)
+    }
+
+    pub fn set_dirty(&mut self) {
+        self.dirty = true;
     }
 }
 
