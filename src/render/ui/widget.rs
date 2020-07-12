@@ -1,10 +1,11 @@
 use crate::render::Renderer;
 use super::text::TextWidget;
+use crate::render::ui::view::EditViewWidget;
 
 #[derive(Clone)]
 pub enum WidgetKind {
     Text(TextWidget),
-    Button,
+    View(EditViewWidget),
 }
 
 pub trait Widget {

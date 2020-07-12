@@ -1,4 +1,6 @@
 mod xi_thread;
+pub mod rpc;
+pub mod linecache;
 
 use std::cell::RefCell;
 use std::collections::HashMap;

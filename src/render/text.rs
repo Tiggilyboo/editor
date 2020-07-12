@@ -15,7 +15,6 @@ use vulkano::device::{
 }; 
 use vulkano::format::{
     R8Unorm,
-    ClearValue,
 };
 use vulkano::pipeline::{
     GraphicsPipeline,
@@ -59,29 +58,21 @@ use vulkano::command_buffer::{
     AutoCommandBufferBuilder,
     DynamicState,
 };  
-use ab_glyph::{
-    *
-};
-use glyph_brush::{ * };
-
-#[derive(Debug)]
-struct TextData {
-    section: OwnedSection,
-    colour: [f32; 4],
-}
+use ab_glyph::*;
+use glyph_brush::*;
 
 pub struct TextContext {
     device: Arc<Device>,
     queue: Arc<Queue>,
-    glyph_brush: GlyphBrush<TextVertex>,
     pipeline: Arc<GraphicsPipeline<SingleBufferDefinition<Vertex>, 
         Box<dyn PipelineLayoutAbstract + Send + Sync>, 
         Arc<dyn RenderPassAbstract + Send + Sync>>>,
     framebuffers: Vec<Arc<dyn FramebufferAbstract + Send + Sync>>,
     uniform_buffer_pool: CpuBufferPool<TextTransform>,
-    texts: Vec<TextData>,
     vertex_buffer: Option<Arc<CpuAccessibleBuffer<[Vertex]>>>,
-    index_buffer: Option<Arc<TypedBufferAccess<Content=[u16]> + Send + Sync>>,
+    index_buffer: Option<Arc<dyn TypedBufferAccess<Content=[u16]> + Send + Sync>>,
+    
+    glyph_brush: GlyphBrush<TextVertex>,
     texture: TextureCache,
     background_colour: [f32; 4],
 }
@@ -146,6 +137,7 @@ pub fn into_vertex(GlyphVertex {
 
 }
 
+#[inline]
 fn calculate_transform(left: f32, right: f32, bottom: f32, top: f32, near: f32, far: f32) -> TextTransform {
     let tx = -(right + left) / (right - left);
     let ty = -(top + bottom) / (top - bottom);
@@ -263,7 +255,6 @@ impl TextContext {
             },
             pipeline,
             framebuffers,
-            texts: vec!(),
             uniform_buffer_pool,
             vertex_buffer: None, 
             index_buffer: None,
@@ -271,36 +262,8 @@ impl TextContext {
         }
     }
 
-    pub fn queue_text(&mut self, index: usize, x: f32, y: f32, font_size: f32, colour: [f32; 4], text: &str) {
-        let dimensions = self.framebuffers[0].dimensions();
-
-        let section = if self.texts.len() > index {
-            let mut cached = self.texts[index].section.clone();
-            cached.screen_position = (x, y);
-            cached.bounds = (dimensions[0] as f32, dimensions[1] as f32);
-            // TODO: index??
-            cached.text[0].text = String::from(text);
-            cached.text[0].scale = PxScale::from(font_size);
-
-            cached
-        } else {
-            Section::default()
-                .add_text(Text::new(text)
-                    .with_scale(font_size)
-                    .with_color(colour))
-                .with_bounds((dimensions[0] as f32, dimensions[1] as f32))
-                .with_layout(Layout::default())
-                .with_screen_position((x, y))
-                .to_owned()
-        };
-        self.glyph_brush.queue(section.to_borrowed());
-
-        let data = TextData {
-            section,
-            colour,
-        };
-
-        self.texts.push(data);
+    pub fn queue_text(&mut self, section: &Section) {
+        self.glyph_brush.queue(section);
     }
 
     fn update_texture(

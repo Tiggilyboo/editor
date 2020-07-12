@@ -34,15 +34,10 @@ pub fn handle_input(
             _ => {
                 let input_string = input_into_string(input_state.modifiers, input_state.keycode);
                 if input_string.is_some() {
-                    let widget = editor_state.widgets.iter_mut()
-                        .next().unwrap();
+                    let widget = editor_state.widgets.iter_mut().next().unwrap();
 
                     match widget {
                         WidgetKind::Text(text_widget) => {
-                            let mut content = String::from(text_widget.content());
-                            content.push_str(input_string.unwrap().as_str());
-
-                            text_widget.set_content(content.as_str());
                             text_widget.set_dirty(true);
                         },
                         _ => (),

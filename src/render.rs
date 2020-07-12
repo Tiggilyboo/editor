@@ -19,6 +19,7 @@ use vulkano::sync::{
     self,
     GpuFuture,
 };
+use glyph_brush::Section;
 
 mod core;
 use self::core::RenderCore;
@@ -88,9 +89,8 @@ impl Renderer {
         Box::new(sync::now(device.clone())) as Box<dyn GpuFuture>
     }
 
-    pub fn queue_text(&mut self, index: usize, pos: [f32; 2], colour: [f32; 4], font_size: f32, text: &str) {
-        self.text_context.borrow_mut()
-            .queue_text(index, pos[0], pos[1], font_size, colour, text)
+    pub fn queue_text(&mut self, section: &Section) {
+        self.text_context.borrow_mut().queue_text(section)
     }
 
     pub fn draw_frame(&mut self) { 

@@ -4,8 +4,9 @@ use std::sync::mpsc::Receiver;
 use std::thread;
 
 use serde_json::Value;
+use serde_json::json;
 
-use xi_thread::XiPeer;
+use super::xi_thread::XiPeer;
 
 #[derive(Clone)]
 pub struct Core {
@@ -15,7 +16,7 @@ pub struct Core {
 struct CoreState {
     xi_peer: XiPeer,
     id: u64,
-    pending: BTreeMap<u64, Box<Callback>>,
+    pending: BTreeMap<u64, Box<dyn Callback>>,
 }
 
 trait Callback: Send {
