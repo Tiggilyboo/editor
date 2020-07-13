@@ -1,4 +1,3 @@
-use std::cell::RefCell;
 use std::ops::Range;
 use std::sync::{
     Mutex,
@@ -101,7 +100,8 @@ impl EditView {
     pub fn new(index: usize, size: [f32; 2], scale: f32) -> Self {
         Self {
             index,
-            dirty: false,
+            size,
+            dirty: true,
             view_id: None,
             line_cache: LineCache::new(),
             resources: Resources {
@@ -112,7 +112,6 @@ impl EditView {
             },
             scroll_offset: 0.0,
             viewport: 0..0,
-            size: [0.0, 0.0],
             core: Default::default(),
             pending: Default::default(),
         }
@@ -134,6 +133,7 @@ impl EditView {
     fn apply_update(&mut self, update: &Value) {
         self.line_cache.apply_update(update);
         self.constrain_scroll();
+        self.dirty = true;
     }
 
     pub fn set_size(&mut self, size: [f32; 2]) {
@@ -141,12 +141,10 @@ impl EditView {
         self.dirty = true;
     }
 
-    pub fn char(&mut self, ch: u32, _mods: u32) {
-        if let Some(c) = ::std::char::from_u32(ch) {
-            if ch >= 0x20 {
-                let params = json!({"chars": c.to_string()});
-                self.send_edit_cmd("insert", &params);
-            }
+    pub fn char(&mut self, ch: char) {
+        if ch as u32 >= 0x20 {
+            let params = json!({"chars": ch.to_string()});
+            self.send_edit_cmd("insert", &params);
         }
     }
 
@@ -162,6 +160,11 @@ impl EditView {
 
             let core = core.unwrap();
             core.lock().unwrap().send_notification("edit", &edit_params);
+            println!("fe->core: {}", json!({
+                "method": method,
+                "params": params,
+                "view_id": view_id,
+            }));
         } else {
             self.pending.push((method.to_owned(), params.clone()));
         }
@@ -269,6 +272,33 @@ impl EditView {
                 self.send_action(action);
             },
             _ => return false,
+        }
+
+        true
+    }
+
+    pub fn poke(&mut self, command: EditViewCommands) -> bool {
+        match command {
+            EditViewCommands::ViewId(view_id) => {
+                self.view_id = Some(view_id.to_string());
+                self.viewport = 0..0;
+                self.update_viewport();
+
+                let pending = std::mem::replace(&mut self.pending, Vec::new());
+                for notification in pending {
+                    let (method, params) = notification;
+                    self.send_edit_cmd(&method, &params);
+                }
+            },
+            EditViewCommands::Core(core) => self.core = core.clone(),
+            EditViewCommands::ApplyUpdate(update) => self.apply_update(&update),
+            EditViewCommands::ScrollTo(line) => self.scroll_to(line),
+            EditViewCommands::Undo => self.send_action("undo"),
+            EditViewCommands::Redo => self.send_action("redo"),
+            EditViewCommands::SelectAll => self.send_action("select_all"),
+            _ => {
+                return false;
+            },
         }
 
         true

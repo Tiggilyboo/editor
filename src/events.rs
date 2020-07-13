@@ -37,6 +37,7 @@ pub fn handle_input(
                     || input_state.mouse.line_scroll.1 != 0.0;
 
                 if !should_keydown && !should_mouse {
+                    println!("!keydown && !mouse");
                     return;
                 }
 
@@ -47,7 +48,12 @@ pub fn handle_input(
                     }
                 }).next() {
                     if should_keydown {
-                        let _handled = widget_view.keydown(input_state.keycode.unwrap(), input_state.modifiers);
+                        if let Some(input_string) = input_into_string(input_state.modifiers, input_state.keycode) {
+                            let ch = input_string.chars().next().unwrap();
+                            widget_view.char(ch);
+                        } else {
+                            widget_view.keydown(input_state.keycode.unwrap(), input_state.modifiers);
+                        }
                     }
                     if should_mouse {
                         widget_view.mouse_scroll(input_state.mouse.line_scroll.1);

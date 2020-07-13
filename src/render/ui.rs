@@ -11,15 +11,6 @@ pub mod widget;
 pub mod text;
 pub mod view;
 
-pub fn create_initial_ui_state(screen_size: [f32; 2]) -> Vec<WidgetKind> {
-    #[inline]
-    fn white() -> [f32; 4] { [1.0, 1.0, 1.0, 1.0] }
-
-    vec![
-        WidgetKind::View(EditView::new(0, screen_size, 20.0)),
-    ]
-}
-
 pub fn update_ui(editor_state: &mut EditorState, renderer: &mut Renderer) {
     let mut requires_redraw = false;
 
