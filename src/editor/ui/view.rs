@@ -9,7 +9,6 @@ use winit::event::{
     ModifiersState,
 };
 
-use crate::render::text::TextContext;
 use crate::editor::rpc::Core;
 use crate::editor::linecache::LineCache;
 use serde_json::{
@@ -18,7 +17,8 @@ use serde_json::{
 };
 
 use crate::render::Renderer;
-use crate::render::ui::{
+use crate::render::text::TextContext;
+use super::{
     text::TextWidget,
     widget::Widget,
 };
@@ -32,6 +32,7 @@ pub enum EditViewCommands {
     ApplyUpdate(Value),
     ScrollTo(usize),
     Core(Weak<Mutex<Core>>),
+    Draw(Weak<Mutex<Renderer>>),
     Undo,
     Redo,
     UpperCase,

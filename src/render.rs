@@ -1,6 +1,8 @@
+mod core;
+pub mod text;
+
 use std::sync::Arc;
 use std::cell::RefCell;
-use std::cell::RefMut;
 
 use vulkano::command_buffer::{
     AutoCommandBuffer,
@@ -21,16 +23,8 @@ use vulkano::sync::{
     GpuFuture,
 };
 use glyph_brush::Section;
-
-mod core;
 use self::core::RenderCore;
-
-mod text;
-use self::text::{
-    TextContext,
-};
-
-pub mod ui;
+use self::text::TextContext;
 
 use super::events::EditorEventLoop;
 

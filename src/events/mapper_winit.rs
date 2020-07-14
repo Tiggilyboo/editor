@@ -106,7 +106,7 @@ fn kc_numeric_symbols(modifiers: ModifiersState, kc: VirtualKeyCode) -> Option<S
     Some(ret.to_string())
 }
 
-pub fn input_into_string(modifiers: ModifiersState, virtual_keycode: Option<VirtualKeyCode>) -> Option<String> {
+pub fn map_input_into_string(modifiers: ModifiersState, virtual_keycode: Option<VirtualKeyCode>) -> Option<String> {
     if virtual_keycode.is_none() {
         return None;
     }

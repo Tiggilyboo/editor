@@ -1,6 +1,6 @@
 use crate::render::Renderer;
 use super::text::TextWidget;
-use crate::render::ui::view::EditView;
+use super::view::EditView;
 
 pub enum WidgetKind {
     Text(TextWidget),
