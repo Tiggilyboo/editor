@@ -28,6 +28,9 @@ use ui::view::{
     EditView,
     EditViewCommands,
 };
+use ui::widget::{
+    Widget,
+};
 use state::{
     EditorState,
 };
@@ -39,6 +42,7 @@ use rpc::{ Core, Handler };
 struct App {
     core: Arc<Mutex<Core>>,
     state: Arc<Mutex<EditorState>>,
+    input: Arc<Mutex<InputState>>,
 }
 
 #[derive(Clone)]
@@ -56,10 +60,6 @@ impl AppDispatcher {
     fn set_app(&self, app: &App) {
         *self.app.lock().unwrap() = Some(app.clone());
     }
-
-    fn get_app(&self) -> std::sync::MutexGuard<'_, Option<App>, > {
-        self.app.lock().unwrap()
-    }
 }
 
 impl App {
@@ -67,6 +67,7 @@ impl App {
         Self {
             core: Arc::new(Mutex::new(core)),
             state: Arc::new(Mutex::new(EditorState::new())),
+            input: Arc::new(Mutex::new(InputState::new())),
         }
     }
 
@@ -74,18 +75,17 @@ impl App {
         self.core.lock().unwrap()
     }
 
-    fn get_state(&self) -> std::sync::MutexGuard<'_, EditorState, > {
-        self.state.lock().unwrap()
-    }
-    
     fn send_notification(&self, method: &str, params: &Value) {
+        println!("send_notification, method = {}", method);
         self.get_core().send_notification(method, params);
+        println!("sent");
     }
 
     fn send_view_cmd(&self, command: EditViewCommands) {
         let mut state = self.state.lock().unwrap();
         let view_state = state.get_focused_view();
 
+        println!("poking view from send_view_cmd");
         view_state.poke(command);
     }
 
@@ -104,14 +104,18 @@ impl App {
 
         self.get_core().send_request("new_view", &params, move |value| {
             let view_id = value.clone().as_str().unwrap().to_string();
-            let mut state = state.lock().unwrap();
+            println!("sending request for new view: {}", view_id);
 
-            state.focused = Some(view_id.clone());
-            state.views.insert(view_id.clone(), EditView::new(0, screen_size, font_size));
+            if let Ok(ref mut state) = state.try_lock() {
+                state.focused = Some(view_id.clone());
+                state.views.insert(view_id.clone(), EditView::new(0, screen_size, font_size));
 
-            let edit_view = state.get_focused_view();
-            edit_view.poke(EditViewCommands::Core(core));
-            edit_view.poke(EditViewCommands::ViewId(view_id));
+                let edit_view = state.get_focused_view();
+                edit_view.poke(EditViewCommands::Core(core));
+                edit_view.poke(EditViewCommands::ViewId(view_id));
+            } else {
+                println!("unable to lock state to set focused view_id with new EditView widget");
+            }
         });
     }
 
@@ -122,10 +126,33 @@ impl App {
             _ => println!("unhandled core->fe method: {}", method),
         }
     }
+
+    fn update_input(&self, event: WindowEvent, window_dimensions: [f32; 2]) -> bool {
+        let processed: bool;
+        if let Ok(ref mut input) = self.input.try_lock() {
+            processed = input.update(event, window_dimensions);
+        } else {
+            println!("unable to update_input from mutex lock");
+            return false
+        }
+        if !processed {
+            return false;
+        }
+        if let Ok(ref mut state) = self.state.try_lock() {
+            println!("editor_state updating from input");
+            state.update_from_input(self.input.clone());
+
+            processed
+        } else {
+            println!("unable to lock state in update_input");
+            false
+        }
+    }
 }
 
 impl Handler for AppDispatcher {
     fn notification(&self, method: &str, params: &Value) {
+        println!("AppDispatcher rx method: {} = {}", method, params.to_string());
         if let Some(ref app) = *self.app.lock().unwrap() {
             app.handle_cmd(method, params);
         }
@@ -135,16 +162,17 @@ impl Handler for AppDispatcher {
 pub fn run(title: &str) {
     let events_loop = events::create_event_loop();
     let renderer = RefCell::new(Renderer::new(&events_loop, title));
-    let mut input_state = InputState::new();
     let mut screen_dimensions: [f32; 2] = renderer.borrow().get_screen_dimensions();
 
     let handler = AppDispatcher::new();
     let (xi_peer, rx) = xi_thread::start_xi_thread();
     let core = Core::new(xi_peer, rx, handler.clone());
     let app = App::new(core);
-    handler.set_app(&app);
 
-    let state = app.state.clone();
+    handler.set_app(&app);
+    app.send_notification("client_started", &json!({}));
+    app.open_file_in_view(None, screen_dimensions, 20.0);
+
 
     events_loop.run(move |event: Event<'_, EditorEvent>, _, control_flow: &mut ControlFlow| {
         *control_flow = ControlFlow::Wait;
@@ -164,20 +192,19 @@ pub fn run(title: &str) {
             Event::MainEventsCleared => {
             },
             Event::WindowEvent { event: WindowEvent::Resized(size), .. } => {
-                println!("WindowEvent::Resized");
+                println!("WindowEvent::Resized to {} x {}", size.width, size.height);
                 renderer.borrow_mut().recreate_swap_chain_next_frame();
                 screen_dimensions[0] = size.width as f32;
                 screen_dimensions[1] = size.height as f32;
-
-                let mut state = state.lock().unwrap();
-                state.queue_draw(&mut renderer.borrow_mut());
             },
             Event::RedrawEventsCleared => {
             },
             Event::RedrawRequested(_window_id) => {
                 println!("RedrawRequested");
-                
+               
                 renderer.borrow_mut().draw_frame();
+
+                println!("Drawn");
             },
             Event::WindowEvent { event, .. } => match event {
                 WindowEvent::KeyboardInput { .. }
@@ -185,13 +212,18 @@ pub fn run(title: &str) {
                 | WindowEvent::MouseWheel { .. }
                 | WindowEvent::CursorMoved { .. }
                 | WindowEvent::ModifiersChanged(_) => {
-                    let redraw = input_state.update(event, screen_dimensions);
-                    let mut state = state.lock().unwrap();
-                    
-                    state.update_from_input(&input_state);
-
-                    if redraw {
-                        state.queue_draw(&mut renderer.borrow_mut());
+                    let redraw = app.update_input(event, screen_dimensions);
+                    if let Ok(ref mut state) = app.state.clone().try_lock() {
+                        if state.focused.is_some() {
+                            let view = state.get_focused_view();
+                            if redraw || view.dirty() {
+                                view.queue_draw(&mut renderer.borrow_mut());
+                                renderer.borrow().request_redraw();
+                                view.set_dirty(false);
+                            }
+                        }
+                    } else {
+                        println!("Unable to obtain state lock to queue_draw after input update");
                     }
                 },
                 _ => (),

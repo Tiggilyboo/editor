@@ -47,13 +47,14 @@ impl TextWidget {
 
     pub fn set_position(&mut self, x: f32, y: f32) {
        self.section.screen_position = (x, y);
+       self.dirty = true;
     }
 
     pub fn hit_test(&mut self, text_context: &TextContext, x: f32, y: f32) -> usize {
         text_context.hit_test(&self.section.to_borrowed(), x, y)
     }
 
-    pub fn set_dirty(&mut self) {
+    pub fn set_dirty(&mut self, dirty: bool) {
         self.dirty = true;
     }
 }

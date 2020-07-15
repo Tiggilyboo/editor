@@ -73,14 +73,18 @@ impl Core {
             "method": method,
             "params": params,
         });
-        let state = self.state.lock().unwrap();
-        state.xi_peer.send_json(&cmd);
+        if let Ok(ref state) = self.state.try_lock() {
+            state.xi_peer.send_json(&cmd);
+        } else {
+            println!("core > send_notification: unable to lock core state to send xi_peer notification");
+        }
     }
 
     /// Calls the callback with the result (from a different thread).
     pub fn send_request<F>(&mut self, method: &str, params: &Value, callback: F)
         where F: FnOnce(&Value) + Send + 'static
     {
+        println!("core > send_request, method = {}", method);
         let mut state = self.state.lock().unwrap();
         let id = state.id;
         let cmd = json!({

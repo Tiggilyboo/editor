@@ -32,7 +32,6 @@ pub enum EditViewCommands {
     ApplyUpdate(Value),
     ScrollTo(usize),
     Core(Weak<Mutex<Core>>),
-    Draw(Weak<Mutex<Renderer>>),
     Undo,
     Redo,
     UpperCase,
@@ -87,6 +86,7 @@ impl Widget for EditView {
             if let Some(text_widget) = &mut self.get_line(line_num) {
                 text_widget.set_position(x0, y);
                 text_widget.queue_draw(renderer);
+                text_widget.set_dirty(false);
             }
             y += LINE_SPACE;
         }
@@ -132,6 +132,8 @@ impl EditView {
     }
 
     fn apply_update(&mut self, update: &Value) {
+        println!("EditView applying update: {}", update.to_string());
+
         self.line_cache.apply_update(update);
         self.constrain_scroll();
         self.dirty = true;
@@ -143,9 +145,11 @@ impl EditView {
     }
 
     pub fn char(&mut self, ch: char) {
+        println!("sending char: {}", ch);
         if ch as u32 >= 0x20 {
             let params = json!({"chars": ch.to_string()});
             self.send_edit_cmd("insert", &params);
+            self.dirty = true;
         }
     }
 
@@ -167,6 +171,7 @@ impl EditView {
                 "view_id": view_id,
             }));
         } else {
+            println!("queueing pending method: {}", method);
             self.pending.push((method.to_owned(), params.clone()));
         }
     }
@@ -184,7 +189,6 @@ impl EditView {
                     self.scroll_offset -= LINE_SPACE;
                     self.constrain_scroll();
                     self.update_viewport();
-                    self.dirty = true;
                 } else {
                     let action = if mods.ctrl() || mods.alt() {
                         "add_selection_above"
@@ -200,7 +204,6 @@ impl EditView {
                     self.scroll_offset += LINE_SPACE;
                     self.constrain_scroll();
                     self.update_viewport();
-                    self.dirty = true;
                 } else {
                     let action = if mods.ctrl() || mods.alt() {
                         "add_selection_below"                        
@@ -260,7 +263,6 @@ impl EditView {
                 } else {
                     "delete_backword"
                 };
-
                 self.send_action(action);
             },
             VirtualKeyCode::Delete => {
@@ -275,12 +277,15 @@ impl EditView {
             _ => return false,
         }
 
+        self.dirty = true;
         true
     }
 
     pub fn poke(&mut self, command: EditViewCommands) -> bool {
         match command {
             EditViewCommands::ViewId(view_id) => {
+                println!("EditView.poke: ViewId = {}", view_id);
+
                 self.view_id = Some(view_id.to_string());
                 self.viewport = 0..0;
                 self.update_viewport();
@@ -291,7 +296,10 @@ impl EditView {
                     self.send_edit_cmd(&method, &params);
                 }
             },
-            EditViewCommands::Core(core) => self.core = core.clone(),
+            EditViewCommands::Core(core) => {
+                println!("EditView.poke: Core set!");
+                self.core = core.clone()
+            },
             EditViewCommands::ApplyUpdate(update) => self.apply_update(&update),
             EditViewCommands::ScrollTo(line) => self.scroll_to(line),
             EditViewCommands::Undo => self.send_action("undo"),
@@ -352,6 +360,7 @@ impl EditView {
         if viewport != self.viewport {
             self.viewport = viewport;
             self.send_edit_cmd("scroll", &json!([first_line, last_line]));
+            self.dirty = true;
         }
     }
 
@@ -365,11 +374,16 @@ impl EditView {
         let bottom_slop = 20.0;
         if y < self.scroll_offset {
             self.scroll_offset = y;
+            self.dirty = true;
         } else if y > self.scroll_offset + self.size[1] - bottom_slop {
-            self.scroll_offset = y - (self.size[1] - bottom_slop)
+            self.scroll_offset = y - (self.size[1] - bottom_slop);
+            self.dirty = true;
         }
     }
 
+    pub fn set_dirty(&mut self, dirty: bool) {
+        self.dirty = dirty;
+    }
 }
 
 fn s<'a>(mods: ModifiersState, normal: &'a str, shifted: &'a str) -> &'a str {

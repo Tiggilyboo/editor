@@ -54,10 +54,11 @@ impl MouseState {
                 self.delta.0 = self.position.0 - x;
                 self.delta.1 = self.position.1 - y;
 
-                let change = self.position.0 != x || self.position.1 != y;
+                let _change = self.position.0 != x || self.position.1 != y;
                 self.position.0 = x;
                 self.position.1 = y;
-                change
+                //change
+                false
             },
             _ => false,
         }
