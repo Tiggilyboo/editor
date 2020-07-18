@@ -4,6 +4,7 @@ pub mod ui;
 pub mod state;
 pub mod rpc;
 pub mod linecache;
+pub mod font;
 
 use std::cell::RefCell;
 use std::sync::{Arc, Mutex};

@@ -15,7 +15,7 @@ pub type ViewId = String;
 
 pub struct EditorState {
     pub focused: Option<ViewId>,
-    pub views: HashMap<ViewId, EditView>,
+    pub views: HashMap<ViewId, EditView>, 
 }
 
 impl EditorState {

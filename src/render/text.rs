@@ -58,8 +58,21 @@ use vulkano::command_buffer::{
     AutoCommandBufferBuilder,
     DynamicState,
 };  
-use ab_glyph::*;
-use glyph_brush::*;
+use glyph_brush::{
+    Section,
+    GlyphBrush,
+    GlyphBrushBuilder,
+    BrushAction,
+    BrushError,
+    GlyphVertex,
+    Rectangle,
+};
+use glyph_brush::ab_glyph::{
+    FontArc,
+    Rect,
+    point,
+};
+use crate::editor::font::FontContext;
 
 pub struct TextContext {
     device: Arc<Device>,
@@ -73,6 +86,7 @@ pub struct TextContext {
     index_buffer: Option<Arc<dyn TypedBufferAccess<Content=[u16]> + Send + Sync>>,
     
     glyph_brush: RefCell<GlyphBrush<TextVertex>>,
+    font_context: FontContext,
     texture: TextureCache,
     background_colour: [f32; 4],
 }
@@ -198,6 +212,8 @@ impl TextContext {
         let font = FontArc::try_from_slice(include_bytes!("../../fonts/Hack-Regular.ttf"))
             .expect("unable to load font");
 
+        let font_context = FontContext::from(font.clone());
+
         println!("Loading GlyphBrushBuilder...");
         let glyph_brush = RefCell::from(GlyphBrushBuilder::using_font(font)
             .build());
@@ -270,6 +286,7 @@ impl TextContext {
             device: device.clone(),
             queue,
             glyph_brush,
+            font_context,
             texture: TextureCache {
                 image: None,
                 cache_dimensions,
@@ -287,6 +304,23 @@ impl TextContext {
 
     pub fn queue_text(&mut self, section: &Section) {
         self.glyph_brush.borrow_mut().queue(section);
+    }
+
+    pub fn get_cursor_position(&self, section: &Section, offset: usize) -> (f32, f32) {
+        let mut content = section.text[0].text.chars();
+        let mut pos: (f32, f32) = section.screen_position;
+
+        for i in 0..offset {
+            if let Some(ch) = content.nth(i) {
+                let bounds =self.font_context.get_char_bounds(ch);
+                pos.0 += bounds.max.x;
+                if bounds.max.y > pos.1 {
+                    pos.1 = bounds.max.y;
+                }
+            }
+        }
+
+        pos 
     }
 
     fn update_texture(
@@ -369,7 +403,7 @@ impl TextContext {
             .resize_texture(cache_dimensions.0 as u32, cache_dimensions.1 as u32);
     }
 
-    fn upload_vertices(& mut self, vertices: Vec<TextVertex>) {
+    fn upload_vertices(&mut self, vertices: Vec<TextVertex>) {
         let mut indices = vec!();
         let mut quadrupled_verts = vec!();
         let mut i = 0;
@@ -408,10 +442,9 @@ impl TextContext {
         self.index_buffer = Some(index_buffer);
     }
 
-    pub fn draw_text<'a>(
-        &'a mut self, 
+    pub fn draw_text<'a>(&'a mut self, 
         builder: &'a mut AutoCommandBufferBuilder, 
-        image_num: usize
+        image_num: usize,
     ) -> &'a mut AutoCommandBufferBuilder {
 
         let cache_dimensions = self.texture.cache_dimensions;
@@ -490,27 +523,6 @@ impl TextContext {
 
             .end_render_pass()
             .expect("unable to end render pass")
-    }
-
-    pub fn hit_test(&self, section: &Section, x: f32, y: f32) -> usize {
-        if let Some(glyph_in_position) = self.glyph_brush.borrow_mut().glyphs(section).filter(|section_glyph| {
-            let pos = section_glyph.glyph.position;
-            if pos.x > x {
-                false
-            } else if pos.y > y {
-                false
-            } else {
-                true
-            }
-        }).next() {
-            glyph_in_position.byte_index
-        } else {
-            if let Some(last_glyph) = self.glyph_brush.borrow_mut().glyphs(section).last() {
-               last_glyph.byte_index 
-            } else {
-                0
-            }
-        }
     }
 }
 

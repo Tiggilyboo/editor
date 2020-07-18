@@ -8,6 +8,11 @@ use winit::event::{
     VirtualKeyCode,
     ModifiersState,
 };
+use glyph_brush::{
+    OwnedSection,
+    Section,
+    Text,
+};
 
 use crate::editor::rpc::Core;
 use crate::editor::linecache::LineCache;
@@ -61,6 +66,7 @@ pub struct EditView {
     pending: Vec<(Method, Params)>,
     resources: Resources,
     size: [f32; 2],
+    offside_section: OwnedSection,
 }
 
 const TOP_PAD: f32 = 6.0;
@@ -82,11 +88,25 @@ impl Widget for EditView {
         
         let x0 = LEFT_PAD;
         let mut y = self.line_to_content_y(first_line) - self.scroll_offset;
+
+        let text_ctx = renderer.get_text_context().clone();
+
         for line_num in first_line..last_line {
-            if let Some(text_widget) = &mut self.get_line(line_num) {
+            if let Some(ref mut text_widget) = &mut self.get_line(line_num) {
                 text_widget.set_position(x0, y);
                 text_widget.queue_draw(renderer);
                 text_widget.set_dirty(false);
+
+                let cursors = text_widget.get_cursor();
+                for offset in cursors {
+                    let section = &text_widget.get_section().to_borrowed();
+                    let pos = text_ctx.borrow().get_cursor_position(section, offset); 
+
+                    let mut offside = self.offside_section.clone();
+                    offside.screen_position = pos;
+                    renderer.get_text_context().borrow_mut()
+                        .queue_text(&offside.to_borrowed());
+                }
             }
             y += LINE_SPACE;
         }
@@ -97,24 +117,34 @@ impl Widget for EditView {
     }
 }
 
+fn create_offside_section(colour: [f32; 4], scale: f32) -> OwnedSection {
+    Section::default()
+        .add_text(Text::new("\u{2588}")
+                  .with_scale(scale)
+                  .with_color(colour))
+        .to_owned()
+}
+
 impl EditView {
     pub fn new(index: usize, size: [f32; 2], scale: f32) -> Self {
+        let resources = Resources {
+            fg: [0.9, 0.9, 0.9, 1.0],
+            bg: [0.1, 0.1, 0.1, 1.0],
+            sel: [0.3, 0.3, 0.3, 1.0],
+            scale,
+        };
         Self {
             index,
             size,
             dirty: true,
             view_id: None,
             line_cache: LineCache::new(),
-            resources: Resources {
-                fg: [0.9, 0.9, 0.9, 1.0],
-                bg: [0.1, 0.1, 0.1, 1.0],
-                sel: [0.3, 0.3, 0.3, 1.0],
-                scale,
-            },
             scroll_offset: 0.0,
             viewport: 0..0,
             core: Default::default(),
             pending: Default::default(),
+            offside_section: create_offside_section(resources.sel, scale),
+            resources,
         }
     }
 
@@ -339,19 +369,6 @@ impl EditView {
         std::cmp::min(line, self.line_cache.height())
     }
 
-    fn xy_to_line_col(&self, text_context: &TextContext, x: f32, y: f32) -> (usize, usize) {
-        let line_num = self.y_to_line(y);
-        let col = if let Some(text_line) = 
-            &mut self.get_line(line_num)
-        {
-            text_line.hit_test(text_context, x, y)
-        } else {
-            0
-        };
-
-        (line_num, col)
-    }
-    
     fn update_viewport(&mut self) {
         let first_line = self.y_to_line(0.0);
         let last_line = first_line + ((self.size[1] / LINE_SPACE).floor() as usize) + 1;

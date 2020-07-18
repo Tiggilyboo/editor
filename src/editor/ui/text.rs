@@ -4,16 +4,13 @@ use crate::render::Renderer;
 use glyph_brush::{
     Layout,
     Section,
+    OwnedSection,
+    Text,
 };
 
 use crate::editor::linecache::{
     Line,
     StyleSpan,
-};
-use crate::render::text::TextContext;
-use glyph_brush::{
-    OwnedSection,
-    Text,
 };
 
 pub struct TextWidget {
@@ -33,7 +30,7 @@ impl TextWidget {
                       .with_scale(scale)
                       .with_color(colour))
             .with_bounds((f32::INFINITY, scale))
-            .with_layout(Layout::default())
+            .with_layout(Layout::default_single_line())
             .to_owned();
 
         Self {
@@ -50,8 +47,16 @@ impl TextWidget {
        self.dirty = true;
     }
 
-    pub fn hit_test(&mut self, text_context: &TextContext, x: f32, y: f32) -> usize {
-        text_context.hit_test(&self.section.to_borrowed(), x, y)
+    pub fn get_section(&self) -> &OwnedSection {
+        &self.section
+    }
+
+    pub fn get_content(&self) -> &str {
+        self.section.text[0].text.as_str()
+    }
+
+    pub fn get_cursor(&self) -> Vec<usize> {
+        self.cursor.clone()
     }
 
     pub fn set_dirty(&mut self, dirty: bool) {
@@ -74,6 +79,7 @@ impl Widget for TextWidget {
     }
 
     fn queue_draw(&self, renderer: &mut Renderer) {
-        renderer.queue_text(&self.section.to_borrowed());
+        renderer.get_text_context().borrow_mut()
+            .queue_text(&self.section.to_borrowed());
     }
 }

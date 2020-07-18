@@ -22,7 +22,9 @@ use vulkano::sync::{
     self,
     GpuFuture,
 };
-use glyph_brush::Section;
+use glyph_brush::{ 
+    Section,
+};
 use self::core::RenderCore;
 use self::text::TextContext;
 
@@ -36,7 +38,7 @@ pub struct Renderer {
     previous_frame_end: Option<Box<dyn GpuFuture>>,
     recreate_swap_chain: bool,
 
-    text_context: RefCell<TextContext>,
+    text_context: Arc<RefCell<TextContext>>,
 }
 
 impl Renderer {
@@ -57,11 +59,11 @@ impl Renderer {
         let device = core.get_device();
         let graphics_queue = core.get_graphics_queue();
 
-        let text_context = RefCell::<TextContext>::new(TextContext::new(
+        let text_context = Arc::new(RefCell::<TextContext>::new(TextContext::new(
             device.clone(), 
             graphics_queue.clone(), 
             core.swap_chain.clone(), 
-            &core.swap_chain_images)); 
+            &core.swap_chain_images))); 
 
         let device: &Arc<Device> = &device.clone();
         let previous_frame_end = Some(Self::create_sync_objects(device));
@@ -84,8 +86,8 @@ impl Renderer {
         Box::new(sync::now(device.clone())) as Box<dyn GpuFuture>
     }
 
-    pub fn queue_text(&mut self, section: &Section) {
-        self.text_context.borrow_mut().queue_text(section)
+    pub fn get_text_context(&mut self) -> Arc<RefCell<TextContext>> {
+        self.text_context.clone()
     }
 
     pub fn draw_frame(&mut self) { 
@@ -156,12 +158,12 @@ impl Renderer {
             &self.render_pass, 
             &mut self.dynamic_state);
 
-        self.text_context = RefCell::from(TextContext::new(
+        self.text_context = Arc::new(RefCell::from(TextContext::new(
             self.core.get_device().clone(),
             self.core.get_graphics_queue().clone(),
             self.core.swap_chain.clone(),
             &self.core.swap_chain_images,
-        ));
+        )));
     }
 
     fn create_command_buffer(&mut self, image_index: usize) -> Arc<AutoCommandBuffer> {
