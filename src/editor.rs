@@ -141,9 +141,8 @@ impl App {
         }
         if let Ok(ref mut state) = self.state.try_lock() {
             println!("editor_state updating from input");
-            state.update_from_input(self.input.clone());
-
-            processed
+            
+            state.update_from_input(self.input.clone())
         } else {
             println!("unable to lock state in update_input");
             false
@@ -217,7 +216,7 @@ pub fn run(title: &str) {
                     if let Ok(ref mut state) = app.state.clone().try_lock() {
                         if state.focused.is_some() {
                             let view = state.get_focused_view();
-                            if redraw || view.dirty() {
+                            if view.dirty() {
                                 view.queue_draw(&mut renderer.borrow_mut());
                                 renderer.borrow().request_redraw();
                                 view.set_dirty(false);

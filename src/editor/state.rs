@@ -34,17 +34,14 @@ impl EditorState {
             .expect("Focused EditView not found in views")
     }
 
-    pub fn update_from_input(&mut self, input: Arc<Mutex<InputState>>) {
+    pub fn update_from_input(&mut self, input: Arc<Mutex<InputState>>) -> bool {
         if let Ok(ref input) = input.clone().try_lock() {
-            let should_keydown = input.keycode.is_some();
+            let should_keydown = input.keycode.is_some() 
+                || input.modifiers.ctrl() || input.modifiers.shift() || input.modifiers.alt();
             let should_mouse = input.mouse.button.is_some()
                 || input.mouse.line_scroll.1 != 0.0;
 
-            if !should_keydown && !should_mouse {
-                println!("!keydown && !mouse");
-                return;
-            }
-
+            let mut handled = false;
             if self.focused.is_some() { 
                 let edit_view = self.get_focused_view();
 
@@ -52,18 +49,24 @@ impl EditorState {
                     if let Some(input_string) = map_input_into_string(input.modifiers, input.keycode) {
                         let ch = input_string.chars().next().unwrap();
                         edit_view.char(ch);
-                    } else {
+                        handled = true;
+                    } else if input.keycode.is_some(){
                         edit_view.keydown(input.keycode.unwrap(), input.modifiers);
+                        handled = true;
                     }
                 }
                 if should_mouse {
                     if input.mouse.line_scroll.1 != 0.0 {
                         edit_view.mouse_scroll(input.mouse.line_scroll.1);
+                        handled = true;
                     }
                 }
-            }
+            };
+
+            handled
         } else {
             println!("unable to lock input in update_from_input");
+            false
         }
     }
 }

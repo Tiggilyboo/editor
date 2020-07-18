@@ -21,22 +21,25 @@ pub struct TextWidget {
     styles: Vec<StyleSpan>,
 }
 
+fn create_section(line: &Line, scale: f32, colour: [f32; 4]) -> OwnedSection {
+    let text = line.text();
+    let trimmed_text = text.trim_end_matches(|c| c == '\r' || c == '\n');
+
+    Section::default()
+        .add_text(Text::new(trimmed_text)
+                  .with_scale(scale)
+                  .with_color(colour))
+        .with_bounds((f32::INFINITY, scale))
+        .with_layout(Layout::default_single_line())
+        .to_owned()
+}
+
 impl TextWidget {
     pub fn from_line(index: usize, line: &Line, scale: f32, colour: [f32; 4]) -> Self {
-        let text = line.text();
-        let trimmed_text = text.trim_end_matches(|c| c == '\r' || c == '\n');
-        let section = Section::default()
-            .add_text(Text::new(trimmed_text)
-                      .with_scale(scale)
-                      .with_color(colour))
-            .with_bounds((f32::INFINITY, scale))
-            .with_layout(Layout::default_single_line())
-            .to_owned();
-
         Self {
             index,
             dirty: true,
-            section,
+            section: create_section(line, scale, colour),
             cursor: line.cursor().to_owned(),
             styles: line.styles().to_vec(),
         }
@@ -49,10 +52,6 @@ impl TextWidget {
 
     pub fn get_section(&self) -> &OwnedSection {
         &self.section
-    }
-
-    pub fn get_content(&self) -> &str {
-        self.section.text[0].text.as_str()
     }
 
     pub fn get_cursor(&self) -> Vec<usize> {

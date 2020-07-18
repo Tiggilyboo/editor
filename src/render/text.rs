@@ -212,7 +212,7 @@ impl TextContext {
         let font = FontArc::try_from_slice(include_bytes!("../../fonts/Hack-Regular.ttf"))
             .expect("unable to load font");
 
-        let font_context = FontContext::from(font.clone());
+        let font_context = FontContext::from(font.clone(), 20.0);
 
         println!("Loading GlyphBrushBuilder...");
         let glyph_brush = RefCell::from(GlyphBrushBuilder::using_font(font)

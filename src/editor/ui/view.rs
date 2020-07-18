@@ -22,7 +22,6 @@ use serde_json::{
 };
 
 use crate::render::Renderer;
-use crate::render::text::TextContext;
 use super::{
     text::TextWidget,
     widget::Widget,
@@ -66,7 +65,6 @@ pub struct EditView {
     pending: Vec<(Method, Params)>,
     resources: Resources,
     size: [f32; 2],
-    offside_section: OwnedSection,
 }
 
 const TOP_PAD: f32 = 6.0;
@@ -95,18 +93,19 @@ impl Widget for EditView {
             if let Some(ref mut text_widget) = &mut self.get_line(line_num) {
                 text_widget.set_position(x0, y);
                 text_widget.queue_draw(renderer);
-                text_widget.set_dirty(false);
 
                 let cursors = text_widget.get_cursor();
                 for offset in cursors {
                     let section = &text_widget.get_section().to_borrowed();
                     let pos = text_ctx.borrow().get_cursor_position(section, offset); 
 
-                    let mut offside = self.offside_section.clone();
+                    let mut offside = create_offside_section(self.resources.sel, self.resources.scale);
                     offside.screen_position = pos;
                     renderer.get_text_context().borrow_mut()
                         .queue_text(&offside.to_borrowed());
                 }
+                
+                text_widget.set_dirty(false);
             }
             y += LINE_SPACE;
         }
@@ -130,7 +129,7 @@ impl EditView {
         let resources = Resources {
             fg: [0.9, 0.9, 0.9, 1.0],
             bg: [0.1, 0.1, 0.1, 1.0],
-            sel: [0.3, 0.3, 0.3, 1.0],
+            sel: [0.3, 0.3, 0.3, 0.7],
             scale,
         };
         Self {
@@ -143,7 +142,6 @@ impl EditView {
             viewport: 0..0,
             core: Default::default(),
             pending: Default::default(),
-            offside_section: create_offside_section(resources.sel, scale),
             resources,
         }
     }
@@ -289,9 +287,9 @@ impl EditView {
             },
             VirtualKeyCode::Back => {
                 let action = if mods.ctrl() {
-                    s(mods, "delete_word_backword", "delete_to_beginning_of_line")
+                    s(mods, "delete_word_backward", "delete_to_beginning_of_line")
                 } else {
-                    "delete_backword"
+                    "delete_backward"
                 };
                 self.send_action(action);
             },

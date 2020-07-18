@@ -100,6 +100,7 @@ fn kc_numeric_symbols(modifiers: ModifiersState, kc: VirtualKeyCode) -> Option<S
             VirtualKeyCode::Comma => ',',
             VirtualKeyCode::Period => '.',
             VirtualKeyCode::Slash => '/',
+            VirtualKeyCode::Space => ' ',
             _ => return None,
         }
     };

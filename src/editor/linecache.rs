@@ -100,6 +100,8 @@ impl LineCache {
                 for _ in 0..n {
                     self.push_opt_line(None);
                 }
+            } else {
+                println!("linecache > apply_update unhandled for: {}", update);
             }
         }
     }
