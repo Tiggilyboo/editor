@@ -91,17 +91,19 @@ impl InputState {
             WindowEvent::KeyboardInput { input, .. } => {
                 if input.state == ElementState::Pressed {
                     input.virtual_keycode
+                } else if input.state == ElementState::Released {
+                    None 
                 } else {
-                    None
+                    old_keycode
                 }
             },
-            _ => None,
+            _ => old_keycode,
         };
         self.modifiers = match event {
             WindowEvent::ModifiersChanged(mods) => {
                 mods
             },
-            _ => ModifiersState::empty(),
+            _ => old_mods,
         };
         let mouse_changed = self.mouse.update_via_window_event(event, window_dimensions); 
 

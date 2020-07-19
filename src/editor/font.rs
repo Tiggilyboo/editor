@@ -22,10 +22,13 @@ fn calculate_bounds(font: FontArc, scale: f32) -> HashMap<char, Rect> {
         PUNCTUATION_INITIAL_QUOTE,
         PUNCTUATION_CONNECTOR,
         PUNCTUATION_OPEN,
+        PUNCTUATION_OTHER,
         NUMBER_DECIMAL_DIGIT,
         NUMBER_LETTER,
+        SYMBOL_MODIFIER,
         SYMBOL_CURRENCY,
         SYMBOL_MATH,
+        SYMBOL_OTHER,
     ];
 
     for category in included_categories.iter() {

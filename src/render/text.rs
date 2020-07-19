@@ -215,8 +215,11 @@ impl TextContext {
         let font_context = FontContext::from(font.clone(), 20.0);
 
         println!("Loading GlyphBrushBuilder...");
-        let glyph_brush = RefCell::from(GlyphBrushBuilder::using_font(font)
-            .build());
+        let glyph_brush = RefCell::from(
+            GlyphBrushBuilder::using_font(font)
+                .cache_glyph_positioning(false)
+                .cache_redraws(false)
+                .build());
 
         let cache_dimensions = glyph_brush.borrow().texture_dimensions();
         let cache_dimensions = (cache_dimensions.0 as usize, cache_dimensions.1 as usize);
@@ -307,16 +310,19 @@ impl TextContext {
     }
 
     pub fn get_cursor_position(&self, section: &Section, offset: usize) -> (f32, f32) {
-        let mut content = section.text[0].text.chars();
+        let content = section.text[0].text.char_indices();
         let mut pos: (f32, f32) = section.screen_position;
+        
+        for (i, ch) in content {
+            if i >= offset {
+                break;
+            }
+            let bounds = self.font_context.get_char_bounds(ch);
+            println!("cursor pos for offset: {}, for ch: {}, got: {:?}", offset, ch, bounds);
 
-        for i in 0..offset {
-            if let Some(ch) = content.nth(i) {
-                let bounds =self.font_context.get_char_bounds(ch);
-                pos.0 += bounds.max.x;
-                if bounds.max.y > pos.1 {
-                    pos.1 = bounds.max.y;
-                }
+            pos.0 += bounds.max.x;
+            if bounds.max.y > pos.1 {
+                pos.1 = bounds.max.y;
             }
         }
 
@@ -445,7 +451,7 @@ impl TextContext {
     pub fn draw_text<'a>(&'a mut self, 
         builder: &'a mut AutoCommandBufferBuilder, 
         image_num: usize,
-    ) -> &'a mut AutoCommandBufferBuilder {
+    ) -> bool {
 
         let cache_dimensions = self.texture.cache_dimensions;
         let cache_pixel_buffer = &mut self.texture.cache_pixel_buffer; 
@@ -466,6 +472,12 @@ impl TextContext {
             into_vertex,
         );
         self.texture.image = updated_texture;
+
+        // Image not loaded yet
+        if self.texture.image.is_none() {
+            println!("Waiting for text cache image to load...");
+            return false
+        }
  
         let requires_draw = match glyph_action {
             Ok(BrushAction::Draw(vertices)) => {
@@ -479,7 +491,7 @@ impl TextContext {
             },
         };
         if !requires_draw {
-            return builder;
+            return false
         }
 
         let dimensions = self.framebuffers[image_num].dimensions();
@@ -487,12 +499,6 @@ impl TextContext {
         let uniform_buffer = {
             self.uniform_buffer_pool.next(transform).unwrap()
         };
-
-        // Image not loaded yet
-        if self.texture.image.is_none() {
-            println!("Waiting for text cache image to load...");
-            return builder;
-        }
 
         let cache_tex = self.texture.image.clone().unwrap();
         let set = Arc::new(
@@ -522,7 +528,9 @@ impl TextContext {
             ).expect("unable to draw to command buffer for glyph")
 
             .end_render_pass()
-            .expect("unable to end render pass")
+            .expect("unable to end render pass");
+
+        return true
     }
 }
 

@@ -1,3 +1,5 @@
+mod config;
+
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 use std::sync::mpsc::Receiver;

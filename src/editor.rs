@@ -124,6 +124,12 @@ impl App {
         match method {
             "update" => self.send_view_cmd(EditViewCommands::ApplyUpdate(params["update"].clone())),
             "scroll_to" => self.send_view_cmd(EditViewCommands::ScrollTo(params["line"].as_u64().unwrap() as usize)),
+            "measure_width" => {
+                self.send_view_cmd(EditViewCommands::MeasureWidth((
+                            params["id"].as_u64().unwrap(), 
+                            params["strings"].as_array().unwrap().clone())
+                ));
+            },
             _ => println!("unhandled core->fe method: {}", method),
         }
     }
@@ -170,9 +176,11 @@ pub fn run(title: &str) {
     let app = App::new(core);
 
     handler.set_app(&app);
-    app.send_notification("client_started", &json!({}));
+    app.send_notification("client_started", &json!({
+        "config_dir": "./config",
+        "client_extras_dir": "./extras",
+    }));
     app.open_file_in_view(None, screen_dimensions, 20.0);
-
 
     events_loop.run(move |event: Event<'_, EditorEvent>, _, control_flow: &mut ControlFlow| {
         *control_flow = ControlFlow::Wait;
@@ -186,7 +194,6 @@ pub fn run(title: &str) {
                 }
             },
             Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => {
-                println!("CloseRequested");
                 *control_flow = ControlFlow::Exit;
             },
             Event::MainEventsCleared => {
@@ -196,6 +203,13 @@ pub fn run(title: &str) {
                 renderer.borrow_mut().recreate_swap_chain_next_frame();
                 screen_dimensions[0] = size.width as f32;
                 screen_dimensions[1] = size.height as f32;
+                
+                if let Ok(ref mut state) = app.state.clone().try_lock() {
+                    if state.focused.is_some() {
+                        let edit_view = state.get_focused_view();
+                        edit_view.poke(EditViewCommands::Resize(screen_dimensions));
+                    }
+                }
             },
             Event::RedrawEventsCleared => {
             },
@@ -212,14 +226,15 @@ pub fn run(title: &str) {
                 | WindowEvent::MouseWheel { .. }
                 | WindowEvent::CursorMoved { .. }
                 | WindowEvent::ModifiersChanged(_) => {
-                    let redraw = app.update_input(event, screen_dimensions);
+                    app.update_input(event, screen_dimensions);
+
                     if let Ok(ref mut state) = app.state.clone().try_lock() {
                         if state.focused.is_some() {
                             let view = state.get_focused_view();
                             if view.dirty() {
                                 view.queue_draw(&mut renderer.borrow_mut());
-                                renderer.borrow().request_redraw();
                                 view.set_dirty(false);
+                                renderer.borrow().request_redraw();
                             }
                         }
                     } else {

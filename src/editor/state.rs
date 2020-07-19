@@ -48,11 +48,9 @@ impl EditorState {
                 if should_keydown {
                     if let Some(input_string) = map_input_into_string(input.modifiers, input.keycode) {
                         let ch = input_string.chars().next().unwrap();
-                        edit_view.char(ch);
-                        handled = true;
+                        handled = edit_view.char(ch);
                     } else if input.keycode.is_some(){
-                        edit_view.keydown(input.keycode.unwrap(), input.modifiers);
-                        handled = true;
+                        handled = edit_view.keydown(input.keycode.unwrap(), input.modifiers);
                     }
                 }
                 if should_mouse {

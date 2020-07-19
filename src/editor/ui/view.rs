@@ -11,7 +11,9 @@ use winit::event::{
 use glyph_brush::{
     OwnedSection,
     Section,
+    Layout,
     Text,
+    ab_glyph::PxScale,
 };
 
 use crate::editor::rpc::Core;
@@ -36,11 +38,12 @@ pub enum EditViewCommands {
     ApplyUpdate(Value),
     ScrollTo(usize),
     Core(Weak<Mutex<Core>>),
+    Resize([f32; 2]),
+    MeasureWidth((u64, Vec<Value>)),
     Undo,
     Redo,
     UpperCase,
     LowerCase,
-    Transpose,
     AddCursorAbove,
     AddCursorBelow,
     SingleSelection,
@@ -105,7 +108,7 @@ impl Widget for EditView {
                         .queue_text(&offside.to_borrowed());
                 }
                 
-                text_widget.set_dirty(false);
+                text_widget.set_dirty(true);
             }
             y += LINE_SPACE;
         }
@@ -121,6 +124,8 @@ fn create_offside_section(colour: [f32; 4], scale: f32) -> OwnedSection {
         .add_text(Text::new("\u{2588}")
                   .with_scale(scale)
                   .with_color(colour))
+        .with_layout(Layout::default_single_line())
+        .with_bounds((f32::INFINITY, scale))
         .to_owned()
 }
 
@@ -135,7 +140,7 @@ impl EditView {
         Self {
             index,
             size,
-            dirty: true,
+            dirty: false,
             view_id: None,
             line_cache: LineCache::new(),
             scroll_offset: 0.0,
@@ -160,24 +165,33 @@ impl EditView {
     }
 
     fn apply_update(&mut self, update: &Value) {
-        println!("EditView applying update: {}", update.to_string());
-
         self.line_cache.apply_update(update);
         self.constrain_scroll();
         self.dirty = true;
     }
 
-    pub fn set_size(&mut self, size: [f32; 2]) {
+    pub fn resize(&mut self, size: [f32; 2]) {
         self.size = size;
         self.dirty = true;
+
+        let (w, h) = (PxScale::from(size[0]).x, PxScale::from(size[1]).y);
+        println!("sending resize: {:?} x {:?}", w, h);
+        self.send_edit_cmd("resize", &json!({ "width": w, "height": h }));
     }
 
-    pub fn char(&mut self, ch: char) {
+    pub fn go_to_line(&mut self, line: usize) {
+        self.send_edit_cmd("insert", &json!({ "line": line }));
+    }
+
+    pub fn char(&mut self, ch: char) -> bool {
         println!("sending char: {}", ch);
         if ch as u32 >= 0x20 {
             let params = json!({"chars": ch.to_string()});
             self.send_edit_cmd("insert", &params);
-            self.dirty = true;
+
+            true
+        } else {
+            false
         }
     }
 
@@ -211,7 +225,14 @@ impl EditView {
     pub fn keydown(&mut self, keycode: VirtualKeyCode, mods: ModifiersState) -> bool {
         match keycode {
             VirtualKeyCode::Return => self.send_action("insert_newline"),
-            VirtualKeyCode::Tab => self.send_action("insert_tab"),
+            VirtualKeyCode::Tab => {
+                let action = if mods.shift() {
+                    "outdent"
+                } else {
+                    "insert_tab"
+                };
+                self.send_action(action);
+            },
             VirtualKeyCode::Up => {
                 if mods.ctrl() {
                     self.scroll_offset -= LINE_SPACE;
@@ -283,7 +304,6 @@ impl EditView {
                 self.send_action(action);
             },
             VirtualKeyCode::Escape => {
-                self.send_action("cancel_operation");
             },
             VirtualKeyCode::Back => {
                 let action = if mods.ctrl() {
@@ -305,7 +325,6 @@ impl EditView {
             _ => return false,
         }
 
-        self.dirty = true;
         true
     }
 
@@ -330,6 +349,7 @@ impl EditView {
             },
             EditViewCommands::ApplyUpdate(update) => self.apply_update(&update),
             EditViewCommands::ScrollTo(line) => self.scroll_to(line),
+            EditViewCommands::Resize(size) => self.resize(size),
             EditViewCommands::Undo => self.send_action("undo"),
             EditViewCommands::Redo => self.send_action("redo"),
             EditViewCommands::SelectAll => self.send_action("select_all"),
@@ -375,7 +395,6 @@ impl EditView {
         if viewport != self.viewport {
             self.viewport = viewport;
             self.send_edit_cmd("scroll", &json!([first_line, last_line]));
-            self.dirty = true;
         }
     }
 

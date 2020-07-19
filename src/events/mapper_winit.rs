@@ -117,6 +117,9 @@ pub fn map_input_into_string(modifiers: ModifiersState, virtual_keycode: Option<
     let alt = modifiers.alt();
     let ctrl = modifiers.ctrl();
     let shift = modifiers.shift();
+    if shift {
+        println!("got a shift!");
+    }   
 
     if alt || ctrl {
         return None

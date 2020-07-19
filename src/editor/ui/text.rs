@@ -2,10 +2,10 @@ use super::widget::Widget;
 use crate::render::Renderer;
 
 use glyph_brush::{
-    Layout,
     Section,
     OwnedSection,
     Text,
+    Layout,
 };
 
 use crate::editor::linecache::{
@@ -21,27 +21,24 @@ pub struct TextWidget {
     styles: Vec<StyleSpan>,
 }
 
-fn create_section(line: &Line, scale: f32, colour: [f32; 4]) -> OwnedSection {
-    let text = line.text();
-    let trimmed_text = text.trim_end_matches(|c| c == '\r' || c == '\n');
 
-    Section::default()
-        .add_text(Text::new(trimmed_text)
-                  .with_scale(scale)
-                  .with_color(colour))
-        .with_bounds((f32::INFINITY, scale))
-        .with_layout(Layout::default_single_line())
-        .to_owned()
-}
 
 impl TextWidget {
     pub fn from_line(index: usize, line: &Line, scale: f32, colour: [f32; 4]) -> Self {
+        let text = line.text();
+        let trimmed_text = text.trim_end_matches(|c| c == '\r' || c == '\n');
         Self {
             index,
             dirty: true,
-            section: create_section(line, scale, colour),
             cursor: line.cursor().to_owned(),
             styles: line.styles().to_vec(),
+            section: Section::default()
+                .add_text(Text::new(trimmed_text)
+                          .with_color(colour)
+                          .with_scale(scale)
+                          .with_z(0.5))
+                .with_layout(Layout::default_single_line())
+                .to_owned(),
         }
     }
 
@@ -59,7 +56,7 @@ impl TextWidget {
     }
 
     pub fn set_dirty(&mut self, dirty: bool) {
-        self.dirty = true;
+        self.dirty = dirty;
     }
 }
 

@@ -22,9 +22,6 @@ use vulkano::sync::{
     self,
     GpuFuture,
 };
-use glyph_brush::{ 
-    Section,
-};
 use self::core::RenderCore;
 use self::text::TextContext;
 
@@ -115,14 +112,23 @@ impl Renderer {
         }
        
         let command_buffer = self.create_command_buffer(image_index); 
+        if command_buffer.is_none() {
+            return
+        }
 
         let future = self.previous_frame_end.take()
             .expect("unable to take previous_frame_end future");
 
         let future = future
             .join(acquire_future)
-            .then_execute(self.core.get_graphics_queue().clone(), command_buffer).unwrap()
-            .then_swapchain_present(self.core.get_present_queue().clone(), self.core.swap_chain.clone(), image_index)
+            .then_execute(
+                self.core.get_graphics_queue().clone(), 
+                command_buffer.unwrap()
+            ).unwrap()
+            .then_swapchain_present(
+                self.core.get_present_queue().clone(), 
+                self.core.swap_chain.clone(), 
+                image_index)
             .then_signal_fence_and_flush();
 
         match future {
@@ -166,7 +172,7 @@ impl Renderer {
         )));
     }
 
-    fn create_command_buffer(&mut self, image_index: usize) -> Arc<AutoCommandBuffer> {
+    fn create_command_buffer(&mut self, image_index: usize) -> Option<Arc<AutoCommandBuffer>> {
         let mut builder = AutoCommandBufferBuilder::primary_one_time_submit(
                 self.core.get_device().clone(),
                 self.core.get_graphics_queue().family()
@@ -175,11 +181,11 @@ impl Renderer {
         self.text_context
             .borrow_mut()
             .draw_text(&mut builder, image_index);
-
+            
         let command_buffer = builder.build()
             .expect("unable to build command buffer from builder");
 
-        Arc::new(command_buffer)
+        Some(Arc::new(command_buffer))
     }
 
     pub fn recreate_swap_chain_next_frame(&mut self) {

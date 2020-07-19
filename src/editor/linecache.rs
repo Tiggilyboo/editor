@@ -4,21 +4,21 @@ use serde_json::Value;
 
 pub struct Line {
     text: String,
-    /// List of carets, in units of utf-16 code units.
     cursor: Vec<usize>,
     styles: Vec<StyleSpan>,
+    line_num: Option<u64>,
 }
 
 #[derive(Debug, Clone)]
 pub struct StyleSpan {
     pub style_id: usize,
-    /// Range of span, in units of utf-16 code units
     pub range: Range<usize>,
 }
 
 impl Line {
     pub fn from_json(v: &Value) -> Line {
         let text = v["text"].as_str().unwrap().to_owned();
+        let line_num = v["ln"].as_u64();
         let mut cursor = Vec::new();
         if let Some(arr) = v["cursor"].as_array() {
             for c in arr {
@@ -26,6 +26,7 @@ impl Line {
                 cursor.push(count_utf16(&text[..offset_utf8]));
             }
         }
+
         let mut styles = Vec::new();
         if let Some(arr) = v["styles"].as_array() {
             let mut ix: i64 = 0;
@@ -44,7 +45,12 @@ impl Line {
                 ix = end;
             }
         }
-        Line { text, cursor, styles }
+        Line { 
+            text, 
+            line_num,
+            cursor, 
+            styles 
+        }
     }
 
     pub fn text(&self) -> &str {
@@ -57,6 +63,10 @@ impl Line {
 
     pub fn styles(&self) -> &[StyleSpan] {
         &self.styles
+    }
+
+    pub fn line_num(&self) -> Option<u64> {
+        self.line_num
     }
 }
 
@@ -78,30 +88,36 @@ impl LineCache {
     pub fn apply_update(&mut self, update: &Value) {
         let old_cache = mem::replace(self, LineCache::new());
         let mut old_iter = old_cache.lines.into_iter();
+
         for op in update["ops"].as_array().unwrap() {
-            let op_type = &op["op"];
-            if op_type == "ins" {
-                for line in op["lines"].as_array().unwrap() {
-                    let line = Line::from_json(line);
-                    self.push_opt_line(Some(line));
+            if let Some(op_type) = op["op"].as_str() {
+                match op_type {
+                    "ins" => {
+                        for line in op["lines"].as_array().unwrap() {
+                            let line = Line::from_json(line);
+                            self.push_opt_line(Some(line));
+                        }
+                    },
+                    "copy" => {
+                        let n = op["n"].as_u64().unwrap();
+                        for _ in 0..n {
+                            self.push_opt_line(old_iter.next().unwrap_or_default());
+                        }
+                    },
+                    "skip" => {
+                        let n = op["n"].as_u64().unwrap();
+                        for _ in 0..n {
+                            let _ = old_iter.next();
+                        }
+                    },
+                    "invalidate" => {
+                        let n = op["n"].as_u64().unwrap();
+                        for _ in 0..n {
+                            self.push_opt_line(None);
+                        }
+                    },
+                    _ => println!("unhandled update operation: {:?}", op_type)
                 }
-            } else if op_type == "copy" {
-                let n = op["n"].as_u64().unwrap();
-                for _ in 0..n {
-                    self.push_opt_line(old_iter.next().unwrap_or_default());
-                }
-            } else if op_type == "skip" {
-                let n = op["n"].as_u64().unwrap();
-                for _ in 0..n {
-                    let _ = old_iter.next();
-                }
-            } else if op_type == "invalidate" {
-                let n = op["n"].as_u64().unwrap();
-                for _ in 0..n {
-                    self.push_opt_line(None);
-                }
-            } else {
-                println!("linecache > apply_update unhandled for: {}", update);
             }
         }
     }
