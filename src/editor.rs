@@ -26,6 +26,8 @@ use serde_json::{
     json,
     from_value,
 };
+use syntect::highlighting::ThemeSettings;
+
 use ui::view::{
     EditView,
     EditViewCommands,
@@ -33,7 +35,7 @@ use ui::view::{
 use ui::widget::Widget;
 use state::EditorState;
 use rpc::{ Core, Handler };
-use rpc::config::Config;
+use rpc::{ Config, Theme };
 use super::events::state::InputState;
 
 
@@ -122,6 +124,24 @@ impl App {
             "config_changed" => {
                 let config = from_value::<Config>(params["changes"].clone()).unwrap();
                 self.send_view_cmd(EditViewCommands::ConfigChanged(config));
+            },
+            "available_themes" => {
+                if let Ok(ref mut state) = self.state.clone().try_lock() {
+                    let raw_themes = params["themes"].as_array();
+                    if let Some(themes) = raw_themes {
+                        let mut available_themes: Vec<String> = vec!();
+                        for t in themes.iter() {
+                            available_themes.push(String::from(t.as_str().unwrap()));
+                        }
+
+                        state.set_available_themes(available_themes);
+                    }
+                }
+            },
+            "theme_changed" => {
+                println!("theme_changed: {:?}", params["theme"]);
+                let theme = from_value::<Theme>(params["theme"].clone()).unwrap();
+                self.send_view_cmd(EditViewCommands::ThemeChanged(theme));
             },
             "measure_width" => {
                 self.send_view_cmd(EditViewCommands::MeasureWidth((

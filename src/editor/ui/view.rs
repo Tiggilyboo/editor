@@ -23,7 +23,10 @@ use serde_json::{
 };
 
 use crate::render::Renderer;
-use crate::editor::rpc::Config;
+use crate::editor::rpc::{
+    Config,
+    Theme,
+};
 use super::{
     text::TextWidget,
     widget::Widget,
@@ -40,6 +43,8 @@ pub enum EditViewCommands {
     Core(Weak<Mutex<Core>>),
     Resize([f32; 2]),
     ConfigChanged(Config),
+    ThemeChanged(Theme),
+    SetTheme(String),
     MeasureWidth((u64, Vec<Value>)),
     Undo,
     Redo,
@@ -68,6 +73,7 @@ pub struct EditView {
     core: Weak<Mutex<Core>>,
     pending: Vec<(Method, Params)>,
     config: Option<Config>,
+    theme: Option<Theme>,
     size: [f32; 2],
     resources: Resources,
 }
@@ -75,6 +81,16 @@ pub struct EditView {
 const TOP_PAD: f32 = 6.0;
 const LEFT_PAD: f32 = 6.0;
 const LINE_SPACE: f32 = 17.0;
+
+#[inline]
+fn rgba8_to_rgba32(colour_u8: [u8; 4]) -> [f32; 4] {
+    [
+        colour_u8[0] as f32 / 255.0,
+        colour_u8[1] as f32 / 255.0,
+        colour_u8[2] as f32 / 255.0,
+        colour_u8[3] as f32 / 255.0,
+    ]
+}
 
 impl Widget for EditView {
     fn index(&self) -> usize {
@@ -146,6 +162,7 @@ impl EditView {
             dirty: false,
             view_id: None,
             config: None,
+            theme: None,
             line_cache: LineCache::new(),
             scroll_offset: 0.0,
             viewport: 0..0,
@@ -194,6 +211,20 @@ impl EditView {
             true
         } else {
             false
+        }
+    }
+
+    fn send_notification(&mut self, method: &str, params: &Value) {
+        let core = self.core.upgrade();
+        if core.is_some() && self.view_id.is_some() {
+            let core = core.unwrap();
+            core.lock().unwrap().send_notification(method, params);
+            println!("fe->core: {}", json!({
+                method: params,
+            }));
+        } else {
+            println!("queueing pending method: {}", method);
+            self.pending.push((method.to_owned(), params.clone()));
         }
     }
 
@@ -305,8 +336,9 @@ impl EditView {
                 };
                 self.send_action(action);
             },
-            VirtualKeyCode::Escape => {
-            },
+            VirtualKeyCode::F1 => self.set_theme("Solarized (dark)"),
+            VirtualKeyCode::F2 => self.set_theme("Solarized (light)"),
+            VirtualKeyCode::F3 => self.set_theme("InspiredGitHub"),
             VirtualKeyCode::Back => {
                 let action = if mods.ctrl() {
                     s(mods, "delete_word_backward", "delete_to_beginning_of_line")
@@ -351,6 +383,27 @@ impl EditView {
         self.config = Some(config);
     }
 
+
+    fn theme_changed(&mut self, theme: Theme) {
+        println!("theme_changed: {:?}", theme);
+        
+        if let Some(col) = theme.foreground {
+            self.resources.fg = rgba8_to_rgba32([col.r, col.g, col.b, col.a]);
+        }
+        if let Some(col) = theme.background {
+            self.resources.bg = rgba8_to_rgba32([col.r, col.g, col.b, col.a]);
+        }
+        if let Some(col) = theme.caret {
+            self.resources.sel = rgba8_to_rgba32([col.r, col.g, col.b, col.a]);
+        }
+
+        self.theme = Some(theme);
+    }
+
+    fn set_theme(&mut self, theme_name: &str) {
+        self.send_notification("set_theme", &json!({ "theme_name": theme_name }));
+    }
+
     pub fn poke(&mut self, command: EditViewCommands) -> bool {
         match command {
             EditViewCommands::ViewId(view_id) => self.set_view(view_id),
@@ -359,6 +412,8 @@ impl EditView {
             EditViewCommands::ScrollTo(line) => self.scroll_to(line),
             EditViewCommands::Resize(size) => self.resize(size),
             EditViewCommands::ConfigChanged(config) => self.config_changed(config),
+            EditViewCommands::ThemeChanged(theme) => self.theme_changed(theme),
+            EditViewCommands::SetTheme(theme) => self.set_theme(theme.as_str()),
             EditViewCommands::Undo => self.send_action("undo"),
             EditViewCommands::Redo => self.send_action("redo"),
             EditViewCommands::SelectAll => self.send_action("select_all"),

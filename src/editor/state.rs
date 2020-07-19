@@ -10,12 +10,14 @@ use crate::events::{
     state::InputState,
     mapper_winit::map_input_into_string,
 };
+use super::rpc::Theme;
 
 pub type ViewId = String;
 
 pub struct EditorState {
     pub focused: Option<ViewId>,
     pub views: HashMap<ViewId, EditView>, 
+    pub available_themes: Option<Vec<String>>,
 }
 
 impl EditorState {
@@ -23,6 +25,7 @@ impl EditorState {
         Self {
             focused: Default::default(),
             views: HashMap::new(),
+            available_themes: None,
         }
     }
     
@@ -32,6 +35,17 @@ impl EditorState {
 
         self.views.get_mut(&view_id)
             .expect("Focused EditView not found in views")
+    }
+
+    
+
+    pub fn set_available_themes(&mut self, themes: Vec<String>) {
+        println!("set available themes: {:?}", themes);
+        self.available_themes = Some(themes);
+    }
+
+    pub fn get_available_themes(&self) -> Option<&Vec<String>> {
+        self.available_themes.as_ref()
     }
 
     pub fn update_from_input(&mut self, input: Arc<Mutex<InputState>>) -> bool {
