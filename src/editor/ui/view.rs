@@ -13,7 +13,6 @@ use glyph_brush::{
     Section,
     Layout,
     Text,
-    ab_glyph::PxScale,
 };
 
 use crate::editor::rpc::Core;
@@ -24,6 +23,7 @@ use serde_json::{
 };
 
 use crate::render::Renderer;
+use crate::editor::rpc::Config;
 use super::{
     text::TextWidget,
     widget::Widget,
@@ -39,6 +39,7 @@ pub enum EditViewCommands {
     ScrollTo(usize),
     Core(Weak<Mutex<Core>>),
     Resize([f32; 2]),
+    ConfigChanged(Config),
     MeasureWidth((u64, Vec<Value>)),
     Undo,
     Redo,
@@ -66,8 +67,9 @@ pub struct EditView {
     viewport: Range<usize>,
     core: Weak<Mutex<Core>>,
     pending: Vec<(Method, Params)>,
-    resources: Resources,
+    config: Option<Config>,
     size: [f32; 2],
+    resources: Resources,
 }
 
 const TOP_PAD: f32 = 6.0;
@@ -100,7 +102,8 @@ impl Widget for EditView {
                 let cursors = text_widget.get_cursor();
                 for offset in cursors {
                     let section = &text_widget.get_section().to_borrowed();
-                    let pos = text_ctx.borrow().get_cursor_position(section, offset); 
+                    let pos = text_ctx.borrow_mut()
+                        .get_cursor_position(section, offset, self.resources.scale); 
 
                     let mut offside = create_offside_section(self.resources.sel, self.resources.scale);
                     offside.screen_position = pos;
@@ -142,6 +145,7 @@ impl EditView {
             size,
             dirty: false,
             view_id: None,
+            config: None,
             line_cache: LineCache::new(),
             scroll_offset: 0.0,
             viewport: 0..0,
@@ -174,8 +178,7 @@ impl EditView {
         self.size = size;
         self.dirty = true;
 
-        let (w, h) = (PxScale::from(size[0]).x, PxScale::from(size[1]).y);
-        println!("sending resize: {:?} x {:?}", w, h);
+        let (w, h) = (size[0], size[1]);
         self.send_edit_cmd("resize", &json!({ "width": w, "height": h }));
     }
 
@@ -184,7 +187,6 @@ impl EditView {
     }
 
     pub fn char(&mut self, ch: char) -> bool {
-        println!("sending char: {}", ch);
         if ch as u32 >= 0x20 {
             let params = json!({"chars": ch.to_string()});
             self.send_edit_cmd("insert", &params);
@@ -328,28 +330,35 @@ impl EditView {
         true
     }
 
+    fn set_view(&mut self, view_id: String) {
+        self.view_id = Some(view_id.to_string());
+        self.viewport = 0..0;
+        self.update_viewport();
+
+        let pending = std::mem::replace(&mut self.pending, Vec::new());
+        for notification in pending {
+            let (method, params) = notification;
+            self.send_edit_cmd(&method, &params);
+        }
+    }
+
+    fn config_changed(&mut self, config: Config) {
+        println!("config_changed: {:?}", config);
+        if config.font_size.is_some() {
+            self.resources.scale = config.font_size.unwrap();
+        }
+
+        self.config = Some(config);
+    }
+
     pub fn poke(&mut self, command: EditViewCommands) -> bool {
         match command {
-            EditViewCommands::ViewId(view_id) => {
-                println!("EditView.poke: ViewId = {}", view_id);
-
-                self.view_id = Some(view_id.to_string());
-                self.viewport = 0..0;
-                self.update_viewport();
-
-                let pending = std::mem::replace(&mut self.pending, Vec::new());
-                for notification in pending {
-                    let (method, params) = notification;
-                    self.send_edit_cmd(&method, &params);
-                }
-            },
-            EditViewCommands::Core(core) => {
-                println!("EditView.poke: Core set!");
-                self.core = core.clone()
-            },
+            EditViewCommands::ViewId(view_id) => self.set_view(view_id),
+            EditViewCommands::Core(core) => self.core = core.clone(),
             EditViewCommands::ApplyUpdate(update) => self.apply_update(&update),
             EditViewCommands::ScrollTo(line) => self.scroll_to(line),
             EditViewCommands::Resize(size) => self.resize(size),
+            EditViewCommands::ConfigChanged(config) => self.config_changed(config),
             EditViewCommands::Undo => self.send_action("undo"),
             EditViewCommands::Redo => self.send_action("redo"),
             EditViewCommands::SelectAll => self.send_action("select_all"),

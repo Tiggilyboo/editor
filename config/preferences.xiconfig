@@ -1,0 +1,10 @@
+tab_size = 2
+translate_tabs_to_spaces = true
+font_face = "Hack"
+font_size = 20
+auto_indent = true
+scroll_past_end = true
+wrap_width = 0
+word_wrap = false
+autodetect_whitespace = true
+save_with_newline = true

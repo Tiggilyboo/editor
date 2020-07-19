@@ -1,4 +1,6 @@
-mod config;
+pub mod config;
+
+pub use config::Config;
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};

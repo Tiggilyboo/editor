@@ -8,7 +8,7 @@ use serde_json::{
 };
 
 #[derive(Debug, PartialEq, Serialize, Deserialize, Default)]
-struct Config {
+pub struct Config {
     pub font_face: Option<String>,
     pub font_size: Option<f32>,
     pub line_ending: Option<String>,

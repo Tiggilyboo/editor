@@ -309,16 +309,19 @@ impl TextContext {
         self.glyph_brush.borrow_mut().queue(section);
     }
 
-    pub fn get_cursor_position(&self, section: &Section, offset: usize) -> (f32, f32) {
+    pub fn get_cursor_position(&mut self, section: &Section, offset: usize, font_size: f32) -> (f32, f32) {
         let content = section.text[0].text.char_indices();
         let mut pos: (f32, f32) = section.screen_position;
+
+        if font_size != self.font_context.get_scale() {
+            self.font_context.set_scale(font_size);
+        }
         
         for (i, ch) in content {
-            if i >= offset {
+            if offset == 0 || offset <= i {
                 break;
             }
             let bounds = self.font_context.get_char_bounds(ch);
-            println!("cursor pos for offset: {}, for ch: {}, got: {:?}", offset, ch, bounds);
 
             pos.0 += bounds.max.x;
             if bounds.max.y > pos.1 {

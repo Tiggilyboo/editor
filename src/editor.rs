@@ -24,20 +24,18 @@ use winit::event::{
 use serde_json::{
     Value,
     json,
+    from_value,
 };
 use ui::view::{
     EditView,
     EditViewCommands,
 };
-use ui::widget::{
-    Widget,
-};
-use state::{
-    EditorState,
-};
+use ui::widget::Widget;
+use state::EditorState;
+use rpc::{ Core, Handler };
+use rpc::config::Config;
 use super::events::state::InputState;
 
-use rpc::{ Core, Handler };
 
 #[derive(Clone)]
 struct App {
@@ -77,16 +75,13 @@ impl App {
     }
 
     fn send_notification(&self, method: &str, params: &Value) {
-        println!("send_notification, method = {}", method);
         self.get_core().send_notification(method, params);
-        println!("sent");
     }
 
     fn send_view_cmd(&self, command: EditViewCommands) {
         let mut state = self.state.lock().unwrap();
         let view_state = state.get_focused_view();
 
-        println!("poking view from send_view_cmd");
         view_state.poke(command);
     }
 
@@ -124,6 +119,10 @@ impl App {
         match method {
             "update" => self.send_view_cmd(EditViewCommands::ApplyUpdate(params["update"].clone())),
             "scroll_to" => self.send_view_cmd(EditViewCommands::ScrollTo(params["line"].as_u64().unwrap() as usize)),
+            "config_changed" => {
+                let config = from_value::<Config>(params["changes"].clone()).unwrap();
+                self.send_view_cmd(EditViewCommands::ConfigChanged(config));
+            },
             "measure_width" => {
                 self.send_view_cmd(EditViewCommands::MeasureWidth((
                             params["id"].as_u64().unwrap(), 

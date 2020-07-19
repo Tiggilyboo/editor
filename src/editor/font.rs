@@ -8,6 +8,7 @@ use crate::unicode::*;
 pub struct FontContext {
     font: FontArc,
     bounds: HashMap<char, Rect>,
+    font_size: f32,
 }
 
 fn calculate_bounds(font: FontArc, scale: f32) -> HashMap<char, Rect> {
@@ -42,10 +43,11 @@ fn calculate_bounds(font: FontArc, scale: f32) -> HashMap<char, Rect> {
 }
 
 impl FontContext {
-    pub fn from(font: FontArc, scale: f32) -> Self {
+    pub fn from(font: FontArc, font_size: f32) -> Self {
         Self {
             font: font.clone(),
-            bounds: calculate_bounds(font.clone(), scale),
+            bounds: calculate_bounds(font.clone(), font_size),
+            font_size,
         }
     }
 
@@ -54,7 +56,12 @@ impl FontContext {
             .expect("could not find character in FontContext")
     }
 
+    pub fn get_scale(&self) -> f32 {
+        self.font_size
+    }
+
     pub fn set_scale(&mut self, scale: f32) {
+        self.font_size = scale;
         self.bounds = calculate_bounds(self.font.clone(), scale);
     }
 }
