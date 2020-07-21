@@ -1,5 +1,7 @@
 mod core;
+
 pub mod text;
+pub mod primitive;
 
 use std::sync::Arc;
 use std::cell::RefCell;
@@ -24,6 +26,7 @@ use vulkano::sync::{
 };
 use self::core::RenderCore;
 use self::text::TextContext;
+use self::primitive::PrimitiveContext;
 
 use super::events::EditorEventLoop;
 
@@ -36,6 +39,7 @@ pub struct Renderer {
     recreate_swap_chain: bool,
 
     text_context: Arc<RefCell<TextContext>>,
+    primitive_context: Arc<RefCell<PrimitiveContext>>,
 }
 
 impl Renderer {
@@ -62,6 +66,12 @@ impl Renderer {
             core.swap_chain.clone(), 
             &core.swap_chain_images))); 
 
+        let primitive_context = Arc::new(RefCell::<PrimitiveContext>::new(PrimitiveContext::new(
+            device.clone(),
+            graphics_queue.clone(),
+            core.swap_chain.clone(),
+            &core.swap_chain_images)));
+
         let device: &Arc<Device> = &device.clone();
         let previous_frame_end = Some(Self::create_sync_objects(device));
 
@@ -70,6 +80,7 @@ impl Renderer {
             swap_chain_frame_buffers,
 
             text_context,
+            primitive_context,
 
             dynamic_state,
             render_pass,
@@ -85,6 +96,10 @@ impl Renderer {
 
     pub fn get_text_context(&mut self) -> Arc<RefCell<TextContext>> {
         self.text_context.clone()
+    }
+
+    pub fn get_primitive_context(&mut self) -> Arc<RefCell<PrimitiveContext>> {
+        self.primitive_context.clone()
     }
 
     pub fn draw_frame(&mut self) { 
@@ -165,6 +180,13 @@ impl Renderer {
             &mut self.dynamic_state);
 
         self.text_context = Arc::new(RefCell::from(TextContext::new(
+            self.core.get_device().clone(),
+            self.core.get_graphics_queue().clone(),
+            self.core.swap_chain.clone(),
+            &self.core.swap_chain_images,
+        )));
+
+        self.primitive_context = Arc::new(RefCell::from(PrimitiveContext::new(
             self.core.get_device().clone(),
             self.core.get_graphics_queue().clone(),
             self.core.swap_chain.clone(),

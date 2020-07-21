@@ -88,7 +88,6 @@ pub struct TextContext {
     glyph_brush: RefCell<GlyphBrush<TextVertex>>,
     font_context: FontContext,
     texture: TextureCache,
-    background_colour: [f32; 4],
 }
 
 #[derive(Default, Debug, Clone)]
@@ -100,7 +99,6 @@ pub struct TextVertex {
     pub tex_right_bottom: [f32; 2],
     pub colour: [f32; 4],
 }
-
 
 struct TextureCache {
     pub cache_pixel_buffer: Vec<u8>,
@@ -198,38 +196,31 @@ impl TextContext {
         images: &[Arc<SwapchainImage<W>>]
     ) -> Self where W: Send + Sync + 'static {
 
-        println!("Creating TextContext");
-
-        println!("Loading TextContext vertex_shader...");
         let vertex_shader = vertex_shader::Shader::load(device.clone())
             .expect("unable to load text vertex shader");
         
-        println!("Loading TextContext fragment_shader...");
         let fragment_shader = fragment_shader::Shader::load(device.clone())
             .expect("unable to load fragment shader");
 
-        println!("Loading TextContext font...");
         let font = FontArc::try_from_slice(include_bytes!("../../fonts/Hack-Regular.ttf"))
             .expect("unable to load font");
 
         let font_context = FontContext::from(font.clone(), 20.0);
 
-        println!("Loading GlyphBrushBuilder...");
         let glyph_brush = RefCell::from(
             GlyphBrushBuilder::using_font(font)
-                .cache_glyph_positioning(false)
-                .cache_redraws(false)
+                .cache_glyph_positioning(true)
+                .cache_redraws(true)
                 .build());
 
         let cache_dimensions = glyph_brush.borrow().texture_dimensions();
         let cache_dimensions = (cache_dimensions.0 as usize, cache_dimensions.1 as usize);
         let cache_pixel_buffer = vec![0; cache_dimensions.0 * cache_dimensions.1];
 
-        println!("Creating render_pass...");
         let render_pass = Arc::new(vulkano::single_pass_renderpass!(device.clone(),
             attachments: {
                 color: {
-                    load: Clear,
+                    load: Load,
                     store: Store,
                     format: swapchain.format(),
                     samples: 1,
@@ -241,7 +232,6 @@ impl TextContext {
             }
         ).unwrap()) as Arc<dyn RenderPassAbstract + Send + Sync>;
 
-        println!("Creating framebuffer...");
         let framebuffers = images.iter().map(|image| {
             Arc::new(
                 Framebuffer::start(render_pass.clone())
@@ -250,7 +240,6 @@ impl TextContext {
             ) as Arc<dyn FramebufferAbstract + Send + Sync>
         }).collect::<Vec<_>>();
 
-        println!("Creating pipeline...");
         let pipeline = Arc::new(GraphicsPipeline::start()
             .vertex_input_single_buffer::<Vertex>()
             .vertex_shader(vertex_shader.main_entry_point(), ())
@@ -267,10 +256,9 @@ impl TextContext {
             .blend_alpha_blending()
             .render_pass(Subpass::from(render_pass.clone(), 0).unwrap())
             .build(device.clone())
-            .expect("Unable to create pipeline")
+            .expect("Unable to create text pipeline")
         );
 
-        println!("Creating uniform_buffer_pool...");
         let uniform_buffer_pool = CpuBufferPool::new(device.clone(), BufferUsage::uniform_buffer());
 
         let sampler = Sampler::new(
@@ -284,7 +272,6 @@ impl TextContext {
             0.0, 1.0, 0.0, 0.0
         ).unwrap();
 
-        println!("Loaded TextContext");
         TextContext {
             device: device.clone(),
             queue,
@@ -301,7 +288,6 @@ impl TextContext {
             uniform_buffer_pool,
             vertex_buffer: None, 
             index_buffer: None,
-            background_colour: [0.1, 0.1, 0.1, 1.0],
         }
     }
 
@@ -518,8 +504,8 @@ impl TextContext {
             .begin_render_pass(
                 self.framebuffers[image_num].clone(), 
                 false, 
-                vec![self.background_colour.into()],
-            ).expect("unable to begin render pass")
+                vec![[0.0, 0.0, 0.0, 1.0].into()],
+            ).expect("unable to begin text render pass")
 
             .draw_indexed(
                 self.pipeline.clone(),
@@ -531,9 +517,9 @@ impl TextContext {
             ).expect("unable to draw to command buffer for glyph")
 
             .end_render_pass()
-            .expect("unable to end render pass");
+            .expect("unable to end text render pass");
 
-        return true
+        true
     }
 }
 

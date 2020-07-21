@@ -26,6 +26,7 @@ use crate::render::Renderer;
 use crate::editor::rpc::{
     Config,
     Theme,
+    EditViewCommands,
 };
 use super::{
     text::TextWidget,
@@ -35,26 +36,6 @@ use super::{
 type Method = String;
 type Params = Value;
 type ColourRGBA = [f32; 4];
-
-pub enum EditViewCommands {
-    ViewId(String),
-    ApplyUpdate(Value),
-    ScrollTo(usize),
-    Core(Weak<Mutex<Core>>),
-    Resize([f32; 2]),
-    ConfigChanged(Config),
-    ThemeChanged(Theme),
-    SetTheme(String),
-    MeasureWidth((u64, Vec<Value>)),
-    Undo,
-    Redo,
-    UpperCase,
-    LowerCase,
-    AddCursorAbove,
-    AddCursorBelow,
-    SingleSelection,
-    SelectAll,
-}
 
 struct Resources {
     fg: ColourRGBA,

@@ -1,8 +1,10 @@
 pub mod config;
 pub mod theme;
+pub mod commands;
 
 pub use config::Config;
 pub use theme::Theme;
+pub use commands::EditViewCommands;
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};

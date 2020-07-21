@@ -21,8 +21,6 @@ pub struct TextWidget {
     styles: Vec<StyleSpan>,
 }
 
-
-
 impl TextWidget {
     pub fn from_line(index: usize, line: &Line, scale: f32, colour: [f32; 4]) -> Self {
         let text = line.text();
