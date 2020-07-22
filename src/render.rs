@@ -200,6 +200,10 @@ impl Renderer {
                 self.core.get_graphics_queue().family()
         ).expect("unable to create AutoCommandBufferBuilder");
 
+        self.primitive_context
+            .borrow_mut()
+            .draw_primitives(&mut builder, image_index);
+
         self.text_context
             .borrow_mut()
             .draw_text(&mut builder, image_index);

@@ -2,10 +2,6 @@ use serde::{
     Serialize,
     Deserialize,
 };
-use serde_json::{
-    Value,
-    json,
-};
 
 #[derive(Debug, PartialEq, Serialize, Deserialize, Default)]
 pub struct Config {

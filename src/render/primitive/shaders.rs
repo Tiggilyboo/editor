@@ -1,6 +1,6 @@
 use vulkano;
 
-#[derive(Default, Copy, Clone)]
+#[derive(Default, Copy, Clone, Debug)]
 pub struct Vertex {
     pub position: [f32; 3],
     pub colour: [f32; 4],

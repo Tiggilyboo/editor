@@ -29,8 +29,9 @@ use crate::editor::rpc::{
     EditViewCommands,
 };
 use super::{
-    text::TextWidget,
     widget::Widget,
+    text::TextWidget,
+    primitive::PrimitiveWidget,
 };
 
 type Method = String;
@@ -41,7 +42,11 @@ struct Resources {
     fg: ColourRGBA,
     bg: ColourRGBA,
     sel: ColourRGBA,
+    gutter_fg: ColourRGBA,
+    gutter_bg: ColourRGBA,
     scale: f32,
+    line_gap: f32,
+    show_line_numbers: bool,
 }
 
 pub struct EditView {
@@ -57,11 +62,12 @@ pub struct EditView {
     theme: Option<Theme>,
     size: [f32; 2],
     resources: Resources,
+    gutter: PrimitiveWidget,
+    background: PrimitiveWidget,
 }
 
 const TOP_PAD: f32 = 6.0;
 const LEFT_PAD: f32 = 6.0;
-const LINE_SPACE: f32 = 17.0;
 
 #[inline]
 fn rgba8_to_rgba32(colour_u8: [u8; 4]) -> [f32; 4] {
@@ -82,35 +88,60 @@ impl Widget for EditView {
         [TOP_PAD, LEFT_PAD]
     }
 
-    fn queue_draw(&self, renderer: &mut Renderer) {
+    fn queue_draw(&mut self, renderer: &mut Renderer) {
+        let text_ctx = renderer.get_text_context().clone();
+
         let first_line = self.y_to_line(0.0);
         let last_line = std::cmp::min(self.y_to_line(self.size[1]) + 1, self.line_cache.height());
         
-        let x0 = LEFT_PAD;
+        // Figure out the maximum width of the line number
+        let scale = self.resources.scale;
+        let gutter_width = if self.resources.show_line_numbers {
+            LEFT_PAD + LEFT_PAD + text_ctx.borrow().get_text_width(last_line.to_string().clone().as_str())
+        } else {
+            0.0
+        };
+        let x0 = LEFT_PAD + gutter_width;
         let mut y = self.line_to_content_y(first_line) - self.scroll_offset;
 
-        let text_ctx = renderer.get_text_context().clone();
+        let line_gap = self.resources.line_gap;
+
+        self.background.queue_draw(renderer);
+        self.gutter.set_width(gutter_width);
+        self.gutter.queue_draw(renderer);
 
         for line_num in first_line..last_line {
             if let Some(ref mut text_widget) = &mut self.get_line(line_num) {
+                // Line body
                 text_widget.set_position(x0, y);
                 text_widget.queue_draw(renderer);
 
+                // Cursors
                 let cursors = text_widget.get_cursor();
                 for offset in cursors {
                     let section = &text_widget.get_section().to_borrowed();
                     let pos = text_ctx.borrow_mut()
-                        .get_cursor_position(section, offset, self.resources.scale); 
+                        .get_cursor_position(section, offset, scale); 
 
-                    let mut offside = create_offside_section(self.resources.sel, self.resources.scale);
+                    let mut offside = create_offside_section("\u{2588}", self.resources.sel, scale);
                     offside.screen_position = pos;
-                    renderer.get_text_context().borrow_mut()
+                    text_ctx.borrow_mut()
+                        .queue_text(&offside.to_borrowed());
+                }
+
+                // Line numbers
+                if self.resources.show_line_numbers {
+                    let content = (line_num + 1).to_string();
+                    let mut offside = create_offside_section(
+                        content.clone().as_str(), self.resources.gutter_fg, scale);
+                    offside.screen_position = (LEFT_PAD, y);
+                    text_ctx.borrow_mut()
                         .queue_text(&offside.to_borrowed());
                 }
                 
                 text_widget.set_dirty(true);
             }
-            y += LINE_SPACE;
+            y += line_gap;
         }
     }
 
@@ -119,9 +150,9 @@ impl Widget for EditView {
     }
 }
 
-fn create_offside_section(colour: [f32; 4], scale: f32) -> OwnedSection {
+fn create_offside_section(content: &str, colour: [f32; 4], scale: f32) -> OwnedSection {
     Section::default()
-        .add_text(Text::new("\u{2588}")
+        .add_text(Text::new(content)
                   .with_scale(scale)
                   .with_color(colour))
         .with_layout(Layout::default_single_line())
@@ -129,18 +160,32 @@ fn create_offside_section(colour: [f32; 4], scale: f32) -> OwnedSection {
         .to_owned()
 }
 
-impl EditView {
-    pub fn new(index: usize, size: [f32; 2], scale: f32) -> Self {
-        let resources = Resources {
-            fg: [0.9, 0.9, 0.9, 1.0],
-            bg: [0.1, 0.1, 0.1, 1.0],
-            sel: [0.3, 0.3, 0.3, 0.7],
+const BLANK: ColourRGBA = [0.0, 0.0, 0.0, 0.0];
+impl Resources {
+    fn new(scale: f32, line_gap: f32) -> Self {
+        Self {
+            fg: BLANK,
+            bg: BLANK,
+            sel: BLANK,
+            gutter_bg: BLANK,
+            gutter_fg: BLANK,
+            show_line_numbers: false,
+            line_gap,
             scale,
-        };
+        }
+    }
+}
+
+impl EditView {
+    pub fn new(index: usize, size: [f32; 2], scale: f32, line_gap: f32) -> Self {
+        let resources = Resources::new(scale, line_gap);
+        let background = PrimitiveWidget::new(1, [0.0, 0.0, 0.0], size, resources.bg);
+        let gutter = PrimitiveWidget::new(2, [0.0, 0.0, 0.1], [scale, size[1]], resources.gutter_bg);
+
         Self {
             index,
             size,
-            dirty: false,
+            dirty: true,
             view_id: None,
             config: None,
             theme: None,
@@ -150,6 +195,8 @@ impl EditView {
             core: Default::default(),
             pending: Default::default(),
             resources,
+            gutter,
+            background,
         }
     }
 
@@ -174,6 +221,8 @@ impl EditView {
 
     pub fn resize(&mut self, size: [f32; 2]) {
         self.size = size;
+        self.gutter.set_height(size[1]);
+        self.background.set_size(size);
         self.dirty = true;
 
         let (w, h) = (size[0], size[1]);
@@ -236,6 +285,7 @@ impl EditView {
         self.send_edit_cmd(method, &json!([]));
     }
 
+    // TODO: Move this somewhere
     pub fn keydown(&mut self, keycode: VirtualKeyCode, mods: ModifiersState) -> bool {
         match keycode {
             VirtualKeyCode::Return => self.send_action("insert_newline"),
@@ -249,7 +299,7 @@ impl EditView {
             },
             VirtualKeyCode::Up => {
                 if mods.ctrl() {
-                    self.scroll_offset -= LINE_SPACE;
+                    self.scroll_offset -= self.resources.line_gap;
                     self.constrain_scroll();
                     self.update_viewport();
                 } else {
@@ -264,7 +314,7 @@ impl EditView {
             },
             VirtualKeyCode::Down => {
                 if mods.ctrl() {
-                    self.scroll_offset += LINE_SPACE;
+                    self.scroll_offset += self.resources.line_gap;
                     self.constrain_scroll();
                     self.update_viewport();
                 } else {
@@ -320,6 +370,7 @@ impl EditView {
             VirtualKeyCode::F1 => self.set_theme("Solarized (dark)"),
             VirtualKeyCode::F2 => self.set_theme("Solarized (light)"),
             VirtualKeyCode::F3 => self.set_theme("InspiredGitHub"),
+            VirtualKeyCode::F5 => self.show_line_numbers(!self.resources.show_line_numbers),
             VirtualKeyCode::Back => {
                 let action = if mods.ctrl() {
                     s(mods, "delete_word_backward", "delete_to_beginning_of_line")
@@ -359,26 +410,44 @@ impl EditView {
         println!("config_changed: {:?}", config);
         if config.font_size.is_some() {
             self.resources.scale = config.font_size.unwrap();
+            self.dirty = true;
         }
 
         self.config = Some(config);
     }
 
+    fn show_line_numbers(&mut self, show: bool) {
+        self.resources.show_line_numbers = show;
+        self.dirty = true;
+    }
 
     fn theme_changed(&mut self, theme: Theme) {
-        println!("theme_changed: {:?}", theme);
-        
         if let Some(col) = theme.foreground {
             self.resources.fg = rgba8_to_rgba32([col.r, col.g, col.b, col.a]);
         }
         if let Some(col) = theme.background {
             self.resources.bg = rgba8_to_rgba32([col.r, col.g, col.b, col.a]);
+            self.background.set_colour(rgba8_to_rgba32([col.r, col.g, col.b, col.a]));
         }
         if let Some(col) = theme.caret {
             self.resources.sel = rgba8_to_rgba32([col.r, col.g, col.b, col.a]);
         }
+        if let Some(col) = theme.gutter {
+            self.resources.gutter_bg = rgba8_to_rgba32([col.r, col.g, col.b, col.a]);
+        } else {
+            self.resources.gutter_bg = self.resources.bg;
+        }
+        self.gutter.set_colour(self.resources.gutter_bg);
+
+        if let Some(col) = theme.gutter_foreground {
+            self.resources.gutter_fg = rgba8_to_rgba32([col.r, col.g, col.b, col.a]);
+        } else {
+            self.resources.gutter_fg = self.resources.fg;
+        }
+        println!("gutter bg: {:?}, gutter fg: {:?}", self.resources.gutter_bg, self.resources.gutter_fg);
 
         self.theme = Some(theme);
+        self.dirty = true;
     }
 
     fn set_theme(&mut self, theme_name: &str) {
@@ -418,14 +487,14 @@ impl EditView {
             return;
         }
         
-        let max_scroll = TOP_PAD + LINE_SPACE * (self.line_cache.height().saturating_sub(1)) as f32;
+        let max_scroll = TOP_PAD + self.resources.line_gap * (self.line_cache.height().saturating_sub(1)) as f32;
         if self.scroll_offset > max_scroll {
            self.scroll_offset = max_scroll; 
         }
     }
 
     fn y_to_line(&self, y: f32) -> usize {
-        let mut line = (y + self.scroll_offset - TOP_PAD) / LINE_SPACE;
+        let mut line = (y + self.scroll_offset - TOP_PAD) / self.resources.line_gap;
         if line < 0.0 { line = 0.0; }
         let line = line.floor() as usize;
 
@@ -434,7 +503,7 @@ impl EditView {
 
     fn update_viewport(&mut self) {
         let first_line = self.y_to_line(0.0);
-        let last_line = first_line + ((self.size[1] / LINE_SPACE).floor() as usize) + 1;
+        let last_line = first_line + ((self.size[1] / self.resources.line_gap).floor() as usize) + 1;
         let viewport = first_line..last_line;
 
         if viewport != self.viewport {
@@ -445,7 +514,7 @@ impl EditView {
 
     #[inline]
     fn line_to_content_y(&self, line_num: usize) -> f32 {
-        TOP_PAD + (line_num as f32) * LINE_SPACE
+        TOP_PAD + (line_num as f32) * self.resources.line_gap
     }
 
     pub fn scroll_to(&mut self, line_num: usize) {

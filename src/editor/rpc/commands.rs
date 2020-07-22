@@ -16,7 +16,6 @@ pub enum EditViewCommands {
     ConfigChanged(Config),
     ThemeChanged(Theme),
     SetTheme(String),
-    MeasureWidth((u64, Vec<Value>)),
     Undo,
     Redo,
     UpperCase,

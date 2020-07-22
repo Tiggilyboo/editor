@@ -24,7 +24,6 @@ use vulkano::{
         AutoCommandBufferBuilder,
         DynamicState,
     },
-    format::ClearValue,
     descriptor::pipeline_layout::PipelineLayoutAbstract,
     framebuffer::{
         RenderPassAbstract,
@@ -42,10 +41,10 @@ use shaders::{
 };
 
 pub struct Primitive {
-    top_left: [f32; 2],
-    bottom_right: [f32; 2],
-    depth: f32,
-    colour: [f32; 4],   
+    pub top_left: [f32; 2],
+    pub bottom_right: [f32; 2],
+    pub depth: f32,
+    pub colour: [f32; 4],   
 }
 
 pub struct PrimitiveContext {
@@ -59,7 +58,7 @@ pub struct PrimitiveContext {
     vertex_buffer: Option<Arc<CpuAccessibleBuffer<[Vertex]>>>,
     index_buffer: Option<Arc<dyn TypedBufferAccess<Content=[u16]> + Send + Sync>>,
 
-    primitives: Vec<Primitive>,
+    primitives: HashMap<usize, Primitive>,
 }
 
 impl PrimitiveContext {
@@ -126,7 +125,7 @@ impl PrimitiveContext {
             framebuffers,
             vertex_buffer: None,
             index_buffer: None,
-            primitives: vec!(),
+            primitives: HashMap::new(),
         }
     }
 
@@ -148,44 +147,97 @@ impl PrimitiveContext {
         self.index_buffer = Some(index_buffer);
     }
 
-    pub fn queue_primitive(&mut self, primitive: Primitive) {
-        self.primitives.push(primitive);
+    pub fn queue_primitive(&mut self, index: usize, primitive: Primitive) {
+        self.primitives.insert(index, primitive);
+    }
+
+    #[inline]
+    fn primitive_to_buffer(offset: u16, primitive: &Primitive, dimensions: [f32; 2]) -> ([Vertex; 4], [u16; 6]) {
+        let x = 2.0 / dimensions[0];
+        let y = 2.0 / dimensions[1];
+        let w = dimensions[0] / 2.0;
+        let h = dimensions[1] / 2.0;
+        let offset = offset * 3;
+
+        let mut top_left = [primitive.top_left[0] - w, primitive.top_left[1] - h];
+        let mut bottom_right = [primitive.bottom_right[0] - w, primitive.bottom_right[1] - h];
+
+        top_left[0] *= x;
+        bottom_right[0] *= x;
+
+        top_left[1] *= y;
+        bottom_right[1] *= y;
+    
+        ([
+            Vertex {
+                position: [top_left[0], top_left[1], primitive.depth],
+                colour: primitive.colour,
+            },
+            Vertex {
+                position: [bottom_right[0], top_left[1], primitive.depth],
+                colour: primitive.colour,
+            },
+            Vertex {
+                position: [top_left[0], bottom_right[1], primitive.depth],
+                colour: primitive.colour,
+            },
+            Vertex {
+                position: [bottom_right[0], bottom_right[1], primitive.depth],
+                colour: primitive.colour,
+            },
+        ],
+            [
+                // 0 1 4 5
+                // 2 3 6 7
+                offset + 0, offset + 1, offset + 2, 
+                offset + 1, offset + 2, offset + 3, 
+            ]
+        )
     }
 
     pub fn draw_primitives<'a>(&'a mut self, 
         builder: &'a mut AutoCommandBufferBuilder,
         image_num: usize,
     ) -> bool {
-        
-        let dimensions = self.framebuffers[image_num].dimensions();
-        
+        let dimensions = self.framebuffers[image_num].dimensions(); 
+        let dimensions = [dimensions[0] as f32, dimensions[1] as f32];
+
         // process the Primitives to vertices and indices...
-        let verts = vec!();
-        for prim in self.primitives {
-            verts.append([
-                prim.top_left[0], prim.top_left[1],
-                prim.bottom_right[0], prim.bottom_right[1],
-            ]);
+        let len_prims = self.primitives.len();
+        let mut verts: Vec<Vertex> = Vec::with_capacity(len_prims * 4);
+        let mut indices: Vec<u16> = Vec::with_capacity(len_prims * 6);
+        let mut i: u16 = 0;
+        for (_, prim) in self.primitives.iter() {
+            let (prim_verts, prim_indices) = Self::primitive_to_buffer(i, prim, dimensions);
+        
+            verts.extend(prim_verts.iter());
+            indices.extend(prim_indices.iter());
+            i += 1;
         }
 
-        builder
-            .begin_render_pass(
-                self.framebuffers[image_num].clone(),
-                false,
-                vec![ClearValue::None],
-            ).expect("unable to begin primitive render pass")
+        // Do we actuall have anything to draw?
+        if i > 0 {
+            self.upload_vertices(verts, indices);
 
-            .draw_indexed(
-                self.pipeline.clone(),
-                &DynamicState::none(),
-                self.vertex_buffer.clone().unwrap(),
-                self.index_buffer.clone().unwrap(),
-                (),
-                ()
-            ).expect("unable to draw to command buffer for primitive")
+            builder
+                .begin_render_pass(
+                    self.framebuffers[image_num].clone(),
+                    false,
+                    vec![[0.0, 0.0, 0.0, 1.0].into()],
+                ).expect("unable to begin primitive render pass")
 
-            .end_render_pass()
-            .expect("unable to end primitive render pass");
+                .draw_indexed(
+                    self.pipeline.clone(),
+                    &DynamicState::none(),
+                    self.vertex_buffer.clone().unwrap(),
+                    self.index_buffer.clone().unwrap(),
+                    (),
+                    ()
+                ).expect("unable to draw to command buffer for primitive")
+
+                .end_render_pass()
+                .expect("unable to end primitive render pass");
+        }
 
         true
     }

@@ -15,6 +15,7 @@ use vulkano::device::{
 }; 
 use vulkano::format::{
     R8Unorm,
+    ClearValue,
 };
 use vulkano::pipeline::{
     GraphicsPipeline,
@@ -295,6 +296,20 @@ impl TextContext {
         self.glyph_brush.borrow_mut().queue(section);
     }
 
+    pub fn get_line_height(&self, font_size: f32) -> f32 {
+        font_size + 3.0
+    }
+
+    pub fn get_text_width(&self, text: &str) -> f32 {
+        let mut w: f32 = 0.0;
+        for (_, ch) in text.char_indices() {
+            let bounds = self.font_context.get_char_bounds(ch);
+            w += bounds.max.x;
+        }
+
+        w
+    }
+
     pub fn get_cursor_position(&mut self, section: &Section, offset: usize, font_size: f32) -> (f32, f32) {
         let content = section.text[0].text.char_indices();
         let mut pos: (f32, f32) = section.screen_position;
@@ -504,7 +519,7 @@ impl TextContext {
             .begin_render_pass(
                 self.framebuffers[image_num].clone(), 
                 false, 
-                vec![[0.0, 0.0, 0.0, 1.0].into()],
+                vec![ClearValue::None],
             ).expect("unable to begin text render pass")
 
             .draw_indexed(

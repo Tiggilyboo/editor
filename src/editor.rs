@@ -26,16 +26,19 @@ use serde_json::{
     json,
     from_value,
 };
-use syntect::highlighting::ThemeSettings;
 
 use ui::view::{
     EditView,
-    EditViewCommands,
 };
 use ui::widget::Widget;
 use state::EditorState;
-use rpc::{ Core, Handler };
-use rpc::{ Config, Theme };
+use rpc::{ 
+    Core, 
+    Handler,
+    Config, 
+    Theme,
+    EditViewCommands,
+};
 use super::events::state::InputState;
 
 
@@ -87,7 +90,7 @@ impl App {
         view_state.poke(command);
     }
 
-    pub fn open_file_in_view(&self, filename: Option<&str>, screen_size: [f32; 2], font_size: f32) {
+    pub fn open_file_in_view(&self, filename: Option<&str>, screen_size: [f32; 2], font_size: f32, line_height: f32) {
         let mut params = json!({});
 
         let filename = if filename.is_some() {
@@ -106,7 +109,7 @@ impl App {
 
             if let Ok(ref mut state) = state.try_lock() {
                 state.focused = Some(view_id.clone());
-                state.views.insert(view_id.clone(), EditView::new(0, screen_size, font_size));
+                state.views.insert(view_id.clone(), EditView::new(0, screen_size, font_size, line_height));
 
                 let edit_view = state.get_focused_view();
                 edit_view.poke(EditViewCommands::Core(core));
@@ -139,15 +142,13 @@ impl App {
                 }
             },
             "theme_changed" => {
-                println!("theme_changed: {:?}", params["theme"]);
                 let theme = from_value::<Theme>(params["theme"].clone()).unwrap();
-                self.send_view_cmd(EditViewCommands::ThemeChanged(theme));
-            },
-            "measure_width" => {
-                self.send_view_cmd(EditViewCommands::MeasureWidth((
-                            params["id"].as_u64().unwrap(), 
-                            params["strings"].as_array().unwrap().clone())
-                ));
+                self.send_view_cmd(EditViewCommands::ThemeChanged(theme.clone()));
+                if let Ok(ref mut state) = self.state.clone().try_lock() {
+                    if let Some(name) = params["name"].as_str() {
+                        state.set_theme(String::from(name));
+                    }
+                }
             },
             _ => println!("unhandled core->fe method: {}", method),
         }
@@ -199,7 +200,10 @@ pub fn run(title: &str) {
         "config_dir": "./config",
         "client_extras_dir": "./extras",
     }));
-    app.open_file_in_view(None, screen_dimensions, 20.0);
+    if let text_ctx = renderer.borrow_mut().get_text_context().clone().borrow_mut() {
+        let scale = 20.0;
+        app.open_file_in_view(None, screen_dimensions, scale, text_ctx.get_line_height(scale));
+    }
 
     events_loop.run(move |event: Event<'_, EditorEvent>, _, control_flow: &mut ControlFlow| {
         *control_flow = ControlFlow::Wait;

@@ -72,7 +72,7 @@ impl Widget for TextWidget {
         self.dirty
     }
 
-    fn queue_draw(&self, renderer: &mut Renderer) {
+    fn queue_draw(&mut self, renderer: &mut Renderer) {
         renderer.get_text_context().borrow_mut()
             .queue_text(&self.section.to_borrowed());
     }
