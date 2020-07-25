@@ -1,11 +1,11 @@
 
 use winit::event::{
-    VirtualKeyCode,
     ModifiersState,
     WindowEvent,
     ElementState,
     MouseButton,
     MouseScrollDelta,
+    ScanCode,
 };
 
 #[derive(Debug)]
@@ -67,7 +67,7 @@ impl MouseState {
 
 #[derive(Debug)]
 pub struct InputState {
-    pub keycode: Option<VirtualKeyCode>,
+    pub keycode: Option<ScanCode>,
     pub modifiers: ModifiersState,
     pub mouse: MouseState,
 }
@@ -90,7 +90,8 @@ impl InputState {
         self.keycode = match event {
             WindowEvent::KeyboardInput { input, .. } => {
                 if input.state == ElementState::Pressed {
-                    input.virtual_keycode
+                    println!("SC: {}", input.scancode);
+                    Some(input.scancode)
                 } else if input.state == ElementState::Released {
                     None 
                 } else {

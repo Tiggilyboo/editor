@@ -12,6 +12,7 @@ pub enum WidgetKind {
 pub trait Widget {
     fn index(&self) -> usize;
     fn position(&self) -> [f32; 2];
+    fn size(&self) -> [f32; 2];
     fn queue_draw(&mut self, renderer: &mut Renderer);
     fn dirty(&self) -> bool;
 }

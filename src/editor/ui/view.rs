@@ -4,9 +4,10 @@ use std::sync::{
     Weak,
 };
 
+use smithay_client_toolkit::keyboard::keysyms;
 use winit::event::{
-    VirtualKeyCode,
     ModifiersState,
+    ScanCode,
 };
 use glyph_brush::{
     OwnedSection,
@@ -46,7 +47,6 @@ struct Resources {
     gutter_bg: ColourRGBA,
     scale: f32,
     line_gap: f32,
-    show_line_numbers: bool,
 }
 
 pub struct EditView {
@@ -64,6 +64,7 @@ pub struct EditView {
     resources: Resources,
     gutter: PrimitiveWidget,
     background: PrimitiveWidget,
+    show_line_numbers: bool,
 }
 
 const TOP_PAD: f32 = 6.0;
@@ -88,6 +89,10 @@ impl Widget for EditView {
         [TOP_PAD, LEFT_PAD]
     }
 
+    fn size(&self) -> [f32; 2] {
+        self.size
+    }
+
     fn queue_draw(&mut self, renderer: &mut Renderer) {
         let text_ctx = renderer.get_text_context().clone();
 
@@ -96,8 +101,9 @@ impl Widget for EditView {
         
         // Figure out the maximum width of the line number
         let scale = self.resources.scale;
-        let gutter_width = if self.resources.show_line_numbers {
-            LEFT_PAD + LEFT_PAD + text_ctx.borrow().get_text_width(last_line.to_string().clone().as_str())
+        let gutter_width = if self.show_line_numbers {
+            LEFT_PAD + LEFT_PAD 
+                + text_ctx.borrow().get_text_width(last_line.to_string().clone().as_str())
         } else {
             0.0
         };
@@ -106,9 +112,11 @@ impl Widget for EditView {
 
         let line_gap = self.resources.line_gap;
 
-        self.background.queue_draw(renderer);
-        self.gutter.set_width(gutter_width);
-        self.gutter.queue_draw(renderer);
+        if self.background.dirty() || self.gutter.size()[0] != gutter_width {
+            self.background.queue_draw(renderer);
+            self.gutter.set_width(gutter_width);
+            self.gutter.queue_draw(renderer);
+        }
 
         for line_num in first_line..last_line {
             if let Some(ref mut text_widget) = &mut self.get_line(line_num) {
@@ -130,11 +138,13 @@ impl Widget for EditView {
                 }
 
                 // Line numbers
-                if self.resources.show_line_numbers {
+                if self.show_line_numbers {
                     let content = (line_num + 1).to_string();
+                    let left_offset = text_ctx.borrow().get_text_width(content.as_str());
+
                     let mut offside = create_offside_section(
                         content.clone().as_str(), self.resources.gutter_fg, scale);
-                    offside.screen_position = (LEFT_PAD, y);
+                    offside.screen_position = (gutter_width - left_offset - LEFT_PAD, y);
                     text_ctx.borrow_mut()
                         .queue_text(&offside.to_borrowed());
                 }
@@ -169,7 +179,6 @@ impl Resources {
             sel: BLANK,
             gutter_bg: BLANK,
             gutter_fg: BLANK,
-            show_line_numbers: false,
             line_gap,
             scale,
         }
@@ -194,6 +203,7 @@ impl EditView {
             viewport: 0..0,
             core: Default::default(),
             pending: Default::default(),
+            show_line_numbers: false,
             resources,
             gutter,
             background,
@@ -286,10 +296,10 @@ impl EditView {
     }
 
     // TODO: Move this somewhere
-    pub fn keydown(&mut self, keycode: VirtualKeyCode, mods: ModifiersState) -> bool {
+    pub fn keydown(&mut self, keycode: ScanCode, mods: ModifiersState) -> bool {
         match keycode {
-            VirtualKeyCode::Return => self.send_action("insert_newline"),
-            VirtualKeyCode::Tab => {
+            keysyms::XKB_KEY_Return => self.send_action("insert_newline"),
+            keysyms::XKB_KEY_Tab => {
                 let action = if mods.shift() {
                     "outdent"
                 } else {
@@ -297,7 +307,7 @@ impl EditView {
                 };
                 self.send_action(action);
             },
-            VirtualKeyCode::Up => {
+            keysyms::XKB_KEY_Up => {
                 if mods.ctrl() {
                     self.scroll_offset -= self.resources.line_gap;
                     self.constrain_scroll();
@@ -312,7 +322,7 @@ impl EditView {
                     self.send_action(action);
                 }
             },
-            VirtualKeyCode::Down => {
+            keysyms::XKB_KEY_Down => {
                 if mods.ctrl() {
                     self.scroll_offset += self.resources.line_gap;
                     self.constrain_scroll();
@@ -327,7 +337,7 @@ impl EditView {
                     self.send_action(action);
                 }
             },
-            VirtualKeyCode::Left => {
+            keysyms::XKB_KEY_Left => {
                 let action = if mods.ctrl() {
                     s(mods, "move_word_left", "move_word_left_and_modify_selection")
                 } else {
@@ -336,7 +346,7 @@ impl EditView {
 
                 self.send_action(action);
             },
-            VirtualKeyCode::Right => {
+            keysyms::XKB_KEY_Right => {
                 let action = if mods.ctrl() {
                     s(mods, "move_word_right", "move_word_right_and_modify_selection")
                 } else {
@@ -345,13 +355,13 @@ impl EditView {
 
                 self.send_action(action);
             },
-            VirtualKeyCode::PageUp => {
+            keysyms::XKB_KEY_Page_Up => {
                 self.send_action(s(mods, "scroll_page_up", "page_up_and_modify_selection"));
             },
-            VirtualKeyCode::PageDown => {
+            keysyms::XKB_KEY_Page_Down => {
                 self.send_action(s(mods, "scroll_page_down", "page_down_and_modify_selection"));
             },
-            VirtualKeyCode::Home => {
+            keysyms::XKB_KEY_Home => {
                 let action = if mods.ctrl() {
                     s(mods, "move_to_beginning_of_document", "move_to_beginning_of_document_and_modify_selection")
                 } else {
@@ -359,7 +369,7 @@ impl EditView {
                 };
                 self.send_action(action);
             },
-            VirtualKeyCode::End => {
+            keysyms::XKB_KEY_End => {
                 let action = if mods.ctrl() {
                     s(mods, "move_to_end_of_document", "move_to_end_of_document_and_modify_selection")  
                 } else {
@@ -367,11 +377,12 @@ impl EditView {
                 };
                 self.send_action(action);
             },
-            VirtualKeyCode::F1 => self.set_theme("Solarized (dark)"),
-            VirtualKeyCode::F2 => self.set_theme("Solarized (light)"),
-            VirtualKeyCode::F3 => self.set_theme("InspiredGitHub"),
-            VirtualKeyCode::F5 => self.show_line_numbers(!self.resources.show_line_numbers),
-            VirtualKeyCode::Back => {
+            keysyms::XKB_KEY_F1 => self.set_theme("Solarized (dark)"),
+            keysyms::XKB_KEY_F2 => self.set_theme("Solarized (light)"),
+            keysyms::XKB_KEY_F3 => self.set_theme("InspiredGitHub"),
+            keysyms::XKB_KEY_F5 => self.show_line_numbers(!self.show_line_numbers),
+
+            keysyms::XKB_KEY_BackSpace => {
                 let action = if mods.ctrl() {
                     s(mods, "delete_word_backward", "delete_to_beginning_of_line")
                 } else {
@@ -379,7 +390,7 @@ impl EditView {
                 };
                 self.send_action(action);
             },
-            VirtualKeyCode::Delete => {
+            keysyms::XKB_KEY_Delete => {
                 let action = if mods.ctrl() {
                     s(mods, "delete_word_forward", "delete_to_end_of_paragraph")
                 } else {
@@ -388,7 +399,10 @@ impl EditView {
                 
                 self.send_action(action);
             },
-            _ => return false,
+            _ => {
+                println!("found: {:x}", keycode);
+                return false
+            }
         }
 
         true
@@ -417,7 +431,7 @@ impl EditView {
     }
 
     fn show_line_numbers(&mut self, show: bool) {
-        self.resources.show_line_numbers = show;
+        self.show_line_numbers = show;
         self.dirty = true;
     }
 

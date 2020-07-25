@@ -329,8 +329,6 @@ impl TextContext {
         rect: Rectangle<u32>, 
         src_data: &[u8],
     ) -> Arc<ImmutableImage<R8Unorm>> {
-        println!("TextContext update_texture at rect: {} {} {} {}", rect.min[0], rect.min[1], rect.max[0], rect.max[1]);
-
         let w = (rect.max[0] - rect.min[0]) as usize;
         let h = (rect.max[1] - rect.min[1]) as usize;
         let mut dst_id = rect.min[1] as usize * cache_dimensions.0 + rect.min[0] as usize;

@@ -26,6 +26,7 @@ impl PrimitiveWidget {
     pub fn set_position(&mut self, x: f32, y: f32) {
         self.position[0] = x;
         self.position[1] = y;
+        self.dirty = true;
     }
 
     pub fn set_size(&mut self, size: [f32; 2]) {
@@ -48,6 +49,7 @@ impl PrimitiveWidget {
 
     pub fn set_colour(&mut self, colour: [f32; 4]) {
         self.colour = colour;
+        self.dirty = true;
     }
 }
 
@@ -58,6 +60,10 @@ impl Widget for PrimitiveWidget {
 
     fn position(&self) -> [f32; 2] {
         self.position
+    }
+
+    fn size(&self) -> [f32; 2] {
+        self.size
     }
 
     fn queue_draw(&mut self, renderer: &mut Renderer) {

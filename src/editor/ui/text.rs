@@ -67,6 +67,11 @@ impl Widget for TextWidget {
         let pos = self.section.screen_position;
         [pos.0, pos.1]
     }
+
+    fn size(&self) -> [f32; 2] {
+        let bounds = self.section.bounds;
+        [bounds.0, bounds.1]
+    }
     
     fn dirty(&self) -> bool {
         self.dirty
