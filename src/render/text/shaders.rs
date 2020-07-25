@@ -1,11 +1,5 @@
 use vulkano;
 
-use cgmath::Matrix4;
-
-pub struct TextTransform {
-    pub transform: Matrix4<f32>
-}
-
 #[derive(Default, Copy, Clone)]
 pub struct Vertex {
   pub position: [f32; 2],

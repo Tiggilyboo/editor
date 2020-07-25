@@ -14,17 +14,21 @@ use vulkano::{
         viewport::Viewport,
         vertex::SingleBufferDefinition,
     },
+    descriptor::descriptor_set::{
+        PersistentDescriptorSet,
+    },
+    descriptor::pipeline_layout::PipelineLayoutAbstract,
     buffer::{
         BufferUsage,
         CpuAccessibleBuffer,
         ImmutableBuffer,
+        CpuBufferPool,
         TypedBufferAccess,
     },
     command_buffer::{
         AutoCommandBufferBuilder,
         DynamicState,
     },
-    descriptor::pipeline_layout::PipelineLayoutAbstract,
     framebuffer::{
         RenderPassAbstract,
         Framebuffer,
@@ -34,10 +38,15 @@ use vulkano::{
     swapchain::Swapchain,
     image::SwapchainImage,
 };
+
 use shaders::{
     Vertex,
     vertex_shader,
     fragment_shader,
+};
+use crate::render::uniform::{
+    UniformTransform,
+    calculate_transform,
 };
 
 pub struct Primitive {
@@ -55,6 +64,7 @@ pub struct PrimitiveContext {
         Arc<dyn RenderPassAbstract + Send + Sync>>>,
     framebuffers: Vec<Arc<dyn FramebufferAbstract + Send + Sync>>,
     
+    uniform_buffer_pool: CpuBufferPool<UniformTransform>,
     vertex_buffer: Option<Arc<CpuAccessibleBuffer<[Vertex]>>>,
     index_buffer: Option<Arc<dyn TypedBufferAccess<Content=[u16]> + Send + Sync>>,
 
@@ -118,11 +128,14 @@ impl PrimitiveContext {
             .expect("Unable to create primitive pipeline")
         );
 
+        let uniform_buffer_pool = CpuBufferPool::new(device.clone(), BufferUsage::uniform_buffer());
+
         PrimitiveContext {
             device: device.clone(),
             queue,
             pipeline,
             framebuffers,
+            uniform_buffer_pool,
             vertex_buffer: None,
             index_buffer: None,
             primitives: HashMap::new(),
@@ -153,21 +166,10 @@ impl PrimitiveContext {
 
     #[inline]
     fn primitive_to_buffer(offset: u16, primitive: &Primitive, dimensions: [f32; 2]) -> ([Vertex; 4], [u16; 6]) {
-        let x = 2.0 / dimensions[0];
-        let y = 2.0 / dimensions[1];
-        let w = dimensions[0] / 2.0;
-        let h = dimensions[1] / 2.0;
         let offset = offset * 3;
+        let top_left = primitive.top_left;
+        let bottom_right = primitive.bottom_right;
 
-        let mut top_left = [primitive.top_left[0] - w, primitive.top_left[1] - h];
-        let mut bottom_right = [primitive.bottom_right[0] - w, primitive.bottom_right[1] - h];
-
-        top_left[0] *= x;
-        bottom_right[0] *= x;
-
-        top_left[1] *= y;
-        bottom_right[1] *= y;
-    
         ([
             Vertex {
                 position: [top_left[0], top_left[1], primitive.depth],
@@ -178,11 +180,11 @@ impl PrimitiveContext {
                 colour: primitive.colour,
             },
             Vertex {
-                position: [top_left[0], bottom_right[1], primitive.depth],
+                position: [bottom_right[0], bottom_right[1], primitive.depth],
                 colour: primitive.colour,
             },
             Vertex {
-                position: [bottom_right[0], bottom_right[1], primitive.depth],
+                position: [top_left[0], bottom_right[1], primitive.depth],
                 colour: primitive.colour,
             },
         ],
@@ -190,7 +192,7 @@ impl PrimitiveContext {
                 // 0 1 4 5
                 // 2 3 6 7
                 offset + 0, offset + 1, offset + 2, 
-                offset + 1, offset + 2, offset + 3, 
+                offset + 2, offset + 3, offset + 0, 
             ]
         )
     }
@@ -214,30 +216,43 @@ impl PrimitiveContext {
             indices.extend(prim_indices.iter());
             i += 1;
         }
-
-        // Do we actuall have anything to draw?
-        if i > 0 {
-            self.upload_vertices(verts, indices);
-
-            builder
-                .begin_render_pass(
-                    self.framebuffers[image_num].clone(),
-                    false,
-                    vec![[0.0, 0.0, 0.0, 1.0].into()],
-                ).expect("unable to begin primitive render pass")
-
-                .draw_indexed(
-                    self.pipeline.clone(),
-                    &DynamicState::none(),
-                    self.vertex_buffer.clone().unwrap(),
-                    self.index_buffer.clone().unwrap(),
-                    (),
-                    ()
-                ).expect("unable to draw to command buffer for primitive")
-
-                .end_render_pass()
-                .expect("unable to end primitive render pass");
+        // Nothing to draw, jump ship
+        if i == 0 {
+            return true
         }
+
+        let transform = calculate_transform(0.0, dimensions[0], 0.0, dimensions[1], 1.0, -1.0);
+        let uniform_buffer = {
+            self.uniform_buffer_pool.next(transform).unwrap()
+        };
+        let set = Arc::new(
+            PersistentDescriptorSet::start(self.pipeline.descriptor_set_layout(0).unwrap().clone())
+                .add_buffer(uniform_buffer)
+                .expect("could not add uniform buffer to PersistentDescriptorSet binding 0")
+                .build()
+                .expect("Primitive: unable to create PersistentDescriptorSet 0")
+        );
+
+        self.upload_vertices(verts, indices);
+
+        builder
+            .begin_render_pass(
+                self.framebuffers[image_num].clone(),
+                false,
+                vec![[0.0, 0.0, 0.0, 1.0].into()],
+            ).expect("unable to begin primitive render pass")
+
+            .draw_indexed(
+                self.pipeline.clone(),
+                &DynamicState::none(),
+                self.vertex_buffer.clone().unwrap(),
+                self.index_buffer.clone().unwrap(),
+                set.clone(),
+                ()
+            ).expect("unable to draw to command buffer for primitive")
+
+            .end_render_pass()
+            .expect("unable to end primitive render pass");
 
         true
     }

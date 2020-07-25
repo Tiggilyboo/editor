@@ -1,9 +1,12 @@
 mod shaders;
 use shaders::{
     Vertex,
-    TextTransform,
     vertex_shader,
     fragment_shader,
+};
+use crate::render::uniform::{
+    UniformTransform,
+    calculate_transform,
 };
 
 use std::cell::RefCell;
@@ -82,7 +85,7 @@ pub struct TextContext {
         Box<dyn PipelineLayoutAbstract + Send + Sync>, 
         Arc<dyn RenderPassAbstract + Send + Sync>>>,
     framebuffers: Vec<Arc<dyn FramebufferAbstract + Send + Sync>>,
-    uniform_buffer_pool: CpuBufferPool<TextTransform>,
+    uniform_buffer_pool: CpuBufferPool<UniformTransform>,
     vertex_buffer: Option<Arc<CpuAccessibleBuffer<[Vertex]>>>,
     index_buffer: Option<Arc<dyn TypedBufferAccess<Content=[u16]> + Send + Sync>>,
     
@@ -159,22 +162,6 @@ pub fn into_vertex(GlyphVertex {
         ],
     }
 
-}
-
-#[inline]
-fn calculate_transform(left: f32, right: f32, bottom: f32, top: f32, near: f32, far: f32) -> TextTransform {
-    let tx = -(right + left) / (right - left);
-    let ty = -(top + bottom) / (top - bottom);
-    let tz = -(far + near) / (far - near);
-
-    TextTransform {
-        transform: cgmath::Matrix4::new(
-            2.0 / (right - left), 0.0, 0.0, 0.0,
-            0.0, 2.0 / (top - bottom), 0.0, 0.0,
-            0.0, 0.0, -2.0 / (far - near), 0.0,
-            tx, ty, tz, 1.0,
-        ),
-    }
 }
 
 #[inline]

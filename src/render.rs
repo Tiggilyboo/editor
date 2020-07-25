@@ -2,6 +2,7 @@ mod core;
 
 pub mod text;
 pub mod primitive;
+pub mod uniform;
 
 use std::sync::Arc;
 use std::cell::RefCell;
