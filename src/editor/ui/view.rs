@@ -113,7 +113,7 @@ impl Widget for EditView {
 
         let line_gap = self.resources.line_gap;
 
-        if self.background.dirty() || self.gutter.size()[0] != gutter_width {
+        if self.background.dirty() || self.gutter.dirty() || self.gutter.size()[0] != gutter_width {
             self.background.queue_draw(renderer);
             self.gutter.set_width(gutter_width);
             self.gutter.queue_draw(renderer);
@@ -380,31 +380,45 @@ impl EditView {
             EditViewCommands::ThemeChanged(theme) => self.theme_changed(theme),
             EditViewCommands::Action(action) => match action {
                     Action::ReceiveChar(ch) => self.char(ch),
-                    Action::SetTheme(theme) => self.set_theme(theme.as_str()),
                     Action::SetMode(mode) => self.set_mode(mode),
                     Action::ShowLineNumbers(_) => self.show_line_numbers(!self.show_line_numbers),
-                    Action::Back => self.send_action(
-                        self.switch_select("delete_backward", "move_left")),
-                    Action::Delete => self.send_action(
-                        self.switch_select("delete_forward", "move_right")),
+                    Action::SetTheme(theme) => self.set_theme(theme.as_str()),
+                    Action::Back => self.send_action("delete_backward"),
+                    Action::Delete => self.send_action("delete_forward"),
                     Action::Undo => self.send_action("undo"),
                     Action::Redo => self.send_action("redo"),
+                    Action::AddCursorAbove => self.send_action("add_selection_above"),
+                    Action::AddCursorBelow => self.send_action("add_selection_below"),
+                    Action::ClearSelection => self.send_action("collapse_selections"),
+                    Action::SingleSelection => self.send_action("cancel_operation"),
                     Action::SelectAll => self.send_action("select_all"),
                     Action::NewLine => self.send_action("insert_newline"),
+                    Action::Copy => self.send_action("yank"),
                     Action::ScrollPageUp => self.send_action(
                         self.switch_select("scroll_page_up", "page_up_and_modify_selection")),
                     Action::ScrollPageDown => self.send_action(
                         self.switch_select("scroll_page_down", "page_down_and_modify_selection")),
                     Action::Motion(motion) => match motion {
-                            Motion::Up => self.send_action("move_up"),
-                            Motion::Down => self.send_action("move_down"),
-                            Motion::Left => self.send_action("move_left"),
-                            Motion::Right => self.send_action("move_right"),
-                            Motion::First => self.send_action("move_to_left_end_of_line"),
-                            Motion::Last => self.send_action("move_to_right_end_of_line"),
-                            Motion::WordLeft => self.send_action("move_word_left"),
-                            Motion::WordRight => self.send_action("move_word_right"),
-                            _ => return false,
+                        Motion::Up => self.send_action("move_up"),
+                        Motion::Down => self.send_action("move_down"),
+                        Motion::Left => self.send_action("move_left"),
+                        Motion::Right => self.send_action("move_right"),
+                        Motion::First => self.send_action("move_to_left_end_of_line"),
+                        Motion::Last => self.send_action("move_to_right_end_of_line"),
+                        Motion::WordLeft => self.send_action("move_word_left"),
+                        Motion::WordRight => self.send_action("move_word_right"),
+                        _ => return false,
+                    },
+                    Action::MotionSelect(motion) => match motion {
+                        Motion::Up => self.send_action("move_up_and_modify_selection"),
+                        Motion::Down => self.send_action("move_down_and_modify_selection"),
+                        Motion::Left => self.send_action("move_left_and_modify_selection"),
+                        Motion::Right => self.send_action("move_right_and_modify_selection"),
+                        Motion::First => self.send_action("move_to_left_end_of_line_and_modify_selection"),
+                        Motion::Last => self.send_action("move_to_right_end_of_line_and_modify_selection"),
+                        Motion::WordLeft => self.send_action("move_word_left_and_modify_selection"),
+                        Motion::WordRight => self.send_action("move_word_right_and_modify_selection"),
+                        _ => return false,
                     },
                     _ => return false,
             },

@@ -207,13 +207,7 @@ pub fn run(title: &str) {
         *control_flow = ControlFlow::Wait;
 
         match event {
-            Event::UserEvent(event) => {
-                match event {
-                    EditorEvent::OpenWidget(_widget) => {
-                        println!("OpenWidget!");
-                    },
-                }
-            },
+            Event::UserEvent(_event) => {},
             Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => {
                 *control_flow = ControlFlow::Exit;
             },

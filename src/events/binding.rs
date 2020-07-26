@@ -72,6 +72,7 @@ pub enum Action {
     ScrollToTop,
     ScrollToBottom,
     ClearSelection,
+    SingleSelection,
     ReceiveChar(char),
     Undo,
     Redo,
@@ -79,7 +80,6 @@ pub enum Action {
     LowerCase,
     AddCursorAbove,
     AddCursorBelow,
-    SingleSelection,
     SelectAll,
 
     None,
@@ -215,11 +215,25 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
         Up, ModifiersState::SHIFT; Action::ScrollPageUp;
         Down, ModifiersState::SHIFT; Action::ScrollPageDown;
 
+        Left, +Mode::Select; Action::MotionSelect(Motion::Left);
+        Right, +Mode::Select; Action::MotionSelect(Motion::Right);
+        Up, +Mode::Select; Action::MotionSelect(Motion::Up);
+        Down, +Mode::Select; Action::MotionSelect(Motion::Down);
+        H, +Mode::Select; Action::MotionSelect(Motion::Left);
+        J, +Mode::Select; Action::MotionSelect(Motion::Down);
+        K, +Mode::Select; Action::MotionSelect(Motion::Up);
+        L, +Mode::Select; Action::MotionSelect(Motion::Right);
+
+        Left, ModifiersState::CTRL, ~Mode::Insert; Action::Motion(Motion::WordLeft);
+        Right, ModifiersState::CTRL, ~Mode::Insert; Action::Motion(Motion::WordRight);
+        W, ~Mode::Insert; Action::Motion(Motion::WordRight);
+        E, ~Mode::Insert; Action::Motion(Motion::WordRightEnd);
+        D, ModifiersState::SHIFT, +Mode::Normal; Action::MotionDelete(Motion::Last);
+
         Left; Action::Motion(Motion::Left);
         Right; Action::Motion(Motion::Right);
         Up; Action::Motion(Motion::Up);
         Down; Action::Motion(Motion::Down);
-        
         H, ~Mode::Insert; Action::Motion(Motion::Left);
         J, ~Mode::Insert; Action::Motion(Motion::Down);
         K, ~Mode::Insert; Action::Motion(Motion::Up);
@@ -229,17 +243,22 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
         Return, ~Mode::Insert; Action::Motion(Motion::Down);
         Back, +Mode::Insert; Action::Back;
         Delete, +Mode::Insert; Action::Delete;
+        Back, ~Mode::Insert; Action::Motion(Motion::Left);
+        Delete, ~Mode::Insert; Action::Motion(Motion::Right);
+        Space, +Mode::Insert; Action::ReceiveChar(' ');
+        Space, ~Mode::Insert; Action::Motion(Motion::Right);
         
         Y, +Mode::Select; Action::Copy;
         Y, +Mode::LineSelect; Action::Copy;
         Y, +Mode::BlockSelect; Action::Copy;
         Copy, +Mode::Insert; Action::Copy;
+        Cut, +Mode::Insert; Action::Cut;
 
-        P, +Mode::Insert; Action::Paste;
+        P, ~Mode::Insert; Action::Paste;
         Paste, +Mode::Insert; Action::Paste;
         
-        U, +Mode::Insert; Action::Undo;
-        R, ModifiersState::CTRL, +Mode::Insert; Action::Redo;
+        U, ~Mode::Insert; Action::Undo;
+        R, ModifiersState::CTRL, ~Mode::Insert; Action::Redo;
 
         Tab, +Mode::Insert; Action::Indent;
         Tab, ModifiersState::SHIFT, +Mode::Insert; Action::Outdent;
@@ -327,7 +346,7 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
 
         Grave,      ModifiersState::SHIFT, +Mode::Insert; Action::ReceiveChar('~');
         Minus,      ModifiersState::SHIFT, +Mode::Insert; Action::ReceiveChar('_');
-        Equals,     ModifiersState::SHIFT, +Mode::Insert; Action::ReceiveChar('+');
+        Add,        ModifiersState::SHIFT, +Mode::Insert; Action::ReceiveChar('+');
         LBracket,   ModifiersState::SHIFT, +Mode::Insert; Action::ReceiveChar('{');
         RBracket,   ModifiersState::SHIFT, +Mode::Insert; Action::ReceiveChar('}');
         Backslash,  ModifiersState::SHIFT, +Mode::Insert; Action::ReceiveChar('|');
