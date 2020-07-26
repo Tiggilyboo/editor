@@ -1,5 +1,6 @@
 pub mod state;
 pub mod mapper_winit;
+pub mod binding;
 
 use winit::event_loop::EventLoop;
 use crate::editor::ui::widget::WidgetKind;

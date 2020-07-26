@@ -5,8 +5,9 @@ use winit::event::{
     ElementState,
     MouseButton,
     MouseScrollDelta,
-    ScanCode,
 };
+
+use super::binding::Key;
 
 #[derive(Debug)]
 pub struct MouseState {
@@ -67,7 +68,7 @@ impl MouseState {
 
 #[derive(Debug)]
 pub struct InputState {
-    pub keycode: Option<ScanCode>,
+    pub key: Option<Key>,
     pub modifiers: ModifiersState,
     pub mouse: MouseState,
 }
@@ -75,7 +76,7 @@ pub struct InputState {
 impl InputState {
     pub fn new() -> Self {
         Self {
-            keycode: None,
+            key: None,
             modifiers: ModifiersState::default(),
             mouse: MouseState::default(),
         }
@@ -84,21 +85,24 @@ impl InputState {
     // update the input state with passed events
     // returns whether the state has changed or not
     pub fn update(&mut self, event: WindowEvent, window_dimensions: [f32; 2]) -> bool { 
-        let old_keycode = self.keycode.clone();
+        let old_key = self.key.clone();
         let old_mods = self.modifiers;
 
-        self.keycode = match event {
+        self.key = match event {
             WindowEvent::KeyboardInput { input, .. } => {
                 if input.state == ElementState::Pressed {
-                    println!("SC: {}", input.scancode);
-                    Some(input.scancode)
+                    if input.virtual_keycode.is_some() {
+                        Some(Key::KeyCode(input.virtual_keycode.unwrap()))
+                    } else {
+                        Some(Key::ScanCode(input.scancode))
+                    }
                 } else if input.state == ElementState::Released {
                     None 
                 } else {
-                    old_keycode
+                    old_key
                 }
             },
-            _ => old_keycode,
+            _ => old_key,
         };
         self.modifiers = match event {
             WindowEvent::ModifiersChanged(mods) => {
@@ -109,7 +113,7 @@ impl InputState {
         let mouse_changed = self.mouse.update_via_window_event(event, window_dimensions); 
 
         // Change detected?
-        old_keycode != self.keycode
+        old_key != self.key
             || old_mods != self.modifiers
             || mouse_changed
     }

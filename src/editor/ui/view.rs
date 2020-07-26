@@ -16,7 +16,9 @@ use glyph_brush::{
     Text,
 };
 
-use crate::editor::rpc::Core;
+use crate::events::binding::{
+    Action,
+};
 use crate::editor::linecache::LineCache;
 use serde_json::{
     json,
@@ -25,6 +27,7 @@ use serde_json::{
 
 use crate::render::Renderer;
 use crate::editor::rpc::{
+    Core,
     Config,
     Theme,
     EditViewCommands,
@@ -477,13 +480,16 @@ impl EditView {
             EditViewCommands::Resize(size) => self.resize(size),
             EditViewCommands::ConfigChanged(config) => self.config_changed(config),
             EditViewCommands::ThemeChanged(theme) => self.theme_changed(theme),
-            EditViewCommands::SetTheme(theme) => self.set_theme(theme.as_str()),
-            EditViewCommands::Undo => self.send_action("undo"),
-            EditViewCommands::Redo => self.send_action("redo"),
-            EditViewCommands::SelectAll => self.send_action("select_all"),
-            _ => {
-                return false;
+            EditViewCommands::Action(action) => {
+                match action {
+                    Action::SetTheme(theme) => self.set_theme(theme.as_str()),
+                    Action::Undo => self.send_action("undo"),
+                    Action::Redo => self.send_action("redo"),
+                    Action::SelectAll => self.send_action("select_all"),
+                    _ => return false,
+                }
             },
+            _ => return false,
         }
 
         true

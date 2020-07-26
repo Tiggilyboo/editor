@@ -6,6 +6,7 @@ use serde_json::Value;
 use crate::editor::rpc::Core;
 use super::config::Config;
 use super::theme::Theme;
+use crate::events::binding::Action;
 
 pub enum EditViewCommands {
     ViewId(String),
@@ -15,13 +16,5 @@ pub enum EditViewCommands {
     Resize([f32; 2]),
     ConfigChanged(Config),
     ThemeChanged(Theme),
-    SetTheme(String),
-    Undo,
-    Redo,
-    UpperCase,
-    LowerCase,
-    AddCursorAbove,
-    AddCursorBelow,
-    SingleSelection,
-    SelectAll,
+    Action(Action) 
 }
