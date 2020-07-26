@@ -166,8 +166,6 @@ impl App {
             return false;
         }
         if let Ok(ref mut state) = self.state.try_lock() {
-            println!("editor_state updating from input");
-            
             state.update_from_input(self.input.clone())
         } else {
             println!("unable to lock state in update_input");

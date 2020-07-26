@@ -433,7 +433,6 @@ dependencies = [
  "glyph_brush_layout",
  "serde",
  "serde_json",
- "smithay-client-toolkit",
  "syntect 4.2.0",
  "vulkano",
  "vulkano-shaders",

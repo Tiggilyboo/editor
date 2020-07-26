@@ -30,37 +30,28 @@ impl<T: Eq> Binding<T> {
     pub fn is_triggered_by(&self, mode: Mode, mods: ModifiersState, input: &T) -> bool {
         self.trigger == *input
             && self.mods == mods
-            && self.mode == mode
-            && self.notmode != mode
+            && (self.mode == Mode::None || self.mode == mode)
+            && (self.notmode == Mode::None || self.notmode != mode)
     }
 
-    #[inline]
-    pub fn triggers_match(&self, binding: &Binding<T>) -> bool {
-        if self.trigger != binding.trigger || self.mods != binding.mods {
-            return false;
-        }
-
-        if self.mode != binding.mode {
-            return false;
-        }
-
-        if self.mode == binding.notmode {
-            return false;
-        }
-
-        true
+    pub fn get_action(&self) -> Action {
+        self.action.clone()
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {
     Motion(Motion),
+    MotionSelect(Motion),
+    MotionDelete(Motion),
     SetMode(Mode),
     SetTheme(String),
+    ShowLineNumbers(bool),
     Back,
     Delete,
     Indent,
     Outdent,
+    NewLine,
     SearchNext,
     SearchPrev,
     SearchStart,
@@ -94,7 +85,7 @@ pub enum Action {
     None,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum Mode {
     Normal,
     Insert,
@@ -190,8 +181,13 @@ pub fn default_mouse_bindings() -> Vec<MouseBinding> {
 }
 
 pub fn default_key_bindings() -> Vec<KeyBinding> {
-    let mut bindings = bindings!(
+    let bindings = bindings!(
         KeyBinding;
+
+        F1; Action::SetTheme(String::from("Solarized (dark)"));
+        F2; Action::SetTheme(String::from("Solarized (light)"));
+        F3; Action::SetTheme(String::from("InspiredGitHub"));
+        F5; Action::ShowLineNumbers(true);
 
         Escape, ~Mode::Normal; Action::SetMode(Mode::Normal);
         Escape, +Mode::LineSelect; Action::ClearSelection;
@@ -201,6 +197,7 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
         V, +Mode::Normal; Action::SetMode(Mode::Select);
         V, ModifiersState::SHIFT, +Mode::Normal; Action::SetMode(Mode::BlockSelect);
         V, ModifiersState::CTRL, +Mode::Normal; Action::SetMode(Mode::LineSelect);
+        R, ModifiersState::SHIFT, +Mode::Normal; Action::SetMode(Mode::Replace);
         Colon, ModifiersState::SHIFT, +Mode::Normal; Action::SetMode(Mode::Command);
 
         PageUp; Action::ScrollPageUp;
@@ -213,16 +210,23 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
         Key5, ModifiersState::SHIFT, ~Mode::Insert; Action::Motion(Motion::Bracket);
         Key6, ModifiersState::SHIFT, ~Mode::Insert; Action::Motion(Motion::FirstOccupied);
 
+        Up, ModifiersState::SHIFT | ModifiersState::CTRL; Action::AddCursorAbove;
+        Down, ModifiersState::SHIFT | ModifiersState::CTRL; Action::AddCursorBelow;
+        Up, ModifiersState::SHIFT; Action::ScrollPageUp;
+        Down, ModifiersState::SHIFT; Action::ScrollPageDown;
+
         Left; Action::Motion(Motion::Left);
         Right; Action::Motion(Motion::Right);
         Up; Action::Motion(Motion::Up);
         Down; Action::Motion(Motion::Down);
+        
         H, ~Mode::Insert; Action::Motion(Motion::Left);
         J, ~Mode::Insert; Action::Motion(Motion::Down);
         K, ~Mode::Insert; Action::Motion(Motion::Up);
         L, ~Mode::Insert; Action::Motion(Motion::Right);
-        Return, ~Mode::Insert; Action::ScrollLineDown;
 
+        Return, +Mode::Insert; Action::NewLine;
+        Return, ~Mode::Insert; Action::Motion(Motion::Down);
         Back, +Mode::Insert; Action::Back;
         Delete, +Mode::Insert; Action::Delete;
         
@@ -327,7 +331,7 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
         LBracket,   ModifiersState::SHIFT, +Mode::Insert; Action::ReceiveChar('{');
         RBracket,   ModifiersState::SHIFT, +Mode::Insert; Action::ReceiveChar('}');
         Backslash,  ModifiersState::SHIFT, +Mode::Insert; Action::ReceiveChar('|');
-        Semicolon,  ModifiersState::SHIFT, +Mode::Insert; Action::ReceiveChar(':');
+        Colon,      ModifiersState::SHIFT, +Mode::Insert; Action::ReceiveChar(':');
         Apostrophe, ModifiersState::SHIFT, +Mode::Insert; Action::ReceiveChar('"');
         Comma,      ModifiersState::SHIFT, +Mode::Insert; Action::ReceiveChar('<');
         Period,     ModifiersState::SHIFT, +Mode::Insert; Action::ReceiveChar('>');

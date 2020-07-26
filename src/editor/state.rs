@@ -3,12 +3,25 @@ use std::sync::{
     Mutex,
 };
 use std::collections::HashMap;
+
+use winit::event::ModifiersState;
+
 use super::ui::{
     view::EditView,
 };
+use super::rpc::EditViewCommands;
 use crate::events::{
     state::InputState,
-    mapper_winit::map_input_into_string,
+    mapper_winit::map_scancode,
+    binding::{
+        Action,
+        Key,
+        KeyBinding,
+        MouseBinding,
+        Mode,
+        default_mouse_bindings,
+        default_key_bindings,
+    },
 };
 
 pub type ViewId = String;
@@ -18,6 +31,8 @@ pub struct EditorState {
     pub views: HashMap<ViewId, EditView>, 
     pub theme: Option<String>,
     pub available_themes: Option<Vec<String>>,
+    key_bindings: Vec<KeyBinding>,
+    mouse_bindings: Vec<MouseBinding>,
 }
 
 impl EditorState {
@@ -27,6 +42,8 @@ impl EditorState {
             views: HashMap::new(),
             theme: None,
             available_themes: None,
+            mouse_bindings: default_mouse_bindings(),
+            key_bindings: default_key_bindings(),
         }
     }
     
@@ -46,24 +63,57 @@ impl EditorState {
         self.theme = Some(theme);
     }
 
+    pub fn process_keyboard_input(&self, mode: Mode, modifiers: ModifiersState, key: Key) -> Option<Action> {
+        let kc = match key {
+            Key::KeyCode(virtual_keycode) => Some(virtual_keycode),
+            Key::ScanCode(scancode) => map_scancode(scancode),
+        };
+        println!("process_keyboard_input - mode: {:?}, key: {:?}", mode, key);
+        if kc.is_none() {
+            return None;
+        }
+        if self.focused.is_none() {
+            return None;
+        }
+
+        for binding in self.key_bindings.iter() {
+            if binding.is_triggered_by(mode, modifiers, &Key::KeyCode(kc.unwrap())) {
+                println!("action triggered - mode: {:?}, (s c a): ({}, {}, {}), input: {:?}", 
+                         mode, modifiers.shift(), modifiers.ctrl(), modifiers.alt(), kc);
+
+                return Some(binding.get_action());
+            }
+        }
+
+        None
+    }
+
     pub fn update_from_input(&mut self, input: Arc<Mutex<InputState>>) -> bool {
         if let Ok(ref input) = input.clone().try_lock() {
-            let should_keydown = input.keycode.is_some() 
+            let should_keydown = input.key.is_some() 
                 || input.modifiers.ctrl() || input.modifiers.shift() || input.modifiers.alt();
             let should_mouse = input.mouse.button.is_some()
                 || input.mouse.line_scroll.1 != 0.0;
 
             let mut handled = false;
-            if self.focused.is_some() { 
-                let edit_view = self.get_focused_view();
+            if self.focused.is_none() { 
+                return false;
+            }
 
-                if should_keydown {
-                    if let Some(input_string) = map_input_into_string(input.modifiers, input.keycode) {
-                        let ch = input_string.chars().next().unwrap();
-                        handled = edit_view.char(ch);
-                    } else if input.keycode.is_some(){
-                        handled = edit_view.keydown(input.keycode.unwrap(), input.modifiers);
+            let mut command: Option<EditViewCommands> = None;
+            if let edit_view = self.get_focused_view() {
+                let mode = edit_view.mode();
+
+                if should_keydown && input.key.is_some() {
+                    if let Some(action) = &self.process_keyboard_input(mode, input.modifiers, input.key.unwrap()) {
+                        command = Some(EditViewCommands::Action(action.clone()));
                     }
+                }
+            }
+            if let edit_view = self.get_focused_view() {
+                if command.is_some() {
+                    edit_view.poke(command.unwrap());
+                    handled = true;
                 }
                 if should_mouse {
                     if input.mouse.line_scroll.1 != 0.0 {
@@ -71,7 +121,7 @@ impl EditorState {
                         handled = true;
                     }
                 }
-            };
+            }
 
             handled
         } else {

@@ -4,11 +4,6 @@ use std::sync::{
     Weak,
 };
 
-use smithay_client_toolkit::keyboard::keysyms;
-use winit::event::{
-    ModifiersState,
-    ScanCode,
-};
 use glyph_brush::{
     OwnedSection,
     Section,
@@ -18,6 +13,8 @@ use glyph_brush::{
 
 use crate::events::binding::{
     Action,
+    Mode,
+    Motion,
 };
 use crate::editor::linecache::LineCache;
 use serde_json::{
@@ -67,6 +64,7 @@ pub struct EditView {
     resources: Resources,
     gutter: PrimitiveWidget,
     background: PrimitiveWidget,
+    mode: Mode,
     show_line_numbers: bool,
 }
 
@@ -207,6 +205,7 @@ impl EditView {
             core: Default::default(),
             pending: Default::default(),
             show_line_numbers: false,
+            mode: Mode::Normal,
             resources,
             gutter,
             background,
@@ -246,14 +245,10 @@ impl EditView {
         self.send_edit_cmd("insert", &json!({ "line": line }));
     }
 
-    pub fn char(&mut self, ch: char) -> bool {
+    pub fn char(&mut self, ch: char) {
         if ch as u32 >= 0x20 {
             let params = json!({"chars": ch.to_string()});
             self.send_edit_cmd("insert", &params);
-
-            true
-        } else {
-            false
         }
     }
 
@@ -296,119 +291,6 @@ impl EditView {
     
     fn send_action(&mut self, method: &str) {
         self.send_edit_cmd(method, &json!([]));
-    }
-
-    // TODO: Move this somewhere
-    pub fn keydown(&mut self, keycode: ScanCode, mods: ModifiersState) -> bool {
-        match keycode {
-            keysyms::XKB_KEY_Return => self.send_action("insert_newline"),
-            keysyms::XKB_KEY_Tab => {
-                let action = if mods.shift() {
-                    "outdent"
-                } else {
-                    "insert_tab"
-                };
-                self.send_action(action);
-            },
-            keysyms::XKB_KEY_Up => {
-                if mods.ctrl() {
-                    self.scroll_offset -= self.resources.line_gap;
-                    self.constrain_scroll();
-                    self.update_viewport();
-                } else {
-                    let action = if mods.ctrl() || mods.alt() {
-                        "add_selection_above"
-                    } else {
-                        s(mods, "move_up", "move_up_and_modify_selection")
-                    };
-
-                    self.send_action(action);
-                }
-            },
-            keysyms::XKB_KEY_Down => {
-                if mods.ctrl() {
-                    self.scroll_offset += self.resources.line_gap;
-                    self.constrain_scroll();
-                    self.update_viewport();
-                } else {
-                    let action = if mods.ctrl() || mods.alt() {
-                        "add_selection_below"                        
-                    } else {
-                        s(mods, "move_down", "move_down_and_modify_selection")
-                    };
-
-                    self.send_action(action);
-                }
-            },
-            keysyms::XKB_KEY_Left => {
-                let action = if mods.ctrl() {
-                    s(mods, "move_word_left", "move_word_left_and_modify_selection")
-                } else {
-                    s(mods, "move_left", "move_left_and_modify_selection")
-                };
-
-                self.send_action(action);
-            },
-            keysyms::XKB_KEY_Right => {
-                let action = if mods.ctrl() {
-                    s(mods, "move_word_right", "move_word_right_and_modify_selection")
-                } else {
-                    s(mods, "move_right", "move_right_and_modify_selection")
-                };
-
-                self.send_action(action);
-            },
-            keysyms::XKB_KEY_Page_Up => {
-                self.send_action(s(mods, "scroll_page_up", "page_up_and_modify_selection"));
-            },
-            keysyms::XKB_KEY_Page_Down => {
-                self.send_action(s(mods, "scroll_page_down", "page_down_and_modify_selection"));
-            },
-            keysyms::XKB_KEY_Home => {
-                let action = if mods.ctrl() {
-                    s(mods, "move_to_beginning_of_document", "move_to_beginning_of_document_and_modify_selection")
-                } else {
-                    s(mods, "move_to_left_end_of_line", "move_to_left_end_of_line_and_modify_selection")
-                };
-                self.send_action(action);
-            },
-            keysyms::XKB_KEY_End => {
-                let action = if mods.ctrl() {
-                    s(mods, "move_to_end_of_document", "move_to_end_of_document_and_modify_selection")  
-                } else {
-                    s(mods, "move_to_right_end_of_line", "move_to_right_end_of_line_and_modify_selection")
-                };
-                self.send_action(action);
-            },
-            keysyms::XKB_KEY_F1 => self.set_theme("Solarized (dark)"),
-            keysyms::XKB_KEY_F2 => self.set_theme("Solarized (light)"),
-            keysyms::XKB_KEY_F3 => self.set_theme("InspiredGitHub"),
-            keysyms::XKB_KEY_F5 => self.show_line_numbers(!self.show_line_numbers),
-
-            keysyms::XKB_KEY_BackSpace => {
-                let action = if mods.ctrl() {
-                    s(mods, "delete_word_backward", "delete_to_beginning_of_line")
-                } else {
-                    "delete_backward"
-                };
-                self.send_action(action);
-            },
-            keysyms::XKB_KEY_Delete => {
-                let action = if mods.ctrl() {
-                    s(mods, "delete_word_forward", "delete_to_end_of_paragraph")
-                } else {
-                    "delete_forward"
-                };
-                
-                self.send_action(action);
-            },
-            _ => {
-                println!("found: {:x}", keycode);
-                return false
-            }
-        }
-
-        true
     }
 
     fn set_view(&mut self, view_id: String) {
@@ -461,7 +343,6 @@ impl EditView {
         } else {
             self.resources.gutter_fg = self.resources.fg;
         }
-        println!("gutter bg: {:?}, gutter fg: {:?}", self.resources.gutter_bg, self.resources.gutter_fg);
 
         self.theme = Some(theme);
         self.dirty = true;
@@ -469,6 +350,23 @@ impl EditView {
 
     fn set_theme(&mut self, theme_name: &str) {
         self.send_notification("set_theme", &json!({ "theme_name": theme_name }));
+    }
+
+    fn set_mode(&mut self, mode: Mode) {
+        self.mode = mode;
+    }
+    pub fn mode(&self) -> Mode {
+        self.mode
+    }
+    fn switch_select<'a>(&self, normal: &'a str, select: &'a str) -> &'a str {
+        let mode = self.mode;
+        if mode == Mode::Select ||
+            mode == Mode::LineSelect ||
+            mode == Mode::BlockSelect {
+            select
+        } else {
+            normal
+        }
     }
 
     pub fn poke(&mut self, command: EditViewCommands) -> bool {
@@ -480,23 +378,43 @@ impl EditView {
             EditViewCommands::Resize(size) => self.resize(size),
             EditViewCommands::ConfigChanged(config) => self.config_changed(config),
             EditViewCommands::ThemeChanged(theme) => self.theme_changed(theme),
-            EditViewCommands::Action(action) => {
-                match action {
+            EditViewCommands::Action(action) => match action {
+                    Action::ReceiveChar(ch) => self.char(ch),
                     Action::SetTheme(theme) => self.set_theme(theme.as_str()),
+                    Action::SetMode(mode) => self.set_mode(mode),
+                    Action::ShowLineNumbers(_) => self.show_line_numbers(!self.show_line_numbers),
+                    Action::Back => self.send_action(
+                        self.switch_select("delete_backward", "move_left")),
+                    Action::Delete => self.send_action(
+                        self.switch_select("delete_forward", "move_right")),
                     Action::Undo => self.send_action("undo"),
                     Action::Redo => self.send_action("redo"),
                     Action::SelectAll => self.send_action("select_all"),
+                    Action::NewLine => self.send_action("insert_newline"),
+                    Action::ScrollPageUp => self.send_action(
+                        self.switch_select("scroll_page_up", "page_up_and_modify_selection")),
+                    Action::ScrollPageDown => self.send_action(
+                        self.switch_select("scroll_page_down", "page_down_and_modify_selection")),
+                    Action::Motion(motion) => match motion {
+                            Motion::Up => self.send_action("move_up"),
+                            Motion::Down => self.send_action("move_down"),
+                            Motion::Left => self.send_action("move_left"),
+                            Motion::Right => self.send_action("move_right"),
+                            Motion::First => self.send_action("move_to_left_end_of_line"),
+                            Motion::Last => self.send_action("move_to_right_end_of_line"),
+                            Motion::WordLeft => self.send_action("move_word_left"),
+                            Motion::WordRight => self.send_action("move_word_right"),
+                            _ => return false,
+                    },
                     _ => return false,
-                }
             },
-            _ => return false,
         }
 
         true
     }
 
     pub fn mouse_scroll(&mut self, delta: f32) {
-        self.scroll_offset -= delta * 0.5; 
+        self.scroll_offset -= delta; 
         self.constrain_scroll();
         self.update_viewport();
     }
@@ -554,6 +472,3 @@ impl EditView {
     }
 }
 
-fn s<'a>(mods: ModifiersState, normal: &'a str, shifted: &'a str) -> &'a str {
-    if mods.shift() { shifted } else { normal }
-}
