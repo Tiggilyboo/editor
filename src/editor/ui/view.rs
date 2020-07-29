@@ -117,40 +117,29 @@ impl Widget for EditView {
 
         let line_gap = self.resources.line_gap;
 
-        if self.background.dirty() || self.gutter.dirty() || self.gutter.size()[0] != gutter_width {
-            self.background.queue_draw(renderer);
-            self.gutter.set_width(gutter_width);
-            self.gutter.queue_draw(renderer);
-        }
-
+        self.background.queue_draw(renderer);
+        self.gutter.set_width(gutter_width);
+        self.gutter.queue_draw(renderer);
+    
+        // Selection start index, background = 0, gutter = 1
+        let mut s_ix = 2;
         for line_num in first_line..last_line {
             if let Some(ref mut text_widget) = &mut self.get_line(line_num) {
                 let line_content = text_widget.get_section().to_borrowed().text[0].text;
                 let line_len = line_content.len();
 
                 // Selections
-                let mut s_ix = 3;
                 for selection in self.line_cache.get_selections(line_num).iter() {
                     if selection.start_col == selection.end_col
-                    || selection.start_col >= line_len
+                    || selection.start_col >= line_len 
                     || selection.end_col >= line_len {
                         continue;
                     }
-                    let sel_content = if selection.start_col <= selection.end_col {
-                        &line_content[selection.start_col..selection.end_col]
-                    } else {
-                        &line_content[selection.end_col..selection.start_col]
-                    };
-                    let sel_x0 = if selection.start_col > 0 {
-                        text_ctx.borrow().get_text_width(&line_content[..selection.start_col])
-                    } else { 0.0 };
-                    let width = if sel_content.len() > 0 {
-                        text_ctx.borrow().get_text_width(sel_content)
-                    } else { 0.0 };
+                    let sel_content = &line_content[selection.start_col..selection.end_col];
+                    let sel_x0 = text_ctx.borrow().get_text_width(&line_content[..selection.start_col]);
+                    let width = text_ctx.borrow().get_text_width(sel_content);
 
                     let mut selection = PrimitiveWidget::new(s_ix, [x0 + sel_x0, y, 0.2], [width, line_gap], self.resources.sel);
-
-                    println!("sel: {} x {} @ [{},{}]", width, line_gap, selection.position()[0], selection.position()[1]);
 
                     selection.queue_draw(renderer);
                     s_ix += 1;
@@ -225,8 +214,8 @@ impl Resources {
 impl EditView {
     pub fn new(index: usize, size: [f32; 2], scale: f32, line_gap: f32) -> Self {
         let resources = Resources::new(scale, line_gap);
-        let background = PrimitiveWidget::new(1, [0.0, 0.0, 0.0], size, resources.bg);
-        let gutter = PrimitiveWidget::new(2, [0.0, 0.0, 0.1], [scale, size[1]], resources.gutter_bg);
+        let background = PrimitiveWidget::new(0, [0.0, 0.0, 0.01], size, resources.bg);
+        let gutter = PrimitiveWidget::new(1, [0.0, 0.0, 0.1], [scale, size[1]], resources.gutter_bg);
 
         Self {
             index,

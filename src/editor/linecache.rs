@@ -145,16 +145,16 @@ impl LineCache {
             match anno.annotation_type {
                 AnnotationType::Selection => {
                     for range in anno.ranges.iter_mut() {
-                        for line_num in range.start_line..range.end_line {
-                            if line_num > self.height() {
-                                break;
-                            }
+                        for line_num in range.start_line..range.end_line+1 {
                             if let Some(line) = self.lines.get(line_num).unwrap() {
                                 let len = line.text.len();
-                                let start_col = if range.start_col >= range.end_col { range.end_col } else { range.start_col };
-                                let end_col = if range.end_col >= range.start_col { range.end_col } else { range.start_col };
-                                let start_col = if start_col > len { len } else { start_col };
-                                let end_col = if end_col > len { len } else { end_col };
+                                let (start_col, end_col) = if range.start_col > range.end_col { 
+                                    (range.end_col, range.start_col)
+                                } else { 
+                                    (range.start_col, range.end_col)
+                                };
+                                let start_col = if start_col >= len { len } else { start_col };
+                                let end_col = if end_col >= len { len } else { end_col };
 
                                 let left_utf16 = count_utf16(&line.text[..start_col]);
                                 let width_utf16 = count_utf16(&line.text[start_col..end_col]);
@@ -189,11 +189,7 @@ impl LineCache {
     }
 
     pub fn get_selections(&self, line_num: usize) -> Vec<&Selection> {
-        if line_num < self.lines.len() {
-            self.selections.iter().filter(|s| s.line_num == line_num).collect()
-        } else {
-            vec!()
-        }
+        self.selections.iter().filter(|s| s.line_num == line_num).collect()
     }
 }
 

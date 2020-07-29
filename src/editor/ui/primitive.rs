@@ -51,6 +51,14 @@ impl PrimitiveWidget {
         self.colour = colour;
         self.dirty = true;
     }
+
+    pub fn depth(&self) -> f32 {
+        self.depth
+    }
+
+    pub fn colour(&self) -> [f32; 4] {
+        self.colour
+    }
 }
 
 impl Widget for PrimitiveWidget {
@@ -67,10 +75,15 @@ impl Widget for PrimitiveWidget {
     }
 
     fn queue_draw(&mut self, renderer: &mut Renderer) {
-        renderer.get_primitive_context().borrow_mut()
+        println!("queueing primitive: {}, top_left: {:?}", self.index, self.position);
+        renderer
+            .get_primitive_context().borrow_mut()
             .queue_primitive(self.index, Primitive {
                 top_left: self.position,
-                bottom_right: self.size,
+                bottom_right: [
+                    self.position[0] + self.size[0],
+                    self.position[1] + self.size[1],
+                ],
                 depth: self.depth,
                 colour: self.colour,
             });

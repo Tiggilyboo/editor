@@ -16,4 +16,3 @@ pub trait Widget {
     fn queue_draw(&mut self, renderer: &mut Renderer);
     fn dirty(&self) -> bool;
 }
-
