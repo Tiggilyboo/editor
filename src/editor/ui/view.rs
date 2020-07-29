@@ -28,6 +28,9 @@ use crate::editor::rpc::{
     Config,
     Theme,
     EditViewCommands,
+    annotations::{
+        Annotation,
+    },
 };
 use super::{
     widget::Widget,
@@ -43,6 +46,7 @@ struct Resources {
     fg: ColourRGBA,
     bg: ColourRGBA,
     sel: ColourRGBA,
+    cursor: ColourRGBA,
     gutter_fg: ColourRGBA,
     gutter_bg: ColourRGBA,
     scale: f32,
@@ -121,6 +125,37 @@ impl Widget for EditView {
 
         for line_num in first_line..last_line {
             if let Some(ref mut text_widget) = &mut self.get_line(line_num) {
+                let line_content = text_widget.get_section().to_borrowed().text[0].text;
+                let line_len = line_content.len();
+
+                // Selections
+                let mut s_ix = 3;
+                for selection in self.line_cache.get_selections(line_num).iter() {
+                    if selection.start_col == selection.end_col
+                    || selection.start_col >= line_len
+                    || selection.end_col >= line_len {
+                        continue;
+                    }
+                    let sel_content = if selection.start_col <= selection.end_col {
+                        &line_content[selection.start_col..selection.end_col]
+                    } else {
+                        &line_content[selection.end_col..selection.start_col]
+                    };
+                    let sel_x0 = if selection.start_col > 0 {
+                        text_ctx.borrow().get_text_width(&line_content[..selection.start_col])
+                    } else { 0.0 };
+                    let width = if sel_content.len() > 0 {
+                        text_ctx.borrow().get_text_width(sel_content)
+                    } else { 0.0 };
+
+                    let mut selection = PrimitiveWidget::new(s_ix, [x0 + sel_x0, y, 0.2], [width, line_gap], self.resources.sel);
+
+                    println!("sel: {} x {} @ [{},{}]", width, line_gap, selection.position()[0], selection.position()[1]);
+
+                    selection.queue_draw(renderer);
+                    s_ix += 1;
+                }
+
                 // Line body
                 text_widget.set_position(x0, y);
                 text_widget.queue_draw(renderer);
@@ -132,7 +167,7 @@ impl Widget for EditView {
                     let pos = text_ctx.borrow_mut()
                         .get_cursor_position(section, offset, scale); 
 
-                    let mut offside = create_offside_section("\u{2588}", self.resources.sel, scale);
+                    let mut offside = create_offside_section("\u{2588}", self.resources.cursor, scale);
                     offside.screen_position = pos;
                     text_ctx.borrow_mut()
                         .queue_text(&offside.to_borrowed());
@@ -178,6 +213,7 @@ impl Resources {
             fg: BLANK,
             bg: BLANK,
             sel: BLANK,
+            cursor: BLANK,
             gutter_bg: BLANK,
             gutter_fg: BLANK,
             line_gap,
@@ -210,10 +246,6 @@ impl EditView {
             gutter,
             background,
         }
-    }
-
-    pub fn clear_line_cache(&mut self) {
-        self.line_cache = LineCache::new();
     }
 
     fn get_line(&self, line_num: usize) -> Option<TextWidget> {
@@ -278,11 +310,6 @@ impl EditView {
 
             let core = core.unwrap();
             core.lock().unwrap().send_notification("edit", &edit_params);
-            println!("fe->core: {}", json!({
-                "method": method,
-                "params": params,
-                "view_id": view_id,
-            }));
         } else {
             println!("queueing pending method: {}", method);
             self.pending.push((method.to_owned(), params.clone()));
@@ -329,7 +356,12 @@ impl EditView {
             self.background.set_colour(rgba8_to_rgba32([col.r, col.g, col.b, col.a]));
         }
         if let Some(col) = theme.caret {
+            self.resources.cursor = rgba8_to_rgba32([col.r, col.g, col.b, col.a]);
+        }
+        if let Some(col) = theme.selection {
             self.resources.sel = rgba8_to_rgba32([col.r, col.g, col.b, col.a]);
+        } else {
+            self.resources.sel = self.resources.cursor;
         }
         if let Some(col) = theme.gutter {
             self.resources.gutter_bg = rgba8_to_rgba32([col.r, col.g, col.b, col.a]);
@@ -358,16 +390,6 @@ impl EditView {
     pub fn mode(&self) -> Mode {
         self.mode
     }
-    fn switch_select<'a>(&self, normal: &'a str, select: &'a str) -> &'a str {
-        let mode = self.mode;
-        if mode == Mode::Select ||
-            mode == Mode::LineSelect ||
-            mode == Mode::BlockSelect {
-            select
-        } else {
-            normal
-        }
-    }
 
     pub fn poke(&mut self, command: EditViewCommands) -> bool {
         match command {
@@ -394,10 +416,8 @@ impl EditView {
                     Action::SelectAll => self.send_action("select_all"),
                     Action::NewLine => self.send_action("insert_newline"),
                     Action::Copy => self.send_action("yank"),
-                    Action::ScrollPageUp => self.send_action(
-                        self.switch_select("scroll_page_up", "page_up_and_modify_selection")),
-                    Action::ScrollPageDown => self.send_action(
-                        self.switch_select("scroll_page_down", "page_down_and_modify_selection")),
+                    Action::ScrollPageUp => self.send_action("scroll_page_up"),
+                    Action::ScrollPageDown => self.send_action("scroll_page_down"),
                     Action::Motion(motion) => match motion {
                         Motion::Up => self.send_action("move_up"),
                         Motion::Down => self.send_action("move_down"),

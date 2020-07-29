@@ -6,7 +6,7 @@ use winit::event::{
     MouseButton,
     MouseScrollDelta,
 };
-
+use super::mapper_winit::map_scancode;
 use super::binding::Key;
 
 #[derive(Debug)]
@@ -91,7 +91,11 @@ impl InputState {
         self.key = match event {
             WindowEvent::KeyboardInput { input, .. } => {
                 if input.state == ElementState::Pressed {
-                    if input.virtual_keycode.is_some() {
+                    // Check the scancode override (Different between operating systems, X11,
+                    // Wayland, etc)
+                    if let Some(mapped_scancode) = map_scancode(input.scancode) {
+                        Some(Key::KeyCode(mapped_scancode))
+                    } else if input.virtual_keycode.is_some() {
                         Some(Key::KeyCode(input.virtual_keycode.unwrap()))
                     } else {
                         Some(Key::ScanCode(input.scancode))

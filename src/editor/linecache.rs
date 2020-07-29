@@ -1,6 +1,18 @@
 use std::mem;
 use std::ops::Range;
 use serde_json::Value;
+use serde::Deserialize;
+
+use super::rpc::annotations::{
+    Annotation,
+    AnnotationType,
+};
+
+pub struct LineCache {
+    lines: Vec<Option<Line>>,
+    annotations: Vec<Annotation>,
+    selections: Vec<Selection>,
+}
 
 pub struct Line {
     text: String,
@@ -13,6 +25,12 @@ pub struct Line {
 pub struct StyleSpan {
     pub style_id: usize,
     pub range: Range<usize>,
+}
+
+pub struct Selection {
+    pub line_num: usize,
+    pub start_col: usize,
+    pub end_col: usize,
 }
 
 impl Line {
@@ -45,11 +63,12 @@ impl Line {
                 ix = end;
             }
         }
+
         Line { 
             text, 
             line_num,
             cursor, 
-            styles 
+            styles,
         }
     }
 
@@ -70,14 +89,12 @@ impl Line {
     }
 }
 
-pub struct LineCache {
-    lines: Vec<Option<Line>>
-}
-
 impl LineCache {
     pub fn new() -> LineCache {
         LineCache {
             lines: Vec::new(),
+            annotations: Vec::new(),
+            selections: Vec::new(),
         }
     }
 
@@ -120,6 +137,43 @@ impl LineCache {
                 }
             }
         }
+
+        for raw_anno in update["annotations"].as_array().unwrap() {
+            let mut anno = <Annotation>::deserialize(raw_anno)
+                .expect("unable to deserialize annotation");
+
+            match anno.annotation_type {
+                AnnotationType::Selection => {
+                    for range in anno.ranges.iter_mut() {
+                        for line_num in range.start_line..range.end_line {
+                            if line_num > self.height() {
+                                break;
+                            }
+                            if let Some(line) = self.lines.get(line_num).unwrap() {
+                                let len = line.text.len();
+                                let start_col = if range.start_col >= range.end_col { range.end_col } else { range.start_col };
+                                let end_col = if range.end_col >= range.start_col { range.end_col } else { range.start_col };
+                                let start_col = if start_col > len { len } else { start_col };
+                                let end_col = if end_col > len { len } else { end_col };
+
+                                let left_utf16 = count_utf16(&line.text[..start_col]);
+                                let width_utf16 = count_utf16(&line.text[start_col..end_col]);
+
+                                range.start_col = left_utf16;
+                                range.end_col = left_utf16 + width_utf16;
+
+                                self.selections.push(Selection {
+                                    line_num,
+                                    start_col,
+                                    end_col,
+                                });
+                            }
+                        }
+                    }
+                },
+                _ => self.annotations.push(anno),
+            }
+        }
     }
 
     pub fn height(&self) -> usize {
@@ -131,6 +185,14 @@ impl LineCache {
             self.lines[ix].as_ref()
         } else {
             None
+        }
+    }
+
+    pub fn get_selections(&self, line_num: usize) -> Vec<&Selection> {
+        if line_num < self.lines.len() {
+            self.selections.iter().filter(|s| s.line_num == line_num).collect()
+        } else {
+            vec!()
         }
     }
 }
