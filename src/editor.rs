@@ -39,7 +39,10 @@ use rpc::{
     Theme,
     EditViewCommands,
 };
-use super::events::state::InputState;
+use super::events::{
+    state::InputState,
+    binding::Action,
+};
 
 
 #[derive(Clone)]
@@ -109,15 +112,21 @@ impl App {
 
             if let Ok(ref mut state) = state.try_lock() {
                 state.focused = Some(view_id.clone());
-                state.views.insert(view_id.clone(), EditView::new(0, screen_size, font_size, line_height));
+                state.views.insert(view_id.clone(), EditView::new(0, font_size));
 
                 let edit_view = state.get_focused_view();
                 edit_view.poke(EditViewCommands::Core(core));
                 edit_view.poke(EditViewCommands::ViewId(view_id));
+                edit_view.poke(EditViewCommands::Resize(screen_size));
             } else {
                 println!("unable to lock state to set focused view_id with new EditView widget");
             }
         });
+    }
+
+    // TODO: Derive from config somewhere?
+    fn set_default_theme(&self) {
+        self.send_view_cmd(EditViewCommands::Action(Action::SetTheme("Solarized (dark)".to_string())));
     }
 
     fn handle_cmd(&self, method: &str, params: &Value) {
@@ -127,6 +136,7 @@ impl App {
             "config_changed" => {
                 let config = from_value::<Config>(params["changes"].clone()).unwrap();
                 self.send_view_cmd(EditViewCommands::ConfigChanged(config));
+                self.set_default_theme();
             },
             "available_themes" => {
                 if let Ok(ref mut state) = self.state.clone().try_lock() {
@@ -198,10 +208,7 @@ pub fn run(title: &str) {
         "config_dir": "./config",
         "client_extras_dir": "./extras",
     }));
-    if let text_ctx = renderer.borrow_mut().get_text_context().clone().borrow_mut() {
-        let scale = 20.0;
-        app.open_file_in_view(None, screen_dimensions, scale, text_ctx.get_line_height(scale));
-    }
+    app.open_file_in_view(None, screen_dimensions, 20.0, 23.0);
 
     events_loop.run(move |event: Event<'_, EditorEvent>, _, control_flow: &mut ControlFlow| {
         *control_flow = ControlFlow::Wait;
@@ -226,11 +233,9 @@ pub fn run(title: &str) {
                     }
                 }
             },
-            Event::RedrawEventsCleared => {
-            },
             Event::RedrawRequested(_window_id) => {
                 println!("RedrawRequested");
-               
+                 
                 renderer.borrow_mut().draw_frame();
 
                 println!("Drawn");
@@ -240,7 +245,8 @@ pub fn run(title: &str) {
                 | WindowEvent::MouseInput { .. }
                 | WindowEvent::MouseWheel { .. }
                 | WindowEvent::CursorMoved { .. }
-                | WindowEvent::ModifiersChanged(_) => {
+                | WindowEvent::ModifiersChanged(_)
+                | WindowEvent::Focused(_) => {
                     app.update_input(event, screen_dimensions);
 
                     if let Ok(ref mut state) = app.state.clone().try_lock() {

@@ -71,6 +71,8 @@ pub struct InputState {
     pub key: Option<Key>,
     pub modifiers: ModifiersState,
     pub mouse: MouseState,
+    pub window_focused: bool,
+    pub window_focus_changed: bool,
 }
 
 impl InputState {
@@ -79,6 +81,8 @@ impl InputState {
             key: None,
             modifiers: ModifiersState::default(),
             mouse: MouseState::default(),
+            window_focused: false,
+            window_focus_changed: false,
         }
     }
 
@@ -114,12 +118,24 @@ impl InputState {
             },
             _ => old_mods,
         };
+
+        match event {
+            WindowEvent::Focused(focus) => {
+                self.window_focused = focus;
+                self.window_focus_changed = true;
+            },
+            _ => {
+                self.window_focus_changed = false;
+            },
+        };
+
         let mouse_changed = self.mouse.update_via_window_event(event, window_dimensions); 
 
         // Change detected?
         old_key != self.key
             || old_mods != self.modifiers
             || mouse_changed
+            || self.window_focus_changed
     }
 }
 

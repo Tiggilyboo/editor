@@ -121,7 +121,13 @@ impl EditorState {
                         handled = true;
                     }
                 }
+                // If focus changed, force dirty
+                if input.window_focus_changed {
+                    edit_view.set_dirty(true);
+                    handled = true;
+                }
             }
+            
 
             handled
         } else {

@@ -28,9 +28,6 @@ use crate::editor::rpc::{
     Config,
     Theme,
     EditViewCommands,
-    annotations::{
-        Annotation,
-    },
 };
 use super::{
     widget::Widget,
@@ -57,6 +54,7 @@ pub struct EditView {
     index: usize,
     dirty: bool,
     view_id: Option<String>,
+    filename: Option<String>,
     line_cache: LineCache,
     scroll_offset: f32,
     viewport: Range<usize>,
@@ -185,6 +183,7 @@ impl Widget for EditView {
     }
 }
 
+#[inline]
 fn create_offside_section(content: &str, colour: [f32; 4], scale: f32) -> OwnedSection {
     Section::default()
         .add_text(Text::new(content)
@@ -212,8 +211,9 @@ impl Resources {
 }
 
 impl EditView {
-    pub fn new(index: usize, size: [f32; 2], scale: f32, line_gap: f32) -> Self {
-        let resources = Resources::new(scale, line_gap);
+    pub fn new(index: usize, scale: f32) -> Self {
+        let size = [0.0, 0.0]; 
+        let resources = Resources::new(scale, scale + 3.0);
         let background = PrimitiveWidget::new(0, [0.0, 0.0, 0.01], size, resources.bg);
         let gutter = PrimitiveWidget::new(1, [0.0, 0.0, 0.1], [scale, size[1]], resources.gutter_bg);
 
@@ -224,6 +224,7 @@ impl EditView {
             view_id: None,
             config: None,
             theme: None,
+            filename: None,
             line_cache: LineCache::new(),
             scroll_offset: 0.0,
             viewport: 0..0,
@@ -232,8 +233,8 @@ impl EditView {
             show_line_numbers: false,
             mode: Mode::Normal,
             resources,
-            gutter,
             background,
+            gutter,
         }
     }
 
@@ -325,6 +326,7 @@ impl EditView {
         println!("config_changed: {:?}", config);
         if config.font_size.is_some() {
             self.resources.scale = config.font_size.unwrap();
+            self.resources.line_gap = config.font_size.unwrap() * 1.03;
             self.dirty = true;
         }
 
