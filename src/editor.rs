@@ -93,14 +93,11 @@ impl App {
         view_state.poke(command);
     }
 
-    pub fn open_file_in_view(&self, filename: Option<&str>, screen_size: [f32; 2], font_size: f32, line_height: f32) {
+    pub fn open_file_in_view(&self, filename: Option<String>, screen_size: [f32; 2], font_size: f32) {
         let mut params = json!({});
 
-        let filename = if filename.is_some() {
-            params["file_path"] = json!(filename.unwrap());
-            Some(filename.unwrap().to_string())
-        } else {
-            None
+        if filename.is_some() {
+            params["file_path"] = json!(filename);
         };
 
         let core = Arc::downgrade(&self.core);
@@ -112,7 +109,7 @@ impl App {
 
             if let Ok(ref mut state) = state.try_lock() {
                 state.focused = Some(view_id.clone());
-                state.views.insert(view_id.clone(), EditView::new(0, font_size));
+                state.views.insert(view_id.clone(), EditView::new(0, font_size, filename));
 
                 let edit_view = state.get_focused_view();
                 edit_view.poke(EditViewCommands::Core(core));
@@ -193,7 +190,7 @@ impl Handler for AppDispatcher {
     }
 }
 
-pub fn run(title: &str) {
+pub fn run(title: &str, filename: Option<String>) {
     let events_loop = events::create_event_loop();
     let renderer = RefCell::new(Renderer::new(&events_loop, title));
     let mut screen_dimensions: [f32; 2] = renderer.borrow().get_screen_dimensions();
@@ -208,7 +205,7 @@ pub fn run(title: &str) {
         "config_dir": "./config",
         "client_extras_dir": "./extras",
     }));
-    app.open_file_in_view(None, screen_dimensions, 20.0, 23.0);
+    app.open_file_in_view(filename, screen_dimensions, 20.0);
 
     events_loop.run(move |event: Event<'_, EditorEvent>, _, control_flow: &mut ControlFlow| {
         *control_flow = ControlFlow::Wait;

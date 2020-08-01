@@ -211,7 +211,7 @@ impl Resources {
 }
 
 impl EditView {
-    pub fn new(index: usize, scale: f32) -> Self {
+    pub fn new(index: usize, scale: f32, filename: Option<String>) -> Self {
         let size = [0.0, 0.0]; 
         let resources = Resources::new(scale, scale + 3.0);
         let background = PrimitiveWidget::new(0, [0.0, 0.0, 0.01], size, resources.bg);
@@ -224,7 +224,7 @@ impl EditView {
             view_id: None,
             config: None,
             theme: None,
-            filename: None,
+            filename: filename,
             line_cache: LineCache::new(),
             scroll_offset: 0.0,
             viewport: 0..0,

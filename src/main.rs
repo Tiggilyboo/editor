@@ -11,7 +11,11 @@ mod events;
 mod editor;
 mod unicode;
 
+use std::env;
+
 fn main() {
-    editor::run("Editor");    
+    let filename = env::args().nth(1);
+    
+    editor::run("Editor", filename);    
 }
 

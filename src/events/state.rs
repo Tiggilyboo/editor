@@ -132,7 +132,8 @@ impl InputState {
         let mouse_changed = self.mouse.update_via_window_event(event, window_dimensions); 
 
         // Change detected?
-        old_key != self.key
+        old_key.is_none() && self.key.is_some()
+            || old_key.is_some() && self.key.is_some()
             || old_mods != self.modifiers
             || mouse_changed
             || self.window_focus_changed

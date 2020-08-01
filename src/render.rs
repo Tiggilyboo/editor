@@ -195,6 +195,7 @@ impl Renderer {
         )));
     }
 
+    #[inline]
     fn create_command_buffer(&mut self, image_index: usize) -> Option<Arc<AutoCommandBuffer>> {
         let mut builder = AutoCommandBufferBuilder::primary_one_time_submit(
                 self.core.get_device().clone(),

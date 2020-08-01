@@ -275,9 +275,9 @@ impl PrimitiveContext {
     ) -> bool {
         if self.pristine {
             self.draw_internal(builder, image_num);
+            return true;
         }
 
-        // process the Primitives to vertices and indices...
         let len_prims = self.primitives.len();
         if len_prims == 0 {
             return true;
@@ -288,6 +288,7 @@ impl PrimitiveContext {
         let mut indices: Vec<u16> = Vec::with_capacity(len_prims * 6);
         let mut i: u16 = 0;
 
+        // process the Primitives to vertices and indices...
         for prim in self.primitives.iter() {
             let (prim_verts, prim_indices) = Self::primitive_to_buffer(i, prim);
 

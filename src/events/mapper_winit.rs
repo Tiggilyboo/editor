@@ -3,6 +3,7 @@ use winit::event::{
     ScanCode,
 };
 
+// Due to some missing scancodes in winit, we map them here
 pub fn map_scancode(scancode: ScanCode) -> Option<VirtualKeyCode> {
     match scancode {
         0x02 => Some(VirtualKeyCode::Key1),
