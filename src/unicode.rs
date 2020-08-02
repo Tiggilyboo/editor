@@ -251,6 +251,7 @@ pub static LETTER_LOWERCASED : &'static [char] = &[
     '\u{1D7BA}', '\u{1D7BB}', '\u{1D7BC}', '\u{1D7BD}', '\u{1D7BE}', '\u{1D7BF}', '\u{1D7C0}', '\u{1D7C1}',
     '\u{1D7C2}', '\u{1D7C4}', '\u{1D7C5}', '\u{1D7C6}', '\u{1D7C7}', '\u{1D7C8}', '\u{1D7C9}', '\u{1D7CB}'];
 
+/*
 pub static LETTER_MODIFIER : &'static [char] = &[
     '\u{02B0}', '\u{02B1}', '\u{02B2}', '\u{02B3}', '\u{02B4}', '\u{02B5}', '\u{02B6}', '\u{02B7}',
     '\u{02B8}', '\u{02B9}', '\u{02BA}', '\u{02BB}', '\u{02BC}', '\u{02BD}', '\u{02BE}', '\u{02BF}',
@@ -2062,7 +2063,7 @@ pub static LETTER_TITLECASE : &'static [char] = &[
     '\u{1F8C}', '\u{1F8D}', '\u{1F8E}', '\u{1F8F}', '\u{1F98}', '\u{1F99}', '\u{1F9A}', '\u{1F9B}',
     '\u{1F9C}', '\u{1F9D}', '\u{1F9E}', '\u{1F9F}', '\u{1FA8}', '\u{1FA9}', '\u{1FAA}', '\u{1FAB}',
     '\u{1FAC}', '\u{1FAD}', '\u{1FAE}', '\u{1FAF}', '\u{1FBC}', '\u{1FCC}', '\u{1FFC}'];
-
+*/
 pub static LETTER_UPPERCASE : &'static [char] = &[
     '\u{0041}', '\u{0042}', '\u{0043}', '\u{0044}', '\u{0045}', '\u{0046}', '\u{0047}', '\u{0048}',
     '\u{0049}', '\u{004A}', '\u{004B}', '\u{004C}', '\u{004D}', '\u{004E}', '\u{004F}', '\u{0050}',
@@ -2268,7 +2269,7 @@ pub static LETTER_UPPERCASE : &'static [char] = &[
     '\u{1D793}', '\u{1D794}', '\u{1D795}', '\u{1D796}', '\u{1D797}', '\u{1D798}', '\u{1D799}', '\u{1D79A}',
     '\u{1D79B}', '\u{1D79C}', '\u{1D79D}', '\u{1D79E}', '\u{1D79F}', '\u{1D7A0}', '\u{1D7A1}', '\u{1D7A2}',
     '\u{1D7A3}', '\u{1D7A4}', '\u{1D7A5}', '\u{1D7A6}', '\u{1D7A7}', '\u{1D7A8}', '\u{1D7CA}'];
-
+/*
 pub static MARK_ENCLOSING : &'static [char] = &[
     '\u{0488}', '\u{0489}', '\u{1ABE}', '\u{20DD}', '\u{20DE}', '\u{20DF}', '\u{20E0}', '\u{20E2}',
     '\u{20E3}', '\u{20E4}', '\u{A670}', '\u{A671}', '\u{A672}'];
@@ -2520,7 +2521,7 @@ pub static MARK_SPACE_COMBINING : &'static [char] = &[
     '\u{16F70}', '\u{16F71}', '\u{16F72}', '\u{16F73}', '\u{16F74}', '\u{16F75}', '\u{16F76}', '\u{16F77}',
     '\u{16F78}', '\u{16F79}', '\u{16F7A}', '\u{16F7B}', '\u{16F7C}', '\u{16F7D}', '\u{16F7E}', '\u{1D165}',
     '\u{1D166}', '\u{1D16D}', '\u{1D16E}', '\u{1D16F}', '\u{1D170}', '\u{1D171}', '\u{1D172}'];
-
+*/
 pub static NUMBER_DECIMAL_DIGIT : &'static [char] = &[
     '\u{0030}', '\u{0031}', '\u{0032}', '\u{0033}', '\u{0034}', '\u{0035}', '\u{0036}', '\u{0037}',
     '\u{0038}', '\u{0039}', '\u{0660}', '\u{0661}', '\u{0662}', '\u{0663}', '\u{0664}', '\u{0665}',
@@ -2623,7 +2624,7 @@ pub static NUMBER_LETTER : &'static [char] = &[
     '\u{1245B}', '\u{1245C}', '\u{1245D}', '\u{1245E}', '\u{1245F}', '\u{12460}', '\u{12461}', '\u{12462}',
     '\u{12463}', '\u{12464}', '\u{12465}', '\u{12466}', '\u{12467}', '\u{12468}', '\u{12469}', '\u{1246A}',
     '\u{1246B}', '\u{1246C}', '\u{1246D}', '\u{1246E}'];
-
+/*
 pub static NUMBER_OTHER : &'static [char] = &[
     '\u{00B2}', '\u{00B3}', '\u{00B9}', '\u{00BC}', '\u{00BD}', '\u{00BE}', '\u{09F4}', '\u{09F5}',
     '\u{09F6}', '\u{09F7}', '\u{09F8}', '\u{09F9}', '\u{0B72}', '\u{0B73}', '\u{0B74}', '\u{0B75}',
@@ -2741,7 +2742,7 @@ pub static OTHER_FORMAT : &'static [char] = &[
 
 pub static OTHER_PRIVATE_USE : &'static [char] = &[
     '\u{E000}', '\u{F8FF}', '\u{F0000}', '\u{FFFFD}', '\u{100000}', '\u{10FFFD}'];
-
+*/
 pub static PUNCTUATION_CLOSE : &'static [char] = &[
     '\u{0029}', '\u{005D}', '\u{007D}', '\u{0F3B}', '\u{0F3D}', '\u{169C}', '\u{2046}', '\u{207E}',
     '\u{208E}', '\u{2309}', '\u{230B}', '\u{232A}', '\u{2769}', '\u{276B}', '\u{276D}', '\u{276F}',
@@ -2849,13 +2850,13 @@ pub static PUNCTUATION_OTHER : &'static [char] = &[
     '\u{12473}', '\u{12474}', '\u{16A6E}', '\u{16A6F}', '\u{16AF5}', '\u{16B37}', '\u{16B38}', '\u{16B39}',
     '\u{16B3A}', '\u{16B3B}', '\u{16B44}', '\u{1BC9F}', '\u{1DA87}', '\u{1DA88}', '\u{1DA89}', '\u{1DA8A}',
     '\u{1DA8B}'];
-
+/*
 pub static SEPARATOR_LINE : &'static [char] = &[
     '\u{2028}'];
 
 pub static SEPARATOR_PARAGRAPH : &'static [char] = &[
     '\u{2029}'];
-
+*/
 pub static SEPARATOR_SPACE : &'static [char] = &[
     '\u{0020}', '\u{00A0}', '\u{1680}', '\u{2000}', '\u{2001}', '\u{2002}', '\u{2003}', '\u{2004}',
     '\u{2005}', '\u{2006}', '\u{2007}', '\u{2008}', '\u{2009}', '\u{200A}', '\u{202F}', '\u{205F}',

@@ -71,6 +71,22 @@ impl TextWidget {
         }
     }
 
+    pub fn new(index: usize, text: &str, scale: f32, colour: [f32; 4], depth: f32) -> Self {
+        Self {
+            index,
+            dirty: true,
+            cursor: vec!(),
+            styles: vec!(),
+            section: Section::default()
+                .add_text(Text::new(text)
+                    .with_color(colour)
+                    .with_z(depth)
+                    .with_scale(scale)
+                ).with_layout(Layout::default_single_line())
+                .to_owned(),
+        }
+    }
+
     pub fn set_position(&mut self, x: f32, y: f32) {
        self.section.screen_position = (x, y);
        self.dirty = true;

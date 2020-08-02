@@ -302,22 +302,33 @@ impl TextContext {
     }
 
     pub fn get_cursor_position(&mut self, section: &Section, offset: usize, font_size: f32) -> (f32, f32) {
-        let content = section.text[0].text.char_indices();
         let mut pos: (f32, f32) = section.screen_position;
+        if offset == 0 {
+            return pos;
+        }
 
         if font_size != self.font_context.get_scale() {
             self.font_context.set_scale(font_size);
         }
-        
-        for (i, ch) in content {
-            if offset == 0 || offset <= i {
-                break;
-            }
-            let bounds = self.font_context.get_char_bounds(ch);
+       
+        let mut content_offset = 0;
+        for section_text in section.text.iter() {
+            let mut has_indices = false;
+            for (i, ch) in section_text.text.char_indices(){
+                if offset <= content_offset + i {
+                    break;
+                }
+                let bounds = self.font_context.get_char_bounds(ch);
 
-            pos.0 += bounds.max.x;
-            if bounds.max.y > pos.1 {
-                pos.1 = bounds.max.y;
+                pos.0 += bounds.max.x;
+                if bounds.max.y > pos.1 {
+                    pos.1 = bounds.max.y;
+                }
+                has_indices = true;
+            }
+
+            if has_indices {
+                content_offset += section_text.text.char_indices().last().unwrap().0;
             }
         }
 

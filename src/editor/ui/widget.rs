@@ -1,12 +1,14 @@
 use crate::render::Renderer;
 use super::text::TextWidget;
 use super::primitive::PrimitiveWidget;
+use super::status::StatusWidget;
 use super::view::EditView;
 
 pub enum WidgetKind {
     Text(TextWidget),
     Primitive(PrimitiveWidget),
     View(EditView),
+    Status(StatusWidget),
 }
 
 pub trait Widget {

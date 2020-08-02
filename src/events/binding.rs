@@ -1,3 +1,4 @@
+use std::fmt;
 
 use winit::event::{
     ModifiersState,
@@ -96,6 +97,11 @@ pub enum Mode {
     Command,
 
     None,
+}
+impl fmt::Display for Mode {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]

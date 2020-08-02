@@ -19,7 +19,6 @@ impl XiPeer {
     pub fn send(&self, s: String) {
         println!("xi sending: {}", s.clone());
         let _ = self.tx.send(s);
-        println!("xi sent");
     }
     pub fn send_json(&self, v: &Value) {
         self.send(serde_json::to_string(v).unwrap());

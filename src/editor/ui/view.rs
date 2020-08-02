@@ -37,42 +37,48 @@ use super::{
     widget::Widget,
     text::TextWidget,
     primitive::PrimitiveWidget,
+    status::{
+        StatusWidget,
+        Status,
+    },
 };
 
 type Method = String;
 type Params = Value;
 type ColourRGBA = [f32; 4];
 
-struct Resources {
-    fg: ColourRGBA,
-    bg: ColourRGBA,
-    sel: ColourRGBA,
-    cursor: ColourRGBA,
-    gutter_fg: ColourRGBA,
-    gutter_bg: ColourRGBA,
-    scale: f32,
-    line_gap: f32,
+pub struct Resources {
+    pub fg: ColourRGBA,
+    pub bg: ColourRGBA,
+    pub sel: ColourRGBA,
+    pub cursor: ColourRGBA,
+    pub gutter_fg: ColourRGBA,
+    pub gutter_bg: ColourRGBA,
+    pub scale: f32,
+    pub line_gap: f32,
     styles: HashMap<usize, Style>,
 }
 
 pub struct EditView {
     index: usize,
+    size: [f32; 2],
     dirty: bool,
     view_id: Option<String>,
-    filename: Option<String>,
     line_cache: LineCache,
     scroll_offset: f32,
     viewport: Range<usize>,
     core: Weak<Mutex<Core>>,
     pending: Vec<(Method, Params)>,
+
+    filename: Option<String>,
     config: Option<Config>,
     theme: Option<Theme>,
     language: Option<String>,
-    size: [f32; 2],
     resources: Resources,
     gutter: PrimitiveWidget,
     background: PrimitiveWidget,
-    mode: Mode,
+    status_bar: StatusWidget,
+    current_line: usize,
     show_line_numbers: bool,
 }
 
@@ -215,6 +221,16 @@ impl EditView {
         let background = PrimitiveWidget::new(0, [0.0, 0.0, 0.01], size, resources.bg);
         let gutter = PrimitiveWidget::new(1, [0.0, 0.0, 0.1], [scale, size[1]], resources.gutter_bg);
 
+        let status = Status {
+            mode: Mode::Normal,
+            filename: filename.clone(),
+            line_current: 0,
+            line_count: 0,
+            language: None,
+        };
+        let status_bar = StatusWidget::new(2, status, &resources);
+        println!("created status bar");
+
         Self {
             index,
             size,
@@ -223,14 +239,15 @@ impl EditView {
             config: None,
             theme: None,
             language: None,
-            filename: filename,
             line_cache: LineCache::new(),
             scroll_offset: 0.0,
             viewport: 0..0,
+            current_line: 0,
+            show_line_numbers: false,
             core: Default::default(),
             pending: Default::default(),
-            show_line_numbers: false,
-            mode: Mode::Normal,
+            filename,
+            status_bar,
             resources,
             background,
             gutter,
@@ -256,6 +273,7 @@ impl EditView {
         self.size = size;
         self.gutter.set_height(size[1]);
         self.background.set_size(size);
+        self.status_bar.set_size(size);
         self.dirty = true;
 
         let (w, h) = (size[0], size[1]);
@@ -342,6 +360,7 @@ impl EditView {
 
     fn language_changed(&mut self, language_id: String) {
         self.language = Some(language_id);
+        self.status_bar.update_line_status(self.current_line, self.line_cache.height(), self.language.clone());
     }
 
     fn theme_changed(&mut self, theme: Theme) {
@@ -382,10 +401,10 @@ impl EditView {
     }
 
     fn set_mode(&mut self, mode: Mode) {
-        self.mode = mode;
+        self.status_bar.set_mode(mode);
     }
     pub fn mode(&self) -> Mode {
-        self.mode
+        self.status_bar.mode()
     }
 
     pub fn poke(&mut self, command: EditViewCommands) -> bool {
@@ -479,6 +498,7 @@ impl EditView {
 
         if viewport != self.viewport {
             self.viewport = viewport;
+            self.status_bar.update_line_status(self.current_line, self.line_cache.height(), self.language.clone());
             self.send_edit_cmd("scroll", &json!([first_line, last_line]));
         }
     }

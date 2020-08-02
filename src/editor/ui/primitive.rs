@@ -75,7 +75,6 @@ impl Widget for PrimitiveWidget {
     }
 
     fn queue_draw(&mut self, renderer: &mut Renderer) {
-        println!("queueing primitive: {}, top_left: {:?}", self.index, self.position);
         renderer
             .get_primitive_context().borrow_mut()
             .queue_primitive(self.index, Primitive {
