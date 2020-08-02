@@ -52,8 +52,12 @@ impl FontContext {
     }
 
     pub fn get_char_bounds(&self, ch: char) -> &Rect {
-        self.bounds.get(&ch)
-            .expect("could not find character in FontContext")
+        if let Some(bounds) = self.bounds.get(&ch) {
+            bounds
+        } else {
+            println!("could not find character '{}' in FontContext", ch);
+            unreachable!()
+        }
     }
 
     pub fn get_scale(&self) -> f32 {

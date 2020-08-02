@@ -70,7 +70,6 @@ pub struct EditView {
     core: Weak<Mutex<Core>>,
     pending: Vec<(Method, Params)>,
 
-    filename: Option<String>,
     config: Option<Config>,
     theme: Option<Theme>,
     language: Option<String>,
@@ -120,9 +119,11 @@ impl Widget for EditView {
         self.background.queue_draw(renderer);
         self.gutter.set_width(gutter_width);
         self.gutter.queue_draw(renderer);
+
+        self.status_bar.queue_draw(renderer);
     
-        // Selection start index, background = 0, gutter = 1
-        let mut s_ix = 2;
+        // Selection start index, background = 0, gutter = 1, status_bar = 2, 3, 4
+        let mut s_ix = 6;
         for line_num in first_line..last_line {
             if let Some(ref mut text_widget) = &mut self.get_line(line_num) {
                 let line_content = text_widget.get_section().to_borrowed().text[0].text;
@@ -246,7 +247,6 @@ impl EditView {
             show_line_numbers: false,
             core: Default::default(),
             pending: Default::default(),
-            filename,
             status_bar,
             resources,
             background,
@@ -270,10 +270,14 @@ impl EditView {
     }
 
     pub fn resize(&mut self, size: [f32; 2]) {
-        self.size = size;
-        self.gutter.set_height(size[1]);
-        self.background.set_size(size);
-        self.status_bar.set_size(size);
+        // -1 line_gap for status bur
+        let bar_height = self.resources.line_gap;
+        let height = size[1] - bar_height;
+        self.size = [size[0], height];
+        self.gutter.set_height(height);
+        self.background.set_size([size[0], height]);
+        self.status_bar.set_size([size[0], self.resources.line_gap]);
+        self.status_bar.set_position(0.0, height); 
         self.dirty = true;
 
         let (w, h) = (size[0], size[1]);
@@ -369,7 +373,7 @@ impl EditView {
         }
         if let Some(col) = &theme.background {
             self.resources.bg = col.to_rgba_f32array(); 
-            self.background.set_colour(self.resources.bg.clone())
+            self.background.set_colour(self.resources.bg.clone());
         }
         if let Some(col) = &theme.caret {
             self.resources.cursor = col.to_rgba_f32array();
@@ -385,6 +389,7 @@ impl EditView {
             self.resources.gutter_bg = self.resources.bg;
         }
         self.gutter.set_colour(self.resources.gutter_bg);
+        self.status_bar.set_colours(self.resources.gutter_bg.clone(), self.resources.fg.clone());
 
         if let Some(col) = &theme.gutter_foreground {
             self.resources.gutter_fg = col.to_rgba_f32array();

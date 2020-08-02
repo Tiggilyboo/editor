@@ -1,9 +1,9 @@
 use glyph_brush::{
     Section,
     OwnedSection,
-    OwnedText,
     Layout,
     Text,
+    ab_glyph::PxScale,
 };
 
 use super::widget::Widget;
@@ -80,23 +80,31 @@ impl Widget for StatusWidget {
 
         // Status
         let status_width = 6.0 + text_ctx.borrow().get_text_width(&self.status_section.text[0].text.to_string());
-        self.status_section.screen_position = (width - status_width, self.position[1]);
+        println!("queueing status: '{}' @ {:?}", self.status_section.text[0].text, [self.position[0], height - 23.0]);
+        self.status_section.screen_position = (self.position[0] - status_width, height - 23.0);
         text_ctx.borrow_mut().queue_text(&self.status_section.to_borrowed());
+
+        self.filename_section.screen_position = (
+            self.mode_primitive.position()[0] + self.mode_primitive.size()[0] + 6.0,
+            23.0
+        );
+        text_ctx.borrow_mut().queue_text(&self.filename_section.to_borrowed());
     }
 }
 
 #[inline]
 fn create_empty_section() -> OwnedSection {
     Section::default()
+        .add_text(Text::default())
         .with_layout(Layout::default_single_line())
         .to_owned()
 }
 
 impl StatusWidget {
     pub fn new(index: usize, status: Status, resources: &Resources) -> Self {
-        let background = PrimitiveWidget::new(3, [0.0, 0.0, 0.2], [0.0, 0.0], resources.bg);
-        let mode_primitive = PrimitiveWidget::new(4, [0.0, 0.0, 0.2], [0.0, 0.0], MODE_NORMAL_COLOUR);
-        let command_text = TextWidget::new(5, "", resources.scale, resources.fg, 0.2);
+        let background = PrimitiveWidget::new(2, [0.0, 0.0, 0.2], [0.0, 0.0], resources.bg);
+        let mode_primitive = PrimitiveWidget::new(3, [0.0, 0.0, 0.2], [0.0, 0.0], MODE_NORMAL_COLOUR);
+        let command_text = TextWidget::new(4, "", resources.scale, resources.fg, 0.2);
 
         let filename_section = create_empty_section();
         let mode_section = create_empty_section();
@@ -105,9 +113,9 @@ impl StatusWidget {
         Self {
             index,
             status,
-            size: [0.0, 0.0],
+            size: [0.0, 23.0],
             position: [0.0, 0.0],
-            bg_colour: resources.bg,
+            bg_colour: [1.0, 0.0, 0.0, 1.0], //resources.bg,
             fg_colour: resources.fg,
             scale: resources.scale,
             depth: 0.5,
@@ -123,33 +131,37 @@ impl StatusWidget {
 
     pub fn set_position(&mut self, x: f32, y: f32) {
         self.position = [x, y];
+        self.background.set_position(x, y);
+        self.mode_primitive.set_position(x, y);
+        self.mode_section.screen_position = (x, y);
+        self.filename_section.screen_position = (x + 64.0, y);
         self.dirty = true;
     }
 
     pub fn set_size(&mut self, size: [f32; 2]) {
-        // TODO: Stack overflow???!?!?!
         let (width, height) = (size[0], size[1]);
 
-        // Parent
-        self.set_size([width, self.scale * 2.06]);
-        self.set_position(width - self.size[0], height - self.size[1]);
+        self.size = size;
         self.background.set_size(self.size);
-        self.background.set_position(self.position[0], self.position[1]);
 
         // First row
-        self.mode_primitive.set_position(self.position[0], self.position[1]);
-        self.filename_section.screen_position = (self.position[0] + 64.0, self.position[1]);
-
-        // Second row
-        self.command_text.set_position(self.position[0], self.position[1] + (self.scale * 1.03));
+        self.mode_primitive.set_size([64.0, height]);
 
         self.dirty = true;
     }
 
     pub fn set_mode(&mut self, mode: Mode) {
         self.mode_section.text[0].text = mode.to_string();
-        self.mode_section.text[0].extra.color = mode.colour();
+        self.mode_section.text[0].extra.color = self.fg_colour;
+        self.mode_primitive.set_colour(mode.colour());
+        println!("mode set: {}, colour: {:?}", mode.to_string(), mode.colour());
         self.status.mode = mode; 
+    }
+
+    pub fn set_colours(&mut self, bg: ColourRGBA, fg: ColourRGBA) {
+        self.fg_colour = fg;
+        self.bg_colour = bg;
+        self.background.set_colour(self.bg_colour);
     }
 
     pub fn update_line_status(&mut self, line_num: usize, line_count: usize, language: Option<String>) {
@@ -159,7 +171,7 @@ impl StatusWidget {
             0
         };
 
-        let status_content = format!("{}\t{}%\t{}/{}", 
+        let status_content = format!("{}  {}% {}/{}", 
             language.clone().unwrap_or(String::new()), 
             line_percent,
             line_num, line_count);
@@ -168,11 +180,9 @@ impl StatusWidget {
         self.status.line_current = line_num;
         self.status.language = language;
 
-        self.status_section.text = vec![ 
-            OwnedText::from(&Text::new(status_content.as_str())
-                .with_scale(self.scale)
-                .with_color(self.fg_colour)
-        )];
+        self.status_section.text[0].text = status_content;
+        self.status_section.text[0].scale = PxScale::from(self.scale);
+        self.status_section.text[0].extra.color = self.fg_colour;
     }
 
     fn update_command_widget(&mut self, position: [f32; 2], command: String) {
