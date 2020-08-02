@@ -1,4 +1,6 @@
 use std::ops::Range;
+use std::collections::HashMap;
+
 use std::sync::{
     Mutex,
     Weak,
@@ -27,7 +29,9 @@ use crate::editor::rpc::{
     Core,
     Config,
     Theme,
+    Style,
     EditViewCommands,
+    theme::ToRgbaFloat32,
 };
 use super::{
     widget::Widget,
@@ -48,6 +52,7 @@ struct Resources {
     gutter_bg: ColourRGBA,
     scale: f32,
     line_gap: f32,
+    styles: HashMap<usize, Style>,
 }
 
 pub struct EditView {
@@ -62,6 +67,7 @@ pub struct EditView {
     pending: Vec<(Method, Params)>,
     config: Option<Config>,
     theme: Option<Theme>,
+    language: Option<String>,
     size: [f32; 2],
     resources: Resources,
     gutter: PrimitiveWidget,
@@ -72,16 +78,6 @@ pub struct EditView {
 
 const TOP_PAD: f32 = 6.0;
 const LEFT_PAD: f32 = 6.0;
-
-#[inline]
-fn rgba8_to_rgba32(colour_u8: [u8; 4]) -> [f32; 4] {
-    [
-        colour_u8[0] as f32 / 255.0,
-        colour_u8[1] as f32 / 255.0,
-        colour_u8[2] as f32 / 255.0,
-        colour_u8[3] as f32 / 255.0,
-    ]
-}
 
 impl Widget for EditView {
     fn index(&self) -> usize {
@@ -137,7 +133,8 @@ impl Widget for EditView {
                     let sel_x0 = text_ctx.borrow().get_text_width(&line_content[..selection.start_col]);
                     let width = text_ctx.borrow().get_text_width(sel_content);
 
-                    let mut selection = PrimitiveWidget::new(s_ix, [x0 + sel_x0, y, 0.2], [width, line_gap], self.resources.sel);
+                    let mut selection = PrimitiveWidget::new(
+                        s_ix, [x0 + sel_x0, y, 0.2], [width, line_gap], self.resources.sel);
 
                     selection.queue_draw(renderer);
                     s_ix += 1;
@@ -206,6 +203,7 @@ impl Resources {
             gutter_fg: BLANK,
             line_gap,
             scale,
+            styles: HashMap::new(),
         }
     }
 }
@@ -224,6 +222,7 @@ impl EditView {
             view_id: None,
             config: None,
             theme: None,
+            language: None,
             filename: filename,
             line_cache: LineCache::new(),
             scroll_offset: 0.0,
@@ -243,7 +242,7 @@ impl EditView {
             .get_line(line_num)
             .map(|line| {
                 let resources = &self.resources;
-                TextWidget::from_line(line_num, &line, resources.scale, resources.fg)
+                TextWidget::from_line(line_num, &line, resources.scale, resources.fg, &resources.styles)
             })
     }
 
@@ -322,8 +321,11 @@ impl EditView {
         }
     }
 
+    fn define_style(&mut self, style: Style) {
+        self.resources.styles.insert(style.id, style);
+    }
+
     fn config_changed(&mut self, config: Config) {
-        println!("config_changed: {:?}", config);
         if config.font_size.is_some() {
             self.resources.scale = config.font_size.unwrap();
             self.resources.line_gap = config.font_size.unwrap() * 1.03;
@@ -338,37 +340,41 @@ impl EditView {
         self.dirty = true;
     }
 
+    fn language_changed(&mut self, language_id: String) {
+        self.language = Some(language_id);
+    }
+
     fn theme_changed(&mut self, theme: Theme) {
-        if let Some(col) = theme.foreground {
-            self.resources.fg = rgba8_to_rgba32([col.r, col.g, col.b, col.a]);
+        if let Some(col) = &theme.foreground {
+            self.resources.fg = col.to_rgba_f32array();
         }
-        if let Some(col) = theme.background {
-            self.resources.bg = rgba8_to_rgba32([col.r, col.g, col.b, col.a]);
-            self.background.set_colour(rgba8_to_rgba32([col.r, col.g, col.b, col.a]));
+        if let Some(col) = &theme.background {
+            self.resources.bg = col.to_rgba_f32array(); 
+            self.background.set_colour(self.resources.bg.clone())
         }
-        if let Some(col) = theme.caret {
-            self.resources.cursor = rgba8_to_rgba32([col.r, col.g, col.b, col.a]);
+        if let Some(col) = &theme.caret {
+            self.resources.cursor = col.to_rgba_f32array();
         }
-        if let Some(col) = theme.selection {
-            self.resources.sel = rgba8_to_rgba32([col.r, col.g, col.b, col.a]);
+        if let Some(col) = &theme.selection {
+            self.resources.sel = col.to_rgba_f32array();
         } else {
             self.resources.sel = self.resources.cursor;
         }
-        if let Some(col) = theme.gutter {
-            self.resources.gutter_bg = rgba8_to_rgba32([col.r, col.g, col.b, col.a]);
+        if let Some(col) = &theme.gutter {
+            self.resources.gutter_bg = col.to_rgba_f32array();
         } else {
             self.resources.gutter_bg = self.resources.bg;
         }
         self.gutter.set_colour(self.resources.gutter_bg);
 
-        if let Some(col) = theme.gutter_foreground {
-            self.resources.gutter_fg = rgba8_to_rgba32([col.r, col.g, col.b, col.a]);
+        if let Some(col) = &theme.gutter_foreground {
+            self.resources.gutter_fg = col.to_rgba_f32array();
         } else {
             self.resources.gutter_fg = self.resources.fg;
         }
 
-        self.theme = Some(theme);
         self.dirty = true;
+        self.theme = Some(theme);
     }
 
     fn set_theme(&mut self, theme_name: &str) {
@@ -391,6 +397,8 @@ impl EditView {
             EditViewCommands::Resize(size) => self.resize(size),
             EditViewCommands::ConfigChanged(config) => self.config_changed(config),
             EditViewCommands::ThemeChanged(theme) => self.theme_changed(theme),
+            EditViewCommands::LanguageChanged(language_id) => self.language_changed(language_id),
+            EditViewCommands::DefineStyle(style) => self.define_style(style),
             EditViewCommands::Action(action) => match action {
                     Action::ReceiveChar(ch) => self.char(ch),
                     Action::SetMode(mode) => self.set_mode(mode),

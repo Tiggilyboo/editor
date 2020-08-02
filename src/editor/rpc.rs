@@ -1,10 +1,12 @@
 pub mod config;
-pub mod theme;
 pub mod commands;
 pub mod annotations;
+pub mod theme;
 
 pub use config::Config;
 pub use theme::Theme;
+pub use theme::Style;
+pub use theme::Colour;
 pub use commands::EditViewCommands;
 pub use annotations::{
     Annotation,

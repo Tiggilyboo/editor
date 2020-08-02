@@ -6,6 +6,8 @@ pub mod rpc;
 pub mod linecache;
 pub mod font;
 
+extern crate dirs;
+
 use std::cell::RefCell;
 use std::sync::{Arc, Mutex};
 use std::str;
@@ -37,6 +39,7 @@ use rpc::{
     Handler,
     Config, 
     Theme,
+    Style,
     EditViewCommands,
 };
 use super::events::{
@@ -141,7 +144,7 @@ impl App {
                     if let Some(themes) = raw_themes {
                         let mut available_themes: Vec<String> = vec!();
                         for t in themes.iter() {
-                            available_themes.push(String::from(t.as_str().unwrap()));
+                            available_themes.push(t.as_str().unwrap().to_string());
                         }
 
                         state.set_available_themes(available_themes);
@@ -151,12 +154,41 @@ impl App {
             "theme_changed" => {
                 let theme = from_value::<Theme>(params["theme"].clone()).unwrap();
                 self.send_view_cmd(EditViewCommands::ThemeChanged(theme.clone()));
-                if let Ok(ref mut state) = self.state.clone().try_lock() {
-                    if let Some(name) = params["name"].as_str() {
-                        state.set_theme(String::from(name));
+            },
+            "def_style" => {
+                if let Ok(style) = from_value::<Style>(params.clone()) { 
+                    if let Ok(ref mut state) = self.state.clone().try_lock() {
+                        if state.focused.is_some() {
+                            let edit_view = state.get_focused_view();
+                            edit_view.poke(EditViewCommands::DefineStyle(style));
+                        }
                     }
                 }
             },
+            "available_languages" => {
+                let mut available_languages: Vec<String> = vec!();
+                let raw_languages = params["languages"].as_array();
+
+                if let Ok(ref mut state) = self.state.clone().try_lock() {
+                    if let Some(languages) = raw_languages {
+                        for l in languages.iter() {
+                            available_languages.push(l.as_str().unwrap().to_string());
+                        }
+
+                        state.set_available_languages(available_languages);
+                    }
+                }
+            },
+            "language_changed" => {
+                let view_id = params["view_id"].as_str().unwrap();
+                let language_id = params["language_id"].as_str().unwrap().to_string();
+
+                if let Ok(ref mut state) = self.state.clone().try_lock() {
+                    if let Some(edit_view) = state.views.get_mut(view_id) {
+                        edit_view.poke(EditViewCommands::LanguageChanged(language_id));
+                    }
+                }
+            }
             _ => println!("unhandled core->fe method: {}", method),
         }
     }
@@ -190,6 +222,13 @@ impl Handler for AppDispatcher {
     }
 }
 
+fn get_xi_dir() -> String {
+    let config_dir = dirs::config_dir().unwrap();
+    let mut xi_dir = config_dir.clone();
+    xi_dir.push("xi");
+    xi_dir.to_str().unwrap().to_string()
+}
+
 pub fn run(title: &str, filename: Option<String>) {
     let events_loop = events::create_event_loop();
     let renderer = RefCell::new(Renderer::new(&events_loop, title));
@@ -202,8 +241,7 @@ pub fn run(title: &str, filename: Option<String>) {
 
     handler.set_app(&app);
     app.send_notification("client_started", &json!({
-        "config_dir": "./config",
-        "client_extras_dir": "./extras",
+        "config_dir": get_xi_dir(),
     }));
     app.open_file_in_view(filename, screen_dimensions, 20.0);
 

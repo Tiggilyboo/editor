@@ -9,7 +9,10 @@ use winit::event::ModifiersState;
 use super::ui::{
     view::EditView,
 };
-use super::rpc::EditViewCommands;
+use super::rpc::{
+    EditViewCommands,
+    Style,
+};
 use crate::events::{
     state::InputState,
     mapper_winit::map_scancode,
@@ -29,8 +32,8 @@ pub type ViewId = String;
 pub struct EditorState {
     pub focused: Option<ViewId>,
     pub views: HashMap<ViewId, EditView>, 
-    pub theme: Option<String>,
-    pub available_themes: Option<Vec<String>>,
+    available_themes: Option<Vec<String>>,
+    available_languages: Option<Vec<String>>, 
     key_bindings: Vec<KeyBinding>,
     mouse_bindings: Vec<MouseBinding>,
 }
@@ -40,8 +43,8 @@ impl EditorState {
         Self {
             focused: Default::default(),
             views: HashMap::new(),
-            theme: None,
             available_themes: None,
+            available_languages: None,
             mouse_bindings: default_mouse_bindings(),
             key_bindings: default_key_bindings(),
         }
@@ -58,9 +61,8 @@ impl EditorState {
     pub fn set_available_themes(&mut self, themes: Vec<String>) {
         self.available_themes = Some(themes);
     }
-
-    pub fn set_theme(&mut self, theme: String) {
-        self.theme = Some(theme);
+    pub fn set_available_languages(&mut self, languages: Vec<String>) {
+        self.available_languages = Some(languages);
     }
 
     pub fn process_keyboard_input(&self, mode: Mode, modifiers: ModifiersState, key: Key) -> Option<Action> {
@@ -127,7 +129,6 @@ impl EditorState {
                     handled = true;
                 }
             }
-            
 
             handled
         } else {
