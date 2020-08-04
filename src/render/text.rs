@@ -43,8 +43,6 @@ use vulkano::swapchain::Swapchain;
 use vulkano::image::{
     SwapchainImage,
     ImmutableImage,
-    ImageLayout,
-    ImageUsage,
     Dimensions,
 };
 use vulkano::framebuffer::{
@@ -77,7 +75,10 @@ use glyph_brush::ab_glyph::{
     Rect,
     point,
 };
-use crate::editor::font::FontContext;
+use crate::editor::{
+    font::FontContext,
+    linecache::count_utf16,
+};
 
 pub struct TextContext {
     device: Arc<Device>,
@@ -301,34 +302,28 @@ impl TextContext {
         w
     }
 
-    pub fn get_cursor_position(&mut self, section: &Section, offset: usize, font_size: f32) -> (f32, f32) {
+    pub fn set_font_size(&mut self, font_size: f32) {
+        self.font_context.set_scale(font_size);
+    }
+
+    pub fn get_cursor_position(&mut self, section: &Section, offset: usize) -> (f32, f32) {
         let mut pos: (f32, f32) = section.screen_position;
         if offset == 0 {
             return pos;
         }
-
-        if font_size != self.font_context.get_scale() {
-            self.font_context.set_scale(font_size);
-        }
-       
-        let mut content_offset = 0;
-        for section_text in section.text.iter() {
-            let mut has_indices = false;
-            for (i, ch) in section_text.text.char_indices(){
-                if offset <= content_offset + i {
-                    break;
-                }
-                let bounds = self.font_context.get_char_bounds(ch);
-
-                pos.0 += bounds.max.x;
-                if bounds.max.y > pos.1 {
-                    pos.1 = bounds.max.y;
-                }
-                has_indices = true;
+      
+        // TODO: NOT IDEAL, but need a way to simplify two iter loops char_indices with index
+        // offset being summed properly...
+        let line_string: String = section.text.iter().flat_map(|t| t.text.chars()).collect();
+        for (i, ch) in line_string.char_indices(){
+            if offset <= i {
+                break;
             }
+            let bounds = self.font_context.get_char_bounds(ch);
 
-            if has_indices {
-                content_offset += section_text.text.char_indices().last().unwrap().0;
+            pos.0 += bounds.max.x;
+            if bounds.max.y > pos.1 {
+                pos.1 = bounds.max.y;
             }
         }
 

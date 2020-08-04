@@ -1,6 +1,13 @@
 use std::collections::HashMap;
+use std::hash::{
+    Hash,
+    Hasher,
+};
 
-use super::widget::Widget;
+use super::widget::{
+    Widget,
+    hash_widget,
+};
 use crate::render::Renderer;
 
 use glyph_brush::{
@@ -24,6 +31,13 @@ pub struct TextWidget {
     section: OwnedSection,
     cursor: Vec<usize>,
     styles: Vec<StyleSpan>,
+}
+
+impl Hash for TextWidget {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        hash_widget(self, state); 
+        self.cursor.hash(state);
+    }
 }
 
 impl TextWidget {
@@ -85,6 +99,10 @@ impl TextWidget {
                 ).with_layout(Layout::default_single_line())
                 .to_owned(),
         }
+    }
+
+    pub fn set_colour(&mut self, text_index: usize, colour: [f32; 4]) {
+        self.section.text[text_index].extra.color = colour;
     }
 
     pub fn set_position(&mut self, x: f32, y: f32) {

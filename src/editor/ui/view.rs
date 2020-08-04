@@ -1,5 +1,9 @@
 use std::ops::Range;
 use std::collections::HashMap;
+use std::hash::{
+    Hash,
+    Hasher,
+};
 
 use std::sync::{
     Mutex,
@@ -15,6 +19,7 @@ use glyph_brush::{
 
 use crate::events::binding::{
     Action,
+    ActionTarget,
     Mode,
     Motion,
 };
@@ -34,7 +39,10 @@ use crate::editor::rpc::{
     theme::ToRgbaFloat32,
 };
 use super::{
-    widget::Widget,
+    widget::{
+        Widget,
+        hash_widget,
+    },
     text::TextWidget,
     primitive::PrimitiveWidget,
     status::{
@@ -42,6 +50,9 @@ use super::{
         Status,
     },
 };
+
+const TOP_PAD: f32 = 6.0;
+const LEFT_PAD: f32 = 6.0;
 
 type Method = String;
 type Params = Value;
@@ -59,17 +70,29 @@ pub struct Resources {
     styles: HashMap<usize, Style>,
 }
 
+impl Hash for Resources {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.fg.iter().for_each(|b| b.to_le_bytes().hash(state));
+        self.bg.iter().for_each(|b| b.to_le_bytes().hash(state));
+        self.sel.iter().for_each(|b| b.to_le_bytes().hash(state));
+        self.gutter_fg.iter().for_each(|b| b.to_le_bytes().hash(state));
+        self.gutter_bg.iter().for_each(|b| b.to_le_bytes().hash(state));
+        self.scale.to_le_bytes().hash(state);
+        self.line_gap.to_le_bytes().hash(state);
+    }
+}
+
 pub struct EditView {
     index: usize,
     size: [f32; 2],
     dirty: bool,
     view_id: Option<String>,
+    filepath: Option<String>,
     line_cache: LineCache,
     scroll_offset: f32,
     viewport: Range<usize>,
     core: Weak<Mutex<Core>>,
     pending: Vec<(Method, Params)>,
-
     config: Option<Config>,
     theme: Option<Theme>,
     language: Option<String>,
@@ -81,8 +104,20 @@ pub struct EditView {
     show_line_numbers: bool,
 }
 
-const TOP_PAD: f32 = 6.0;
-const LEFT_PAD: f32 = 6.0;
+impl Hash for EditView {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        hash_widget(self, state); 
+        self.view_id.hash(state);
+        self.scroll_offset.to_le_bytes().hash(state);
+        self.viewport.hash(state);
+        self.resources.hash(state);
+        self.gutter.hash(state);
+        self.background.hash(state);
+        self.status_bar.hash(state);
+        self.current_line.hash(state);
+        self.show_line_numbers.hash(state);
+    }
+}
 
 impl Widget for EditView {
     fn index(&self) -> usize {
@@ -101,7 +136,7 @@ impl Widget for EditView {
         let text_ctx = renderer.get_text_context().clone();
 
         let first_line = self.y_to_line(0.0);
-        let last_line = std::cmp::min(self.y_to_line(self.size[1]) + 1, self.line_cache.height());
+        let last_line = std::cmp::min(self.y_to_line(self.drawable_text_height()) + 1, self.line_cache.height());
         
         // Figure out the maximum width of the line number
         let scale = self.resources.scale;
@@ -156,7 +191,7 @@ impl Widget for EditView {
                 for offset in cursors {
                     let section = &text_widget.get_section().to_borrowed();
                     let pos = text_ctx.borrow_mut()
-                        .get_cursor_position(section, offset, scale); 
+                        .get_cursor_position(section, offset); 
 
                     let mut offside = create_offside_section("\u{2588}", self.resources.cursor, scale);
                     offside.screen_position = pos;
@@ -247,6 +282,7 @@ impl EditView {
             show_line_numbers: false,
             core: Default::default(),
             pending: Default::default(),
+            filepath: filename,
             status_bar,
             resources,
             background,
@@ -269,10 +305,8 @@ impl EditView {
         self.dirty = true;
     }
 
-    pub fn resize(&mut self, size: [f32; 2]) {
-        // -1 line_gap for status bur
-        let bar_height = self.resources.line_gap;
-        let height = size[1] - bar_height;
+    fn resize(&mut self, size: [f32; 2]) {
+        let height = size[1] - self.status_bar.size()[1];
         self.size = [size[0], height];
         self.gutter.set_height(height);
         self.background.set_size([size[0], height]);
@@ -280,15 +314,15 @@ impl EditView {
         self.status_bar.set_position(0.0, height); 
         self.dirty = true;
 
-        let (w, h) = (size[0], size[1]);
+        let (w, h) = (size[0], self.drawable_text_height());
         self.send_edit_cmd("resize", &json!({ "width": w, "height": h }));
     }
 
-    pub fn go_to_line(&mut self, line: usize) {
+    fn go_to_line(&mut self, line: usize) {
         self.send_edit_cmd("insert", &json!({ "line": line }));
     }
 
-    pub fn char(&mut self, ch: char) {
+    fn send_char(&mut self, ch: char) {
         if ch as u32 >= 0x20 {
             let params = json!({"chars": ch.to_string()});
             self.send_edit_cmd("insert", &params);
@@ -340,6 +374,17 @@ impl EditView {
         for notification in pending {
             let (method, params) = notification;
             self.send_edit_cmd(&method, &params);
+        }
+    }
+
+    fn save_to_file(&mut self) {
+        if self.view_id.is_some() {
+            self.send_notification("save", &json!({
+                "view_id": self.view_id,
+                "file_path": self.filepath,
+            }));
+        } else {
+            self.status_bar.update_command_section("Unable to save, no filepath set");
         }
     }
 
@@ -407,9 +452,21 @@ impl EditView {
 
     fn set_mode(&mut self, mode: Mode) {
         self.status_bar.set_mode(mode);
+        self.dirty = true;
     }
     pub fn mode(&self) -> Mode {
         self.status_bar.mode()
+    }
+
+    pub fn poke_target(&mut self, command: EditViewCommands, target: ActionTarget) -> bool {
+        match target {
+            ActionTarget::FocusedView => self.poke(command),
+            ActionTarget::StatusBar => match command {
+                EditViewCommands::Action(action) => self.status_bar.poke(Box::new(action)),
+                _ => return false,
+            },
+            _ => return false, 
+        }
     }
 
     pub fn poke(&mut self, command: EditViewCommands) -> bool {
@@ -424,10 +481,11 @@ impl EditView {
             EditViewCommands::LanguageChanged(language_id) => self.language_changed(language_id),
             EditViewCommands::DefineStyle(style) => self.define_style(style),
             EditViewCommands::Action(action) => match action {
-                    Action::ReceiveChar(ch) => self.char(ch),
+                    Action::InsertChar(ch) => self.send_char(ch),
                     Action::SetMode(mode) => self.set_mode(mode),
-                    Action::ShowLineNumbers(_) => self.show_line_numbers(!self.show_line_numbers),
                     Action::SetTheme(theme) => self.set_theme(theme.as_str()),
+                    Action::ShowLineNumbers(_) => self.show_line_numbers(!self.show_line_numbers),
+                    Action::Save => self.save_to_file(),
                     Action::Back => self.send_action("delete_backward"),
                     Action::Delete => self.send_action("delete_forward"),
                     Action::Undo => self.send_action("undo"),
@@ -476,13 +534,22 @@ impl EditView {
         self.update_viewport();
     }
 
+    fn drawable_text_height(&self) -> f32 {
+        let sb_size = self.status_bar.size();
+        if sb_size[1] > self.size[1] {
+            self.size[1]
+        } else {
+            self.size[1] - sb_size[1] 
+        }
+    }
+
     fn constrain_scroll(&mut self) {
         if self.scroll_offset < 0.0 {
             self.scroll_offset = 0.0;
             return;
         }
-        
-        let max_scroll = TOP_PAD + self.resources.line_gap * (self.line_cache.height().saturating_sub(1)) as f32;
+       
+        let max_scroll = self.drawable_text_height();
         if self.scroll_offset > max_scroll {
            self.scroll_offset = max_scroll; 
         }
@@ -498,7 +565,7 @@ impl EditView {
 
     fn update_viewport(&mut self) {
         let first_line = self.y_to_line(0.0);
-        let last_line = first_line + ((self.size[1] / self.resources.line_gap).floor() as usize) + 1;
+        let last_line = first_line + ((self.drawable_text_height() / self.resources.line_gap).floor() as usize) + 1;
         let viewport = first_line..last_line;
 
         if viewport != self.viewport {
@@ -519,8 +586,8 @@ impl EditView {
         if y < self.scroll_offset {
             self.scroll_offset = y;
             self.dirty = true;
-        } else if y > self.scroll_offset + self.size[1] - bottom_slop {
-            self.scroll_offset = y - (self.size[1] - bottom_slop);
+        } else if y > self.scroll_offset + self.drawable_text_height() - bottom_slop {
+            self.scroll_offset = y - (self.drawable_text_height() - bottom_slop);
             self.dirty = true;
         }
     }

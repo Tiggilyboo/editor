@@ -21,6 +21,7 @@ pub struct Binding<T> {
     notmode: Mode,
     trigger: T,
     action: Action,
+    target: ActionTarget,
 }
 
 pub type KeyBinding = Binding<Key>;
@@ -38,6 +39,16 @@ impl<T: Eq> Binding<T> {
     pub fn get_action(&self) -> Action {
         self.action.clone()
     }
+
+    pub fn get_target(&self) -> ActionTarget {
+        self.target.clone()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ActionTarget {
+    FocusedView,
+    StatusBar,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -48,6 +59,9 @@ pub enum Action {
     SetMode(Mode),
     SetTheme(String),
     ShowLineNumbers(bool),
+    InsertChar(char),
+    DefineCommand((String, Box<Action>)),
+    ExecuteCommand,
     Back,
     Delete,
     Indent,
@@ -59,6 +73,7 @@ pub enum Action {
     SearchEnd,
     Open,
     Quit,
+    Save,
     Copy,
     Cut,
     Paste,
@@ -74,7 +89,6 @@ pub enum Action {
     ScrollToBottom,
     ClearSelection,
     SingleSelection,
-    ReceiveChar(char),
     Undo,
     Redo,
     UpperCase,
@@ -86,7 +100,7 @@ pub enum Action {
     None,
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub enum Mode {
     Normal,
     Insert,
@@ -133,6 +147,7 @@ macro_rules! bindings {
             $(,$mods:expr)*
             $(,+$mode:expr)*
             $(,~$notmode:expr)*
+            $(,@$target:expr)*
             ;$action:expr
         );*
         $(;)*
@@ -144,6 +159,7 @@ macro_rules! bindings {
                 $(,$mods)*
                 $(,+$mode)*
                 $(,~$notmode)*
+                $(,@$target)*
                 ;$action
             );*
         )
@@ -155,12 +171,12 @@ macro_rules! bindings {
             $(,$mods:expr)*
             $(,+$mode:expr)*
             $(,~$notmode:expr)*
+            $(,@$target:expr)*
             ;$action:expr
         );*
         $(;)*
     ) => {{
         let mut v = Vec::new();
-
         $(
             let mut _mods = ModifiersState::empty();
             $(_mods = $mods;)*
@@ -168,12 +184,15 @@ macro_rules! bindings {
             $(_mode = $mode;)*
             let mut _notmode = Mode::None;
             $(_notmode = $notmode;)*
+            let mut _target = ActionTarget::FocusedView;
+            $(_target = $target;)*
 
             v.push($ty {
                 trigger: $key,
                 mods: _mods,
                 mode: _mode,
                 notmode: _notmode,
+                target: _target,
                 action: $action.into(),
             });
         )*
@@ -186,8 +205,114 @@ pub fn default_mouse_bindings() -> Vec<MouseBinding> {
     vec!() 
 }
 
+pub fn bind_alpha_numeric(mode: Mode) -> Vec<KeyBinding> {
+    bindings!(
+        KeyBinding;
+        A, ModifiersState::SHIFT, +mode; Action::InsertChar('A');
+        B, ModifiersState::SHIFT, +mode; Action::InsertChar('B');
+        C, ModifiersState::SHIFT, +mode; Action::InsertChar('C');
+        D, ModifiersState::SHIFT, +mode; Action::InsertChar('D');
+        E, ModifiersState::SHIFT, +mode; Action::InsertChar('E');
+        F, ModifiersState::SHIFT, +mode; Action::InsertChar('F');
+        G, ModifiersState::SHIFT, +mode; Action::InsertChar('G');
+        H, ModifiersState::SHIFT, +mode; Action::InsertChar('H');
+        I, ModifiersState::SHIFT, +mode; Action::InsertChar('I');
+        J, ModifiersState::SHIFT, +mode; Action::InsertChar('J');
+        K, ModifiersState::SHIFT, +mode; Action::InsertChar('K');
+        L, ModifiersState::SHIFT, +mode; Action::InsertChar('L');
+        M, ModifiersState::SHIFT, +mode; Action::InsertChar('M');
+        N, ModifiersState::SHIFT, +mode; Action::InsertChar('N');
+        O, ModifiersState::SHIFT, +mode; Action::InsertChar('O');
+        P, ModifiersState::SHIFT, +mode; Action::InsertChar('P');
+        Q, ModifiersState::SHIFT, +mode; Action::InsertChar('Q');
+        R, ModifiersState::SHIFT, +mode; Action::InsertChar('R');
+        S, ModifiersState::SHIFT, +mode; Action::InsertChar('S');
+        T, ModifiersState::SHIFT, +mode; Action::InsertChar('T');
+        U, ModifiersState::SHIFT, +mode; Action::InsertChar('U');
+        V, ModifiersState::SHIFT, +mode; Action::InsertChar('V');
+        W, ModifiersState::SHIFT, +mode; Action::InsertChar('W');
+        X, ModifiersState::SHIFT, +mode; Action::InsertChar('X');
+        Y, ModifiersState::SHIFT, +mode; Action::InsertChar('Y');
+        Z, ModifiersState::SHIFT, +mode; Action::InsertChar('Z');
+        
+        A, +mode; Action::InsertChar('a');
+        B, +mode; Action::InsertChar('b');
+        C, +mode; Action::InsertChar('c');
+        D, +mode; Action::InsertChar('d');
+        E, +mode; Action::InsertChar('e');
+        F, +mode; Action::InsertChar('f');
+        G, +mode; Action::InsertChar('g');
+        H, +mode; Action::InsertChar('h');
+        I, +mode; Action::InsertChar('i');
+        J, +mode; Action::InsertChar('j');
+        K, +mode; Action::InsertChar('k');
+        L, +mode; Action::InsertChar('l');
+        M, +mode; Action::InsertChar('m');
+        N, +mode; Action::InsertChar('n');
+        O, +mode; Action::InsertChar('o');
+        P, +mode; Action::InsertChar('p');
+        Q, +mode; Action::InsertChar('q');
+        R, +mode; Action::InsertChar('r');
+        S, +mode; Action::InsertChar('s');
+        T, +mode; Action::InsertChar('t');
+        U, +mode; Action::InsertChar('u');
+        V, +mode; Action::InsertChar('v');
+        W, +mode; Action::InsertChar('w');
+        X, +mode; Action::InsertChar('x');
+        Y, +mode; Action::InsertChar('y');
+        Z, +mode; Action::InsertChar('z');
+
+        Key1, ModifiersState::SHIFT, +mode; Action::InsertChar('!');
+        Key2, ModifiersState::SHIFT, +mode; Action::InsertChar('@');
+        Key3, ModifiersState::SHIFT, +mode; Action::InsertChar('#');
+        Key4, ModifiersState::SHIFT, +mode; Action::InsertChar('$');
+        Key5, ModifiersState::SHIFT, +mode; Action::InsertChar('%');
+        Key6, ModifiersState::SHIFT, +mode; Action::InsertChar('^');
+        Key7, ModifiersState::SHIFT, +mode; Action::InsertChar('&');
+        Key8, ModifiersState::SHIFT, +mode; Action::InsertChar('*');
+        Key9, ModifiersState::SHIFT, +mode; Action::InsertChar('(');
+        Key0, ModifiersState::SHIFT, +mode; Action::InsertChar(')');
+        
+        Key1, +mode; Action::InsertChar('1');
+        Key2, +mode; Action::InsertChar('2');
+        Key3, +mode; Action::InsertChar('3');
+        Key4, +mode; Action::InsertChar('4');
+        Key5, +mode; Action::InsertChar('5');
+        Key6, +mode; Action::InsertChar('6');
+        Key7, +mode; Action::InsertChar('7');
+        Key8, +mode; Action::InsertChar('8');
+        Key9, +mode; Action::InsertChar('9');
+        Key0, +mode; Action::InsertChar('0');
+
+        Grave,      ModifiersState::SHIFT, +mode; Action::InsertChar('~');
+        Minus,      ModifiersState::SHIFT, +mode; Action::InsertChar('_');
+        Add,        ModifiersState::SHIFT, +mode; Action::InsertChar('+');
+        LBracket,   ModifiersState::SHIFT, +mode; Action::InsertChar('{');
+        RBracket,   ModifiersState::SHIFT, +mode; Action::InsertChar('}');
+        Backslash,  ModifiersState::SHIFT, +mode; Action::InsertChar('|');
+        Colon,      ModifiersState::SHIFT, +mode; Action::InsertChar(':');
+        Apostrophe, ModifiersState::SHIFT, +mode; Action::InsertChar('"');
+        Comma,      ModifiersState::SHIFT, +mode; Action::InsertChar('<');
+        Period,     ModifiersState::SHIFT, +mode; Action::InsertChar('>');
+        Slash,      ModifiersState::SHIFT, +mode; Action::InsertChar('?');
+
+        Grave,      +mode; Action::InsertChar('`');
+        Minus,      +mode; Action::InsertChar('-');
+        Equals,     +mode; Action::InsertChar('=');
+        LBracket,   +mode; Action::InsertChar('[');
+        RBracket,   +mode; Action::InsertChar(']');
+        Backslash,  +mode; Action::InsertChar('\\');
+        Semicolon,  +mode; Action::InsertChar(';');
+        Apostrophe, +mode; Action::InsertChar('\'');
+        Comma,      +mode; Action::InsertChar(',');
+        Period,     +mode; Action::InsertChar('.');
+        Slash,      +mode; Action::InsertChar('/');
+        Space,      +mode; Action::InsertChar(' ');
+    )
+}
+
 pub fn default_key_bindings() -> Vec<KeyBinding> {
-    let bindings = bindings!(
+    let mut bindings = bindings!(
         KeyBinding;
 
         F1; Action::SetTheme(String::from("Solarized (dark)"));
@@ -251,7 +376,6 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
         Delete, +Mode::Insert; Action::Delete;
         Back, ~Mode::Insert; Action::Motion(Motion::Left);
         Delete, ~Mode::Insert; Action::Motion(Motion::Right);
-        Space, +Mode::Insert; Action::ReceiveChar(' ');
         Space, ~Mode::Insert; Action::Motion(Motion::Right);
         
         Y, +Mode::Select; Action::Copy;
@@ -273,107 +397,13 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
         Subtract, ModifiersState::CTRL; Action::DecreaseFontSize;
         Equals, ModifiersState::CTRL; Action::IncreaseFontSize;
         Add, ModifiersState::CTRL; Action::IncreaseFontSize;
-        
-        A, ModifiersState::SHIFT, +Mode::Insert; Action::ReceiveChar('A');
-        B, ModifiersState::SHIFT, +Mode::Insert; Action::ReceiveChar('B');
-        C, ModifiersState::SHIFT, +Mode::Insert; Action::ReceiveChar('C');
-        D, ModifiersState::SHIFT, +Mode::Insert; Action::ReceiveChar('D');
-        E, ModifiersState::SHIFT, +Mode::Insert; Action::ReceiveChar('E');
-        F, ModifiersState::SHIFT, +Mode::Insert; Action::ReceiveChar('F');
-        G, ModifiersState::SHIFT, +Mode::Insert; Action::ReceiveChar('G');
-        H, ModifiersState::SHIFT, +Mode::Insert; Action::ReceiveChar('H');
-        I, ModifiersState::SHIFT, +Mode::Insert; Action::ReceiveChar('I');
-        J, ModifiersState::SHIFT, +Mode::Insert; Action::ReceiveChar('J');
-        K, ModifiersState::SHIFT, +Mode::Insert; Action::ReceiveChar('K');
-        L, ModifiersState::SHIFT, +Mode::Insert; Action::ReceiveChar('L');
-        M, ModifiersState::SHIFT, +Mode::Insert; Action::ReceiveChar('M');
-        N, ModifiersState::SHIFT, +Mode::Insert; Action::ReceiveChar('N');
-        O, ModifiersState::SHIFT, +Mode::Insert; Action::ReceiveChar('O');
-        P, ModifiersState::SHIFT, +Mode::Insert; Action::ReceiveChar('P');
-        Q, ModifiersState::SHIFT, +Mode::Insert; Action::ReceiveChar('Q');
-        R, ModifiersState::SHIFT, +Mode::Insert; Action::ReceiveChar('R');
-        S, ModifiersState::SHIFT, +Mode::Insert; Action::ReceiveChar('S');
-        T, ModifiersState::SHIFT, +Mode::Insert; Action::ReceiveChar('T');
-        U, ModifiersState::SHIFT, +Mode::Insert; Action::ReceiveChar('U');
-        V, ModifiersState::SHIFT, +Mode::Insert; Action::ReceiveChar('V');
-        W, ModifiersState::SHIFT, +Mode::Insert; Action::ReceiveChar('W');
-        X, ModifiersState::SHIFT, +Mode::Insert; Action::ReceiveChar('X');
-        Y, ModifiersState::SHIFT, +Mode::Insert; Action::ReceiveChar('Y');
-        Z, ModifiersState::SHIFT, +Mode::Insert; Action::ReceiveChar('Z');
-        
-        A, +Mode::Insert; Action::ReceiveChar('a');
-        B, +Mode::Insert; Action::ReceiveChar('b');
-        C, +Mode::Insert; Action::ReceiveChar('c');
-        D, +Mode::Insert; Action::ReceiveChar('d');
-        E, +Mode::Insert; Action::ReceiveChar('e');
-        F, +Mode::Insert; Action::ReceiveChar('f');
-        G, +Mode::Insert; Action::ReceiveChar('g');
-        H, +Mode::Insert; Action::ReceiveChar('h');
-        I, +Mode::Insert; Action::ReceiveChar('i');
-        J, +Mode::Insert; Action::ReceiveChar('j');
-        K, +Mode::Insert; Action::ReceiveChar('k');
-        L, +Mode::Insert; Action::ReceiveChar('l');
-        M, +Mode::Insert; Action::ReceiveChar('m');
-        N, +Mode::Insert; Action::ReceiveChar('n');
-        O, +Mode::Insert; Action::ReceiveChar('o');
-        P, +Mode::Insert; Action::ReceiveChar('p');
-        Q, +Mode::Insert; Action::ReceiveChar('q');
-        R, +Mode::Insert; Action::ReceiveChar('r');
-        S, +Mode::Insert; Action::ReceiveChar('s');
-        T, +Mode::Insert; Action::ReceiveChar('t');
-        U, +Mode::Insert; Action::ReceiveChar('u');
-        V, +Mode::Insert; Action::ReceiveChar('v');
-        W, +Mode::Insert; Action::ReceiveChar('w');
-        X, +Mode::Insert; Action::ReceiveChar('x');
-        Y, +Mode::Insert; Action::ReceiveChar('y');
-        Z, +Mode::Insert; Action::ReceiveChar('z');
 
-        Key1, ModifiersState::SHIFT, +Mode::Insert; Action::ReceiveChar('!');
-        Key2, ModifiersState::SHIFT, +Mode::Insert; Action::ReceiveChar('@');
-        Key3, ModifiersState::SHIFT, +Mode::Insert; Action::ReceiveChar('#');
-        Key4, ModifiersState::SHIFT, +Mode::Insert; Action::ReceiveChar('$');
-        Key5, ModifiersState::SHIFT, +Mode::Insert; Action::ReceiveChar('%');
-        Key6, ModifiersState::SHIFT, +Mode::Insert; Action::ReceiveChar('^');
-        Key7, ModifiersState::SHIFT, +Mode::Insert; Action::ReceiveChar('&');
-        Key8, ModifiersState::SHIFT, +Mode::Insert; Action::ReceiveChar('*');
-        Key9, ModifiersState::SHIFT, +Mode::Insert; Action::ReceiveChar('(');
-        Key0, ModifiersState::SHIFT, +Mode::Insert; Action::ReceiveChar(')');
-        
-        Key1, +Mode::Insert; Action::ReceiveChar('1');
-        Key2, +Mode::Insert; Action::ReceiveChar('2');
-        Key3, +Mode::Insert; Action::ReceiveChar('3');
-        Key4, +Mode::Insert; Action::ReceiveChar('4');
-        Key5, +Mode::Insert; Action::ReceiveChar('5');
-        Key6, +Mode::Insert; Action::ReceiveChar('6');
-        Key7, +Mode::Insert; Action::ReceiveChar('7');
-        Key8, +Mode::Insert; Action::ReceiveChar('8');
-        Key9, +Mode::Insert; Action::ReceiveChar('9');
-        Key0, +Mode::Insert; Action::ReceiveChar('0');
-
-        Grave,      ModifiersState::SHIFT, +Mode::Insert; Action::ReceiveChar('~');
-        Minus,      ModifiersState::SHIFT, +Mode::Insert; Action::ReceiveChar('_');
-        Add,        ModifiersState::SHIFT, +Mode::Insert; Action::ReceiveChar('+');
-        LBracket,   ModifiersState::SHIFT, +Mode::Insert; Action::ReceiveChar('{');
-        RBracket,   ModifiersState::SHIFT, +Mode::Insert; Action::ReceiveChar('}');
-        Backslash,  ModifiersState::SHIFT, +Mode::Insert; Action::ReceiveChar('|');
-        Colon,      ModifiersState::SHIFT, +Mode::Insert; Action::ReceiveChar(':');
-        Apostrophe, ModifiersState::SHIFT, +Mode::Insert; Action::ReceiveChar('"');
-        Comma,      ModifiersState::SHIFT, +Mode::Insert; Action::ReceiveChar('<');
-        Period,     ModifiersState::SHIFT, +Mode::Insert; Action::ReceiveChar('>');
-        Slash,      ModifiersState::SHIFT, +Mode::Insert; Action::ReceiveChar('?');
-
-        Grave,      +Mode::Insert; Action::ReceiveChar('`');
-        Minus,      +Mode::Insert; Action::ReceiveChar('-');
-        Equals,     +Mode::Insert; Action::ReceiveChar('=');
-        LBracket,   +Mode::Insert; Action::ReceiveChar('[');
-        RBracket,   +Mode::Insert; Action::ReceiveChar(']');
-        Backslash,  +Mode::Insert; Action::ReceiveChar('\\');
-        Semicolon,  +Mode::Insert; Action::ReceiveChar(';');
-        Apostrophe, +Mode::Insert; Action::ReceiveChar('\'');
-        Comma,      +Mode::Insert; Action::ReceiveChar(',');
-        Period,     +Mode::Insert; Action::ReceiveChar('.');
-        Slash,      +Mode::Insert; Action::ReceiveChar('/');
+        W, +Mode::Command, @ActionTarget::StatusBar; Action::InsertChar('w');
+        W, ModifiersState::SHIFT, +Mode::Command, @ActionTarget::StatusBar; Action::InsertChar('w');
+        Return, +Mode::Command, @ActionTarget::StatusBar; Action::ExecuteCommand;
     );
+
+    bindings.extend(bind_alpha_numeric(Mode::Insert));
 
     bindings
 }

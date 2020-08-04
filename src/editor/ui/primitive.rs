@@ -1,4 +1,12 @@
-use super::widget::Widget;
+use std::hash::{
+    Hasher,
+    Hash,
+};
+use super::widget::{
+    hash_widget,
+    calculate_hash,
+    Widget,
+};
 use crate::render::Renderer;
 use crate::render::primitive::Primitive;
 
@@ -58,6 +66,12 @@ impl PrimitiveWidget {
 
     pub fn colour(&self) -> [f32; 4] {
         self.colour
+    }
+}
+
+impl Hash for PrimitiveWidget {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        hash_widget(self, state);
     }
 }
 

@@ -1,3 +1,8 @@
+use std::boxed::Box;
+use std::hash::{
+    Hash,
+    Hasher,
+};
 use glyph_brush::{
     Section,
     OwnedSection,
@@ -6,13 +11,18 @@ use glyph_brush::{
     ab_glyph::PxScale,
 };
 
-use super::widget::Widget;
-use super::text::TextWidget;
+use super::widget::{
+    Widget,
+    hash_widget,
+};
 use super::primitive::PrimitiveWidget;
 use super::view::Resources;
 
-use crate::events::binding::Mode;
 use crate::render::Renderer;
+use crate::events::binding::{
+    Mode,
+    Action,
+};
 
 type ColourRGBA = [f32; 4];
 
@@ -34,17 +44,31 @@ pub struct StatusWidget {
     mode_section: OwnedSection,
     filename_section: OwnedSection,
     status_section: OwnedSection,
-    command_text: TextWidget,
+    command_section: OwnedSection,
 
     dirty: bool,
 }
 
+#[derive(Hash)]
 pub struct Status {
     pub mode: Mode,
     pub filename: Option<String>,
     pub line_current: usize,
     pub line_count: usize,
     pub language: Option<String>,
+}
+
+impl Hash for StatusWidget {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        hash_widget(self, state);
+        self.depth.to_le_bytes().hash(state);
+        self.scale.to_le_bytes().hash(state);
+        self.bg_colour.iter().for_each(|b| b.to_le_bytes().hash(state));
+        self.fg_colour.iter().for_each(|b| b.to_le_bytes().hash(state));
+        self.status.hash(state);
+        self.background.hash(state);
+        self.mode_primitive.hash(state);
+    }
 }
 
 impl Widget for StatusWidget {
@@ -73,22 +97,21 @@ impl Widget for StatusWidget {
         self.mode_primitive.queue_draw(renderer);
 
         // Mode
-        self.command_text.queue_draw(renderer);
-
-        // Filename
-        text_ctx.borrow_mut().queue_text(&self.filename_section.to_borrowed());
-
-        // Status
-        let status_width = 6.0 + text_ctx.borrow().get_text_width(&self.status_section.text[0].text.to_string());
-        println!("queueing status: '{}' @ {:?}", self.status_section.text[0].text, [self.position[0], height - 23.0]);
-        self.status_section.screen_position = (self.position[0] - status_width, height - 23.0);
-        text_ctx.borrow_mut().queue_text(&self.status_section.to_borrowed());
+        if let ctx = &mut text_ctx.borrow_mut() {
+            ctx.queue_text(&self.mode_section.to_borrowed());
+            ctx.queue_text(&self.command_section.to_borrowed());
+            ctx.queue_text(&self.filename_section.to_borrowed());
+        
+            // Status
+            let status_width = 6.0 + ctx.get_text_width(&self.status_section.text[0].text.to_string());
+            self.status_section.screen_position = (self.position[0] - status_width, height - self.scale);
+            ctx.queue_text(&self.status_section.to_borrowed());    
+        }
 
         self.filename_section.screen_position = (
             self.mode_primitive.position()[0] + self.mode_primitive.size()[0] + 6.0,
-            23.0
+            self.scale * 1.03
         );
-        text_ctx.borrow_mut().queue_text(&self.filename_section.to_borrowed());
     }
 }
 
@@ -104,8 +127,7 @@ impl StatusWidget {
     pub fn new(index: usize, status: Status, resources: &Resources) -> Self {
         let background = PrimitiveWidget::new(2, [0.0, 0.0, 0.2], [0.0, 0.0], resources.bg);
         let mode_primitive = PrimitiveWidget::new(3, [0.0, 0.0, 0.2], [0.0, 0.0], MODE_NORMAL_COLOUR);
-        let command_text = TextWidget::new(4, "", resources.scale, resources.fg, 0.2);
-
+        let command_section = create_empty_section();
         let filename_section = create_empty_section();
         let mode_section = create_empty_section();
         let status_section = create_empty_section();
@@ -113,7 +135,7 @@ impl StatusWidget {
         Self {
             index,
             status,
-            size: [0.0, 23.0],
+            size: [0.0, resources.scale * 1.03],
             position: [0.0, 0.0],
             bg_colour: [1.0, 0.0, 0.0, 1.0], //resources.bg,
             fg_colour: resources.fg,
@@ -122,7 +144,7 @@ impl StatusWidget {
             dirty: true,
             background,
             mode_primitive,
-            command_text,
+            command_section,
             filename_section,
             mode_section,
             status_section,
@@ -154,8 +176,8 @@ impl StatusWidget {
         self.mode_section.text[0].text = mode.to_string();
         self.mode_section.text[0].extra.color = self.fg_colour;
         self.mode_primitive.set_colour(mode.colour());
-        println!("mode set: {}, colour: {:?}", mode.to_string(), mode.colour());
         self.status.mode = mode; 
+        self.dirty = true;
     }
 
     pub fn set_colours(&mut self, bg: ColourRGBA, fg: ColourRGBA) {
@@ -185,20 +207,28 @@ impl StatusWidget {
         self.status_section.text[0].extra.color = self.fg_colour;
     }
 
-    fn update_command_widget(&mut self, position: [f32; 2], command: String) {
-        self.command_text.set_position(position[0], position[1]);
-
-        let section = &mut self.command_text.get_section().to_borrowed();
-        section.text[0].text = &command;
-        self.command_text.set_dirty(true);
+    pub fn update_command_section(&mut self, command: &str) {
+        self.command_section.text[0].text = command.to_string();
     }
 
-    fn update_filename(&mut self, filename: Option<String>) {
+    pub fn update_filename(&mut self, filename: Option<String>) {
         self.status.filename = filename;
     }
 
     pub fn mode(&self) -> Mode {
         self.status.mode
+    }
+
+    fn handle_char(&mut self, ch: char) -> bool {
+        self.command_section.text[0].text.push(ch);
+        true
+    }
+
+    pub fn poke(&mut self, action: Box<Action>) -> bool {
+        match *action {
+            Action::InsertChar(ch) => self.handle_char(ch),
+            _ => return false,
+        }
     }
 }
 

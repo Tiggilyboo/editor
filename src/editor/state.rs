@@ -18,6 +18,7 @@ use crate::events::{
     mapper_winit::map_scancode,
     binding::{
         Action,
+        ActionTarget,
         Key,
         KeyBinding,
         MouseBinding,
@@ -65,7 +66,7 @@ impl EditorState {
         self.available_languages = Some(languages);
     }
 
-    pub fn process_keyboard_input(&self, mode: Mode, modifiers: ModifiersState, key: Key) -> Option<Action> {
+    pub fn process_keyboard_input(&self, mode: Mode, modifiers: ModifiersState, key: Key) -> Option<(Action, ActionTarget)> {
         let kc = match key {
             Key::KeyCode(virtual_keycode) => Some(virtual_keycode),
             Key::ScanCode(scancode) => map_scancode(scancode),
@@ -80,10 +81,10 @@ impl EditorState {
 
         for binding in self.key_bindings.iter() {
             if binding.is_triggered_by(mode, modifiers, &Key::KeyCode(kc.unwrap())) {
-                println!("action triggered - mode: {:?}, (s c a): ({}, {}, {}), input: {:?}", 
-                         mode, modifiers.shift(), modifiers.ctrl(), modifiers.alt(), kc);
-
-                return Some(binding.get_action());
+                return Some((
+                    binding.get_action(),
+                    binding.get_target(),
+                ));
             }
         }
 
@@ -103,18 +104,21 @@ impl EditorState {
             }
 
             let mut command: Option<EditViewCommands> = None;
+            let mut target: Option<ActionTarget> = None;
             if let edit_view = self.get_focused_view() {
                 let mode = edit_view.mode();
 
                 if should_keydown && input.key.is_some() {
-                    if let Some(action) = &self.process_keyboard_input(mode, input.modifiers, input.key.unwrap()) {
-                        command = Some(EditViewCommands::Action(action.clone()));
+                    if let Some((action, action_target)) 
+                        = &self.process_keyboard_input(mode, input.modifiers, input.key.unwrap()) {
+                            command = Some(EditViewCommands::Action(action.clone()));
+                            target = Some(action_target.clone());
                     }
                 }
             }
             if let edit_view = self.get_focused_view() {
                 if command.is_some() {
-                    edit_view.poke(command.unwrap());
+                    edit_view.poke_target(command.unwrap(), target.unwrap());
                     handled = true;
                 }
                 if should_mouse {
