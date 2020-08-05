@@ -240,7 +240,7 @@ impl Widget for EditView {
     }
 
     fn dirty(&self) -> bool {
-        self.dirty
+        self.dirty || self.status_bar.dirty()
     }
 }
 
@@ -527,7 +527,6 @@ impl EditView {
                 EditViewCommands::Action(action) => self.status_bar.poke(Box::new(action)),
                 _ => return false,
             },
-            _ => return false, 
         }
     }
 
@@ -660,6 +659,7 @@ impl EditView {
     }
 
     pub fn set_dirty(&mut self, dirty: bool) {
+        self.status_bar.set_dirty(dirty);
         self.dirty = dirty;
     }
 }

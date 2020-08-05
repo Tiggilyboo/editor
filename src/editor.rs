@@ -44,7 +44,6 @@ use rpc::{
 };
 use super::events::{
     state::InputState,
-    binding::Action,
 };
 
 
@@ -108,7 +107,6 @@ impl App {
 
         self.get_core().send_request("new_view", &params, move |value| {
             let view_id = value.clone().as_str().unwrap().to_string();
-            println!("sending request for new view: {}", view_id);
 
             if let Ok(ref mut state) = state.try_lock() {
                 state.focused = Some(view_id.clone());
@@ -150,10 +148,6 @@ impl App {
                         }
 
                         state.set_available_themes(available_themes);
-
-                        if state.is_initialised() {
-                            self.set_default_theme();
-                        }
                     }
                 }
             },
@@ -182,10 +176,6 @@ impl App {
                         }
 
                         state.set_available_languages(available_languages);
-                        
-                        if state.is_initialised() {
-                            self.set_default_theme();
-                        }
                     }
                 }
             },
@@ -225,7 +215,6 @@ impl App {
 
 impl Handler for AppDispatcher {
     fn notification(&self, method: &str, params: &Value) {
-        println!("AppDispatcher rx method: {} = {}", method, params.to_string());
         if let Some(ref app) = *self.app.lock().unwrap() {
             app.handle_cmd(method, params);
         }
@@ -266,7 +255,6 @@ pub fn run(title: &str, filename: Option<String>) {
             Event::MainEventsCleared => {
             },
             Event::WindowEvent { event: WindowEvent::Resized(size), .. } => {
-                println!("WindowEvent::Resized to {} x {}", size.width, size.height);
                 renderer.borrow_mut().recreate_swap_chain_next_frame();
                 screen_dimensions[0] = size.width as f32;
                 screen_dimensions[1] = size.height as f32;
@@ -279,11 +267,7 @@ pub fn run(title: &str, filename: Option<String>) {
                 }
             },
             Event::RedrawRequested(_window_id) => {
-                println!("RedrawRequested");
-                 
                 renderer.borrow_mut().draw_frame();
-
-                println!("Drawn");
             },
             Event::WindowEvent { event, .. } => match event {
                 WindowEvent::KeyboardInput { .. }

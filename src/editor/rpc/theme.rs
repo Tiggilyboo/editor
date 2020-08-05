@@ -114,28 +114,6 @@ pub struct Theme {
     pub shadow: Option<Colour>,
 }
 
-impl Colour {
-    pub fn from_u32_rgba(value: ColourRgba32) -> Self {
-        let rgba = value.to_le_bytes();
-        Self {
-            r: rgba[0],
-            g: rgba[1],
-            b: rgba[2],
-            a: rgba[3],
-        }
-    }
-
-    pub fn from_json(value: serde_json::Value) -> Option<Self> {
-        if value.is_u64() {
-            Some(Self::from_u32_rgba(value.as_u64().unwrap() as u32))
-        } else if value.is_object() {
-            Some(serde_json::from_value::<Colour>(value).unwrap())
-        } else {
-            None
-        }
-    }
-}
-
 pub trait ToRgbaFloat32 {
     fn to_rgba_f32array(&self) -> [f32; 4];
 }

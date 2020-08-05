@@ -76,7 +76,7 @@ use glyph_brush::ab_glyph::{
     point,
 };
 use crate::editor::{
-    font::FontContext,
+    font::FontBounds,
     linecache::count_utf16,
 };
 
@@ -92,7 +92,7 @@ pub struct TextContext {
     index_buffer: Option<Arc<dyn TypedBufferAccess<Content=[u16]> + Send + Sync>>,
     
     glyph_brush: RefCell<GlyphBrush<TextVertex>>,
-    font_context: FontContext,
+    font_context: FontBounds,
 
     descriptor_set: Option<Arc<dyn DescriptorSet + Send + Sync>>,
     texture: TextureCache,
@@ -199,7 +199,7 @@ impl TextContext {
         let font = FontArc::try_from_slice(include_bytes!("../../fonts/Hack-Regular.ttf"))
             .expect("unable to load font");
 
-        let font_context = FontContext::from(font.clone(), 20.0);
+        let font_context = FontBounds::from(font.clone(), 20.0);
 
         let glyph_brush = RefCell::from(
             GlyphBrushBuilder::using_font(font)

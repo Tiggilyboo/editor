@@ -23,6 +23,7 @@ use crate::render::Renderer;
 use crate::events::binding::{
     Mode,
     Action,
+    Motion,
 };
 
 type ColourRGBA = [f32; 4];
@@ -49,6 +50,7 @@ pub struct StatusWidget {
     filename_section: OwnedSection,
     status_section: OwnedSection,
     command_section: OwnedSection,
+    command_select_pos: usize,
 
     dirty: bool,
 }
@@ -104,13 +106,14 @@ impl Widget for StatusWidget {
         // Mode
         if let ctx = &mut text_ctx.borrow_mut() {
             ctx.queue_text(&self.mode_section.to_borrowed());
-            ctx.queue_text(&self.filename_section.to_borrowed());
-            if self.show_command_section() {
+            if self.mode() == Mode::Command {
                 ctx.queue_text(&self.command_section.to_borrowed());
+            } else {
+                ctx.queue_text(&self.filename_section.to_borrowed());
             }
         
             // Status
-            let status_width = self.scale / 2.0 + ctx.get_text_width(&self.status_section.text[0].text.to_string());
+            let status_width = (self.scale * 0.25) + ctx.get_text_width(&self.status_section.text[0].text.to_string());
             self.status_section.bounds = (status_width, self.size[1]);
             self.status_section.screen_position = (self.size[0] - status_width, self.position[1]);
             ctx.queue_text(&self.status_section.to_borrowed());    
@@ -154,6 +157,7 @@ impl StatusWidget {
             mode_colour: resources.sel,
             scale: resources.scale,
             depth: 0.5,
+            command_select_pos: 0,
             dirty: true,
             background,
             mode_primitive,
@@ -172,6 +176,10 @@ impl StatusWidget {
         widget
     }
 
+    pub fn set_dirty(&mut self, dirty: bool) {
+        self.dirty = dirty;
+    }
+
     pub fn set_position(&mut self, x: f32, y: f32) {
         let mode_width = self.mode_primitive.size()[0];
 
@@ -179,6 +187,7 @@ impl StatusWidget {
         self.background.set_position(x, y);
         self.mode_primitive.set_position(x, y);
         self.mode_section.screen_position = (x + (self.scale / 4.0), y);
+        self.command_section.screen_position = (x + mode_width + self.scale, y);
         self.filename_section.screen_position = (x + mode_width, y);
         self.dirty = true;
     }
@@ -200,6 +209,12 @@ impl StatusWidget {
         self.mode_section.text[0].text = mode.to_string();
         self.mode_section.text[0].extra.color = self.mode_colour;
         self.mode_primitive.set_colour(mode.colour());
+
+        if mode != Mode::Command {
+            self.update_command_section("");
+            self.move_command_cursor(Motion::First);
+        }
+
         self.status.mode = mode; 
         self.dirty = true;
     }
@@ -251,9 +266,6 @@ impl StatusWidget {
     pub fn update_command_section(&mut self, command: &str) {
         self.command_section.text[0].text = command.to_string();
     }
-    fn show_command_section(&self) -> bool {
-        self.mode() == Mode::Command
-    }
 
     pub fn update_filename(&mut self, filename: Option<String>) {
         self.status.filename = filename;
@@ -263,15 +275,73 @@ impl StatusWidget {
         self.status.mode
     }
 
-    fn handle_char(&mut self, ch: char) -> bool {
-        self.command_section.text[0].text.push(ch);
+    fn execute_command(&mut self) -> bool {
+        let command = self.command_section.text[0].text.clone();
+        self.command_section.text[0].text = "".to_string();
+        self.set_mode(Mode::Normal);
+
+        println!("command trying to run: {}", command);
         true
     }
 
+    fn move_command_cursor(&mut self, motion: Motion) {
+        match motion {
+            Motion::Left => {
+                if self.command_select_pos > 0 {
+                    self.command_select_pos -= 1;
+                }
+            },
+            Motion::Right => {
+                if self.command_select_pos < self.command_section.text[0].text.len() {
+                    self.command_select_pos += 1;
+                } else {
+                    self.command_select_pos = self.command_section.text[0].text.len();
+                }
+            },
+            Motion::First => self.command_select_pos = 0,
+            Motion::Last => self.command_select_pos = self.command_section.text[0].text.len(),
+            _ => (),
+        }
+    }
+
+    fn handle_char(&mut self, ch: char) -> bool {
+        self.command_section.text[0].text.push(ch);
+        self.move_command_cursor(Motion::Right);
+        true
+    }
+    fn handle_delete(&mut self, motion: Motion) -> bool {
+        match motion {
+            Motion::Left => {
+                if self.command_section.text[0].text.len() > 0
+                && self.command_select_pos < self.command_section.text[0].text.len() {
+                    self.command_section.text[0].text.remove(self.command_select_pos);
+                    self.move_command_cursor(Motion::Left);
+                    true
+                } else {
+                    false
+                }
+            },
+            Motion::Right => {
+                if self.command_select_pos + 1 < self.command_section.text[0].text.len() {
+                    self.command_section.text[0].text.remove(self.command_select_pos + 1);
+                    true
+                } else {
+                    false
+                }
+            },
+            _ => false,
+        }
+    }
+
     pub fn poke(&mut self, action: Box<Action>) -> bool {
+        self.dirty = true;
+
         match *action {
+            Action::Back => self.handle_delete(Motion::Left),
+            Action::Delete => self.handle_delete(Motion::Right),
             Action::InsertChar(ch) => self.handle_char(ch),
-            _ => return false,
+            Action::ExecuteCommand => self.execute_command(),
+            _ => false,
         }
     }
 }

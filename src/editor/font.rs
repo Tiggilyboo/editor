@@ -3,10 +3,7 @@ use ab_glyph::*;
 use glyph_brush::*;
 use crate::unicode::*;
 
-// Keeps track of the font metrics for caching glyph metrics
-// Probably a much cleaner way of doing this...
-pub struct FontContext {
-    font: FontArc,
+pub struct FontBounds {
     bounds: HashMap<char, Rect>,
     font_size: f32,
 }
@@ -46,10 +43,9 @@ fn initialise(font: FontArc) -> HashMap<char, Rect> {
     bounds
 }
 
-impl FontContext {
+impl FontBounds {
     pub fn from(font: FontArc, font_size: f32) -> Self {
         Self {
-            font: font.clone(),
             bounds: initialise(font.clone()),
             font_size,
         }

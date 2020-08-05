@@ -65,12 +65,6 @@ impl EditorState {
         self.available_languages = Some(languages);
     }
 
-    pub fn is_initialised(&self) -> bool {
-        self.focused.is_some()
-            && self.available_languages.is_some()
-            && self.available_themes.is_some()
-    }
-
     pub fn process_keyboard_input(&self, mode: Mode, modifiers: ModifiersState, key: Key) -> Option<(Action, ActionTarget)> {
         let kc = match key {
             Key::KeyCode(virtual_keycode) => Some(virtual_keycode),
