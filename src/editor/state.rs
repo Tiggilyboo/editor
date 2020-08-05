@@ -11,7 +11,6 @@ use super::ui::{
 };
 use super::rpc::{
     EditViewCommands,
-    Style,
 };
 use crate::events::{
     state::InputState,
@@ -64,6 +63,12 @@ impl EditorState {
     }
     pub fn set_available_languages(&mut self, languages: Vec<String>) {
         self.available_languages = Some(languages);
+    }
+
+    pub fn is_initialised(&self) -> bool {
+        self.focused.is_some()
+            && self.available_languages.is_some()
+            && self.available_themes.is_some()
     }
 
     pub fn process_keyboard_input(&self, mode: Mode, modifiers: ModifiersState, key: Key) -> Option<(Action, ActionTarget)> {

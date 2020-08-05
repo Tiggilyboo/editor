@@ -27,6 +27,7 @@ use crate::editor::linecache::LineCache;
 use serde_json::{
     json,
     Value,
+    Map,
 };
 
 use crate::render::Renderer;
@@ -51,8 +52,7 @@ use super::{
     },
 };
 
-const TOP_PAD: f32 = 6.0;
-const LEFT_PAD: f32 = 6.0;
+pub const CURSOR_TEXT: &str = "\u{2588}";
 
 type Method = String;
 type Params = Value;
@@ -66,7 +66,6 @@ pub struct Resources {
     pub gutter_fg: ColourRGBA,
     pub gutter_bg: ColourRGBA,
     pub scale: f32,
-    pub line_gap: f32,
     styles: HashMap<usize, Style>,
 }
 
@@ -78,7 +77,15 @@ impl Hash for Resources {
         self.gutter_fg.iter().for_each(|b| b.to_le_bytes().hash(state));
         self.gutter_bg.iter().for_each(|b| b.to_le_bytes().hash(state));
         self.scale.to_le_bytes().hash(state);
-        self.line_gap.to_le_bytes().hash(state);
+    }
+}
+impl Resources {
+    #[inline]
+    pub fn line_gap(&self) -> f32 {
+        self.scale * 1.06
+    }
+    pub fn pad(&self) -> f32 {
+        self.scale * 0.25
     }
 }
 
@@ -125,7 +132,8 @@ impl Widget for EditView {
     }
 
     fn position(&self) -> [f32; 2] {
-        [TOP_PAD, LEFT_PAD]
+        let pad = self.resources.scale / 4.0;
+        [pad, pad]
     }
 
     fn size(&self) -> [f32; 2] {
@@ -135,26 +143,40 @@ impl Widget for EditView {
     fn queue_draw(&mut self, renderer: &mut Renderer) {
         let text_ctx = renderer.get_text_context().clone();
 
+        let line_gap = self.resources.line_gap();
+        let pad = self.resources.pad();
+        let drawable_height = self.drawable_text_height();
         let first_line = self.y_to_line(0.0);
-        let last_line = std::cmp::min(self.y_to_line(self.drawable_text_height()) + 1, self.line_cache.height());
+        let last_line = std::cmp::min(self.y_to_line(drawable_height) + 1, self.line_cache.height());
         
-        // Figure out the maximum width of the line number
+        // Ensure our text context is up to date
         let scale = self.resources.scale;
+        if let text_ctx = &mut text_ctx.borrow_mut() {
+            if scale != text_ctx.get_font_size() {
+                text_ctx.set_font_size(scale);
+            }
+        }
+
+        // Figure out the maximum width of the line number
         let gutter_width = if self.show_line_numbers {
-            LEFT_PAD + LEFT_PAD 
+            pad + pad 
                 + text_ctx.borrow().get_text_width(last_line.to_string().clone().as_str())
         } else {
             0.0
         };
-        let x0 = LEFT_PAD + gutter_width;
+        let x0 = pad + gutter_width;
         let mut y = self.line_to_content_y(first_line) - self.scroll_offset;
-
-        let line_gap = self.resources.line_gap;
 
         self.background.queue_draw(renderer);
         self.gutter.set_width(gutter_width);
         self.gutter.queue_draw(renderer);
 
+        // Status Bar
+        let mode_width = pad + pad + text_ctx.borrow()
+            .get_text_width(self.mode().to_string().clone().as_str());
+
+        self.status_bar.set_mode_width(mode_width);
+        self.status_bar.set_scale(line_gap);
         self.status_bar.queue_draw(renderer);
     
         // Selection start index, background = 0, gutter = 1, status_bar = 2, 3, 4
@@ -176,7 +198,7 @@ impl Widget for EditView {
                     let width = text_ctx.borrow().get_text_width(sel_content);
 
                     let mut selection = PrimitiveWidget::new(
-                        s_ix, [x0 + sel_x0, y, 0.2], [width, line_gap], self.resources.sel);
+                        s_ix, [x0 + sel_x0, y, 0.2], [width, scale], self.resources.sel);
 
                     selection.queue_draw(renderer);
                     s_ix += 1;
@@ -193,7 +215,7 @@ impl Widget for EditView {
                     let pos = text_ctx.borrow_mut()
                         .get_cursor_position(section, offset); 
 
-                    let mut offside = create_offside_section("\u{2588}", self.resources.cursor, scale);
+                    let mut offside = create_offside_section(CURSOR_TEXT, self.resources.cursor, scale);
                     offside.screen_position = pos;
                     text_ctx.borrow_mut()
                         .queue_text(&offside.to_borrowed());
@@ -206,7 +228,7 @@ impl Widget for EditView {
 
                     let mut offside = create_offside_section(
                         content.clone().as_str(), self.resources.gutter_fg, scale);
-                    offside.screen_position = (gutter_width - left_offset - LEFT_PAD, y);
+                    offside.screen_position = (gutter_width - left_offset - pad, y);
                     text_ctx.borrow_mut()
                         .queue_text(&offside.to_borrowed());
                 }
@@ -234,8 +256,9 @@ fn create_offside_section(content: &str, colour: [f32; 4], scale: f32) -> OwnedS
 }
 
 const BLANK: ColourRGBA = [0.0, 0.0, 0.0, 0.0];
+const BLACK: ColourRGBA = [0.0, 0.0, 0.0, 1.0];
 impl Resources {
-    fn new(scale: f32, line_gap: f32) -> Self {
+    fn new(scale: f32) -> Self {
         Self {
             fg: BLANK,
             bg: BLANK,
@@ -243,7 +266,6 @@ impl Resources {
             cursor: BLANK,
             gutter_bg: BLANK,
             gutter_fg: BLANK,
-            line_gap,
             scale,
             styles: HashMap::new(),
         }
@@ -253,7 +275,7 @@ impl Resources {
 impl EditView {
     pub fn new(index: usize, scale: f32, filename: Option<String>) -> Self {
         let size = [0.0, 0.0]; 
-        let resources = Resources::new(scale, scale + 3.0);
+        let resources = Resources::new(scale);
         let background = PrimitiveWidget::new(0, [0.0, 0.0, 0.01], size, resources.bg);
         let gutter = PrimitiveWidget::new(1, [0.0, 0.0, 0.1], [scale, size[1]], resources.gutter_bg);
 
@@ -306,11 +328,12 @@ impl EditView {
     }
 
     fn resize(&mut self, size: [f32; 2]) {
+        self.status_bar.set_size([size[0], self.resources.line_gap()]);
+
         let height = size[1] - self.status_bar.size()[1];
         self.size = [size[0], height];
         self.gutter.set_height(height);
         self.background.set_size([size[0], height]);
-        self.status_bar.set_size([size[0], self.resources.line_gap]);
         self.status_bar.set_position(0.0, height); 
         self.dirty = true;
 
@@ -394,17 +417,52 @@ impl EditView {
 
     fn config_changed(&mut self, config: Config) {
         if config.font_size.is_some() {
+            let old_height = self.size[1] + self.resources.line_gap();
             self.resources.scale = config.font_size.unwrap();
-            self.resources.line_gap = config.font_size.unwrap() * 1.03;
+            self.resize([self.size[0], old_height]);
             self.dirty = true;
         }
 
         self.config = Some(config);
     }
 
+    fn modify_config(&mut self, config: Config) {
+        let changes = if let Some(self_config) = self.config.clone() {
+            self_config.get_json_changes(config)
+        } else {
+            serde_json::to_value(config).unwrap()
+        };
+        self.send_notification("modify_user_config", &json!({
+            "domain": { "user_override": self.view_id },
+            "changes": Value::from(changes),
+        }));
+    }
+
     fn show_line_numbers(&mut self, show: bool) {
         self.show_line_numbers = show;
         self.dirty = true;
+    }
+
+    fn set_font_size(&mut self, font_size: f32) {
+        let config = Config {
+            font_size: Some(font_size),
+            ..Config::default()
+        };
+        self.modify_config(config);
+    }
+    fn increase_font_size(&mut self) {
+        if let Some(config) = &mut self.config {
+            let size = config.font_size.unwrap_or(self.resources.scale);
+            self.set_font_size(size + 1.0);
+        }
+    }
+    fn decrease_font_size(&mut self) {
+        if let Some(config) = &mut self.config {
+            let size = config.font_size.unwrap_or(self.resources.scale);
+            if size >= 2.0 {
+                self.set_font_size(size - 1.0);
+            }
+        }
     }
 
     fn language_changed(&mut self, language_id: String) {
@@ -434,7 +492,11 @@ impl EditView {
             self.resources.gutter_bg = self.resources.bg;
         }
         self.gutter.set_colour(self.resources.gutter_bg);
-        self.status_bar.set_colours(self.resources.gutter_bg.clone(), self.resources.fg.clone());
+        self.status_bar.set_colours(
+            self.resources.gutter_bg.clone(), 
+            self.resources.fg.clone(),
+            BLACK);
+        self.status_bar.set_scale(self.resources.scale);
 
         if let Some(col) = &theme.gutter_foreground {
             self.resources.gutter_fg = col.to_rgba_f32array();
@@ -499,6 +561,8 @@ impl EditView {
                     Action::Copy => self.send_action("yank"),
                     Action::ScrollPageUp => self.send_action("scroll_page_up"),
                     Action::ScrollPageDown => self.send_action("scroll_page_down"),
+                    Action::IncreaseFontSize => self.increase_font_size(),
+                    Action::DecreaseFontSize => self.decrease_font_size(),
                     Action::Motion(motion) => match motion {
                         Motion::Up => self.send_action("move_up"),
                         Motion::Down => self.send_action("move_down"),
@@ -556,7 +620,8 @@ impl EditView {
     }
 
     fn y_to_line(&self, y: f32) -> usize {
-        let mut line = (y + self.scroll_offset - TOP_PAD) / self.resources.line_gap;
+        let pad = self.resources.pad();
+        let mut line = (y + self.scroll_offset - pad) / self.resources.line_gap();
         if line < 0.0 { line = 0.0; }
         let line = line.floor() as usize;
 
@@ -565,7 +630,7 @@ impl EditView {
 
     fn update_viewport(&mut self) {
         let first_line = self.y_to_line(0.0);
-        let last_line = first_line + ((self.drawable_text_height() / self.resources.line_gap).floor() as usize) + 1;
+        let last_line = first_line + ((self.drawable_text_height() / self.resources.line_gap()).floor() as usize) + 1;
         let viewport = first_line..last_line;
 
         if viewport != self.viewport {
@@ -577,12 +642,12 @@ impl EditView {
 
     #[inline]
     fn line_to_content_y(&self, line_num: usize) -> f32 {
-        TOP_PAD + (line_num as f32) * self.resources.line_gap
+        self.resources.pad() + (line_num as f32) * self.resources.line_gap()
     }
 
     pub fn scroll_to(&mut self, line_num: usize) {
         let y = self.line_to_content_y(line_num);
-        let bottom_slop = 20.0;
+        let bottom_slop = self.resources.scale / 3.0;
         if y < self.scroll_offset {
             self.scroll_offset = y;
             self.dirty = true;
@@ -590,6 +655,8 @@ impl EditView {
             self.scroll_offset = y - (self.drawable_text_height() - bottom_slop);
             self.dirty = true;
         }
+        self.current_line = line_num + 1;
+        self.status_bar.update_line_status(self.current_line, self.line_cache.height(), self.language.clone());
     }
 
     pub fn set_dirty(&mut self, dirty: bool) {

@@ -121,12 +121,15 @@ impl App {
             } else {
                 println!("unable to lock state to set focused view_id with new EditView widget");
             }
+            
         });
+        
+        self.set_default_theme();
     }
 
     // TODO: Derive from config somewhere?
     fn set_default_theme(&self) {
-        self.send_view_cmd(EditViewCommands::Action(Action::SetTheme("Solarized (dark)".to_string())));
+        self.send_notification("set_theme", &json!({ "theme_name": "Solarized (dark)" }));
     }
 
     fn handle_cmd(&self, method: &str, params: &Value) {
@@ -136,7 +139,6 @@ impl App {
             "config_changed" => {
                 let config = from_value::<Config>(params["changes"].clone()).unwrap();
                 self.send_view_cmd(EditViewCommands::ConfigChanged(config));
-                self.set_default_theme();
             },
             "available_themes" => {
                 if let Ok(ref mut state) = self.state.clone().try_lock() {
@@ -148,6 +150,10 @@ impl App {
                         }
 
                         state.set_available_themes(available_themes);
+
+                        if state.is_initialised() {
+                            self.set_default_theme();
+                        }
                     }
                 }
             },
@@ -176,6 +182,10 @@ impl App {
                         }
 
                         state.set_available_languages(available_languages);
+                        
+                        if state.is_initialised() {
+                            self.set_default_theme();
+                        }
                     }
                 }
             },

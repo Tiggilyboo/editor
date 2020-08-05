@@ -11,11 +11,13 @@ pub struct FontContext {
     font_size: f32,
 }
 
-fn calculate_bounds(font: FontArc, scale: f32) -> HashMap<char, Rect> {
+fn initialise(font: FontArc) -> HashMap<char, Rect> {
     let mut bounds: HashMap<char, Rect> = HashMap::new();
     let included_categories = [
         LETTER_LOWERCASED,
         LETTER_UPPERCASE,
+        LETTER_MODIFIER,
+        LETTER_OTHER,
         SEPARATOR_SPACE,
         PUNCTUATION_CLOSE,
         PUNCTUATION_DASH,
@@ -30,12 +32,14 @@ fn calculate_bounds(font: FontArc, scale: f32) -> HashMap<char, Rect> {
         SYMBOL_CURRENCY,
         SYMBOL_MATH,
         SYMBOL_OTHER,
+        MARK_ENCLOSING,
+        MARK_NONSPACING,
     ];
 
     for category in included_categories.iter() {
         for ch in category.iter() {
             let glyph_id = font.glyph_id(*ch);
-            bounds.insert(*ch, font.glyph_bounds(&glyph_id.with_scale(scale)));
+            bounds.insert(*ch, font.glyph_bounds(&glyph_id.with_scale(1.0)));
         }
     }
 
@@ -46,13 +50,18 @@ impl FontContext {
     pub fn from(font: FontArc, font_size: f32) -> Self {
         Self {
             font: font.clone(),
-            bounds: calculate_bounds(font.clone(), font_size),
+            bounds: initialise(font.clone()),
             font_size,
         }
     }
 
-    pub fn get_char_bounds(&self, ch: char) -> &Rect {
+    pub fn get_char_bounds(&self, ch: char) -> Rect {
         if let Some(bounds) = self.bounds.get(&ch) {
+            let mut bounds = bounds.clone();
+            bounds.min.x *= self.font_size;
+            bounds.max.x *= self.font_size;
+            bounds.min.y *= self.font_size;
+            bounds.min.x *= self.font_size;
             bounds
         } else {
             println!("could not find character '{}' in FontContext", ch);
@@ -66,7 +75,6 @@ impl FontContext {
 
     pub fn set_scale(&mut self, scale: f32) {
         self.font_size = scale;
-        self.bounds = calculate_bounds(self.font.clone(), scale);
     }
 }
 

@@ -302,6 +302,10 @@ impl TextContext {
         w
     }
 
+    pub fn get_font_size(&self) -> f32 {
+        self.font_context.get_scale()
+    }
+
     pub fn set_font_size(&mut self, font_size: f32) {
         self.font_context.set_scale(font_size);
     }
