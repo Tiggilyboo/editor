@@ -17,7 +17,7 @@ use glyph_brush::{
     Text,
 };
 
-use crate::events::binding::{
+use crate::editor::{
     Action,
     ActionTarget,
     Mode,
@@ -530,6 +530,28 @@ impl EditView {
         }
     }
 
+    pub fn execute_command(&mut self) -> Vec<Action> {
+        let command_text = self.status_bar.get_command();
+        self.status_bar.update_command_section("");
+        self.set_mode(Mode::Normal);
+
+        let mut actions: Vec<Action> = vec!(); 
+        match command_text.clone().as_str()  {
+            "w" => actions.push(Action::Save),
+            "e" => actions.push(Action::Open),
+            "q" => actions.push(Action::Quit),
+            "wq" => actions.extend(vec![Action::Save, Action::Quit]),
+            _ => {}
+        }
+
+        if actions.len() == 0 {
+            let message = format!("No command found: '{}'", command_text.clone());
+            self.status_bar.update_filename(Some(message));
+        }
+
+        actions
+    }
+
     pub fn poke(&mut self, command: EditViewCommands) -> bool {
         match command {
             EditViewCommands::ViewId(view_id) => self.set_view(view_id),
@@ -545,7 +567,7 @@ impl EditView {
                     Action::InsertChar(ch) => self.send_char(ch),
                     Action::SetMode(mode) => self.set_mode(mode),
                     Action::SetTheme(theme) => self.set_theme(theme.as_str()),
-                    Action::ShowLineNumbers(_) => self.show_line_numbers(!self.show_line_numbers),
+                    Action::ToggleLineNumbers => self.show_line_numbers(!self.show_line_numbers),
                     Action::Save => self.save_to_file(),
                     Action::Back => self.send_action("delete_backward"),
                     Action::Delete => self.send_action("delete_forward"),
@@ -562,6 +584,13 @@ impl EditView {
                     Action::ScrollPageDown => self.send_action("scroll_page_down"),
                     Action::IncreaseFontSize => self.increase_font_size(),
                     Action::DecreaseFontSize => self.decrease_font_size(),
+                    Action::ExecuteCommand => {
+                        self.execute_command().iter()
+                            .filter(|a| match a { Action::ExecuteCommand => false, _ => true })
+                            .for_each(|a| { 
+                                self.poke(EditViewCommands::Action(a.clone())); 
+                            });
+                    },
                     Action::Motion(motion) => match motion {
                         Motion::Up => self.send_action("move_up"),
                         Motion::Down => self.send_action("move_down"),

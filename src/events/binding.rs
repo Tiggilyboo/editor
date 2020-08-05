@@ -1,4 +1,10 @@
 use std::fmt;
+use crate::editor::{
+    Action,
+    ActionTarget,
+    Motion,
+    Mode,
+};
 
 use winit::event::{
     ModifiersState,
@@ -43,109 +49,6 @@ impl<T: Eq> Binding<T> {
     pub fn get_target(&self) -> ActionTarget {
         self.target.clone()
     }
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum ActionTarget {
-    FocusedView,
-    StatusBar,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Action {
-    Motion(Motion),
-    MotionSelect(Motion),
-    MotionDelete(Motion),
-    SetMode(Mode),
-    SetTheme(String),
-    ShowLineNumbers(bool),
-    InsertChar(char),
-    DefineCommand((String, Box<Action>)),
-    ExecuteCommand,
-    Back,
-    Delete,
-    Indent,
-    Outdent,
-    NewLine,
-    SearchNext,
-    SearchPrev,
-    SearchStart,
-    SearchEnd,
-    Open,
-    Quit,
-    Save,
-    Copy,
-    Cut,
-    Paste,
-    IncreaseFontSize,
-    DecreaseFontSize,
-    ScrollPageUp,
-    ScrollPageDown,
-    ScrollHalfPageUp,
-    ScrollHalfPageDown,
-    ScrollLineUp,
-    ScrollLineDown,
-    ScrollToTop,
-    ScrollToBottom,
-    ClearSelection,
-    SingleSelection,
-    Undo,
-    Redo,
-    UpperCase,
-    LowerCase,
-    AddCursorAbove,
-    AddCursorBelow,
-    SelectAll,
-
-    None,
-}
-
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
-pub enum Mode {
-    Normal,
-    Insert,
-    Replace,
-    Select,
-    LineSelect,
-    BlockSelect,
-    Command,
-
-    None,
-}
-impl fmt::Display for Mode {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> fmt::Result {
-        match self {
-            Mode::Normal => write!(f, "NORMAL"),
-            Mode::Insert => write!(f, "INSERT"),
-            Mode::Replace => write!(f, "REPLACE"),
-            Mode::Command => write!(f, "COMMAND"),
-            Mode::Select => write!(f, "VISUAL"),
-            Mode::BlockSelect => write!(f, "V-BLOCK"),
-            Mode::LineSelect => write!(f, "V-LINE"),
-            _ => write!(f, "{:?}", self),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub enum Motion {
-    Up,
-    Down,
-    Left,
-    Right,
-    First,
-    Last,
-    FirstOccupied,
-    High,
-    Middle,
-    Low,
-    SemanticLeft,
-    SemanticRight,
-    SemanticRightEnd,
-    WordLeft,
-    WordRight,
-    WordRightEnd,
-    Bracket,
 }
 
 macro_rules! bindings {
@@ -322,18 +225,55 @@ pub fn bind_alpha_numeric(mode: Mode, target: ActionTarget) -> Vec<KeyBinding> {
     )
 }
 
+pub fn bind_motion_selects(mode: Mode) -> Vec<KeyBinding> {
+    bindings!(
+        KeyBinding;
+
+        Left,   +mode; Action::MotionSelect(Motion::Left);
+        Right,  +mode; Action::MotionSelect(Motion::Right);
+        Up,     +mode; Action::MotionSelect(Motion::Up);
+        Down,   +mode; Action::MotionSelect(Motion::Down);
+        H,      +mode; Action::MotionSelect(Motion::Left);
+        J,      +mode; Action::MotionSelect(Motion::Down);
+        K,      +mode; Action::MotionSelect(Motion::Up);
+        L,      +mode; Action::MotionSelect(Motion::Right);
+
+        W,      +mode; Action::MotionSelect(Motion::WordRight);
+        E,      +mode; Action::MotionSelect(Motion::WordRightEnd);
+        Key4,   +mode; Action::MotionSelect(Motion::Last);
+
+        W, ModifiersState::SHIFT, +mode; Action::MotionSelect(Motion::WordRight);
+        Key5, ModifiersState::SHIFT, +mode; Action::MotionSelect(Motion::Bracket);
+        Key6, ModifiersState::SHIFT, +mode; Action::MotionSelect(Motion::FirstOccupied);
+    )
+}
+
+pub fn bind_motions(mode: Mode) -> Vec<KeyBinding> {
+    bindings!(
+        KeyBinding;
+
+        Home,   +mode; Action::Motion(Motion::First);
+        End,    +mode; Action::Motion(Motion::Last);
+        Key0,   +mode; Action::Motion(Motion::First);
+        Key4,   ModifiersState::SHIFT, +mode; Action::Motion(Motion::Last);
+        Key5,   ModifiersState::SHIFT, +mode; Action::Motion(Motion::Bracket);
+        Key6,   ModifiersState::SHIFT, +mode; Action::Motion(Motion::FirstOccupied);
+
+        Up,     ModifiersState::SHIFT, +mode; Action::ScrollPageUp;
+        Down,   ModifiersState::SHIFT, +mode; Action::ScrollPageDown;
+
+        Left,   ModifiersState::CTRL, +mode; Action::Motion(Motion::WordLeft);
+        Right,  ModifiersState::CTRL, +mode; Action::Motion(Motion::WordRight);
+        Left,   +mode; Action::Motion(Motion::Left);
+        Right,  +mode; Action::Motion(Motion::Right);
+        Up,     +mode; Action::Motion(Motion::Up);
+        Down,   +mode; Action::Motion(Motion::Down);
+    )
+}
+
 pub fn default_key_bindings() -> Vec<KeyBinding> {
     let mut bindings = bindings!(
         KeyBinding;
-
-        F1; Action::SetTheme(String::from("Solarized (dark)"));
-        F2; Action::SetTheme(String::from("Solarized (light)"));
-        F3; Action::SetTheme(String::from("InspiredGitHub"));
-        F5; Action::ShowLineNumbers(true);
-
-        Back, +Mode::Command, @ActionTarget::StatusBar; Action::Back;
-        Delete, +Mode::Command, @ActionTarget::StatusBar; Action::Delete;
-        Return, +Mode::Command, @ActionTarget::StatusBar; Action::ExecuteCommand;
 
         Escape, ~Mode::Normal; Action::SetMode(Mode::Normal);
         Escape, +Mode::LineSelect; Action::ClearSelection;
@@ -346,53 +286,45 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
         R, ModifiersState::SHIFT, +Mode::Normal; Action::SetMode(Mode::Replace);
         Colon, ModifiersState::SHIFT, +Mode::Normal; Action::SetMode(Mode::Command);
 
-        PageUp; Action::ScrollPageUp;
-        PageDown; Action::ScrollPageDown;
+        Back, +Mode::Command, @ActionTarget::StatusBar; Action::Back;
+        Delete, +Mode::Command, @ActionTarget::StatusBar; Action::Delete;
+        Return, +Mode::Command; Action::ExecuteCommand;
+        D,      ModifiersState::SHIFT, +Mode::Normal; Action::MotionDelete(Motion::Last);
+    );
+    bindings.extend(bind_motions(Mode::Normal));
+    bindings.extend(bind_motions(Mode::Insert));
+    bindings.extend(bind_alpha_numeric(Mode::Command, ActionTarget::StatusBar));
+    bindings.extend(bind_motion_selects(Mode::Select));
+    bindings.extend(bind_motion_selects(Mode::LineSelect));
+    bindings.extend(bind_motion_selects(Mode::BlockSelect));
+    bindings.extend(bind_alpha_numeric(Mode::Insert, ActionTarget::FocusedView));
 
-        Home; Action::Motion(Motion::First);
-        End; Action::Motion(Motion::Last);
-        Key0, ~Mode::Insert; Action::Motion(Motion::First);
-        Key4, ModifiersState::SHIFT, ~Mode::Insert; Action::Motion(Motion::Last);
-        Key5, ModifiersState::SHIFT, ~Mode::Insert; Action::Motion(Motion::Bracket);
-        Key6, ModifiersState::SHIFT, ~Mode::Insert; Action::Motion(Motion::FirstOccupied);
+    bindings.extend(bindings!(
+        KeyBinding;
 
-        Up, ModifiersState::SHIFT | ModifiersState::CTRL; Action::AddCursorAbove;
-        Down, ModifiersState::SHIFT | ModifiersState::CTRL; Action::AddCursorBelow;
-        Up, ModifiersState::SHIFT; Action::ScrollPageUp;
-        Down, ModifiersState::SHIFT; Action::ScrollPageDown;
+        F1; Action::SetTheme(String::from("Solarized (dark)"));
+        F2; Action::SetTheme(String::from("Solarized (light)"));
+        F3; Action::SetTheme(String::from("InspiredGitHub"));
+        F5; Action::ToggleLineNumbers;
 
-        Left, +Mode::Select; Action::MotionSelect(Motion::Left);
-        Right, +Mode::Select; Action::MotionSelect(Motion::Right);
-        Up, +Mode::Select; Action::MotionSelect(Motion::Up);
-        Down, +Mode::Select; Action::MotionSelect(Motion::Down);
-        H, +Mode::Select; Action::MotionSelect(Motion::Left);
-        J, +Mode::Select; Action::MotionSelect(Motion::Down);
-        K, +Mode::Select; Action::MotionSelect(Motion::Up);
-        L, +Mode::Select; Action::MotionSelect(Motion::Right);
+        PageUp, ~Mode::Command; Action::ScrollPageUp;
+        PageDown, ~Mode::Command; Action::ScrollPageDown;
 
-        Left, ModifiersState::CTRL, ~Mode::Insert; Action::Motion(Motion::WordLeft);
-        Right, ModifiersState::CTRL, ~Mode::Insert; Action::Motion(Motion::WordRight);
-        W, ~Mode::Insert; Action::Motion(Motion::WordRight);
-        E, ~Mode::Insert; Action::Motion(Motion::WordRightEnd);
-        D, ModifiersState::SHIFT, +Mode::Normal; Action::MotionDelete(Motion::Last);
-
-        Left; Action::Motion(Motion::Left);
-        Right; Action::Motion(Motion::Right);
-        Up; Action::Motion(Motion::Up);
-        Down; Action::Motion(Motion::Down);
-        H, ~Mode::Insert; Action::Motion(Motion::Left);
-        J, ~Mode::Insert; Action::Motion(Motion::Down);
-        K, ~Mode::Insert; Action::Motion(Motion::Up);
-        L, ~Mode::Insert; Action::Motion(Motion::Right);
-
+        Return, +Mode::Normal; Action::Motion(Motion::Down);
         Return, +Mode::Insert; Action::NewLine;
-        Return, ~Mode::Insert; Action::Motion(Motion::Down);
         Back, +Mode::Insert; Action::Back;
         Delete, +Mode::Insert; Action::Delete;
         Back, ~Mode::Insert; Action::Motion(Motion::Left);
         Delete, ~Mode::Insert; Action::Motion(Motion::Right);
         Space, ~Mode::Insert; Action::Motion(Motion::Right);
         
+        W, ~Mode::Insert; Action::Motion(Motion::WordRight);
+        E, ~Mode::Insert; Action::Motion(Motion::WordRightEnd);
+        H, ~Mode::Insert; Action::Motion(Motion::Left);
+        J, ~Mode::Insert; Action::Motion(Motion::Down);
+        K, ~Mode::Insert; Action::Motion(Motion::Up);
+        L, ~Mode::Insert; Action::Motion(Motion::Right);
+
         Y, +Mode::Select; Action::Copy;
         Y, +Mode::LineSelect; Action::Copy;
         Y, +Mode::BlockSelect; Action::Copy;
@@ -412,10 +344,10 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
         Subtract, ModifiersState::CTRL; Action::DecreaseFontSize;
         Equals, ModifiersState::CTRL; Action::IncreaseFontSize;
         Add, ModifiersState::CTRL; Action::IncreaseFontSize;
-    );
 
-    bindings.extend(bind_alpha_numeric(Mode::Command, ActionTarget::StatusBar));
-    bindings.extend(bind_alpha_numeric(Mode::Insert, ActionTarget::FocusedView));
+        Up, ModifiersState::SHIFT | ModifiersState::CTRL, +Mode::Insert; Action::AddCursorAbove;
+        Down, ModifiersState::SHIFT | ModifiersState::CTRL, +Mode::Insert; Action::AddCursorBelow;
+    ));
 
     bindings
 }

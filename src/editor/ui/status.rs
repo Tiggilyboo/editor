@@ -19,12 +19,12 @@ use super::widget::{
 use super::primitive::PrimitiveWidget;
 use super::view::Resources;
 
-use crate::render::Renderer;
-use crate::events::binding::{
+use crate::editor::{
     Mode,
     Action,
     Motion,
 };
+use crate::render::Renderer;
 
 type ColourRGBA = [f32; 4];
 
@@ -113,9 +113,9 @@ impl Widget for StatusWidget {
             }
         
             // Status
-            let status_width = (self.scale * 0.25) + ctx.get_text_width(&self.status_section.text[0].text.to_string());
-            self.status_section.bounds = (status_width, self.size[1]);
-            self.status_section.screen_position = (self.size[0] - status_width, self.position[1]);
+            let status_width = ctx.get_text_width(&self.status_section.text[0].text.to_string());
+            self.status_section.bounds = (status_width + self.scale, self.size[1]);
+            self.status_section.screen_position = (self.size[0] - status_width - self.scale, self.position[1]);
             ctx.queue_text(&self.status_section.to_borrowed());    
         }
 
@@ -249,10 +249,11 @@ impl StatusWidget {
             0
         };
 
-        let status_content = format!("{}  {}% {}/{}", 
+        let status_content = format!("{} {}% {}/{}", 
             language.clone().unwrap_or(String::new()), 
             line_percent,
             line_num, line_count);
+        println!("{}", status_content);
 
         self.status.line_count = line_count;
         self.status.line_current = line_num;
@@ -275,16 +276,11 @@ impl StatusWidget {
         self.status.mode
     }
 
-    fn execute_command(&mut self) -> bool {
-        let command = self.command_section.text[0].text.clone();
-        self.command_section.text[0].text = "".to_string();
-        self.set_mode(Mode::Normal);
-
-        println!("command trying to run: {}", command);
-        true
+    pub fn get_command(&self) -> String {
+        self.command_section.text[0].text.to_string()
     }
 
-    fn move_command_cursor(&mut self, motion: Motion) {
+    fn move_command_cursor(&mut self, motion: Motion) -> bool {
         match motion {
             Motion::Left => {
                 if self.command_select_pos > 0 {
@@ -300,8 +296,10 @@ impl StatusWidget {
             },
             Motion::First => self.command_select_pos = 0,
             Motion::Last => self.command_select_pos = self.command_section.text[0].text.len(),
-            _ => (),
+            _ => return false,
         }
+
+        true
     }
 
     fn handle_char(&mut self, ch: char) -> bool {
@@ -340,7 +338,7 @@ impl StatusWidget {
             Action::Back => self.handle_delete(Motion::Left),
             Action::Delete => self.handle_delete(Motion::Right),
             Action::InsertChar(ch) => self.handle_char(ch),
-            Action::ExecuteCommand => self.execute_command(),
+            Action::Motion(motion) => self.move_command_cursor(motion),
             _ => false,
         }
     }

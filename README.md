@@ -18,3 +18,4 @@ This editor is a frontend for [xi-editor](https://github.com/xi-editor/xi-editor
 - Implement LSP plugin
 - Mouse interaction
 - In-built LISP-like language to define keymapping to actions. Useful for complex key-bindings like VIM, still in the ideation phase...
+

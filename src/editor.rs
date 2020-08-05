@@ -1,4 +1,7 @@
 mod xi_thread;
+mod action;
+mod motion;
+mod mode;
 
 pub mod ui;
 pub mod state;
@@ -7,6 +10,10 @@ pub mod linecache;
 pub mod font;
 
 extern crate dirs;
+
+pub use action::*;
+pub use motion::*;
+pub use mode::*;
 
 use std::cell::RefCell;
 use std::sync::{Arc, Mutex};

@@ -12,16 +12,18 @@ use super::ui::{
 use super::rpc::{
     EditViewCommands,
 };
+use super::action::{
+    Action,
+    ActionTarget,
+};
+use super::mode::Mode;
 use crate::events::{
     state::InputState,
     mapper_winit::map_scancode,
     binding::{
-        Action,
-        ActionTarget,
         Key,
         KeyBinding,
         MouseBinding,
-        Mode,
         default_mouse_bindings,
         default_key_bindings,
     },
