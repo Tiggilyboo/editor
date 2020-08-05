@@ -97,14 +97,13 @@ impl Widget for StatusWidget {
 
     fn queue_draw(&mut self, renderer: &mut Renderer) {
         let (width, height) = (self.size[0], self.size[1]);
-        let text_ctx = renderer.get_text_context().clone();
 
         // Primitives (Background quads)
         self.background.queue_draw(renderer);
         self.mode_primitive.queue_draw(renderer);
 
         // Mode
-        if let ctx = &mut text_ctx.borrow_mut() {
+        if let ctx = &mut renderer.get_text_context().clone().borrow_mut() {
             ctx.queue_text(&self.mode_section.to_borrowed());
             if self.mode() == Mode::Command {
                 ctx.queue_text(&self.command_section.to_borrowed());
@@ -118,11 +117,6 @@ impl Widget for StatusWidget {
             self.status_section.screen_position = (self.size[0] - status_width - self.scale, self.position[1]);
             ctx.queue_text(&self.status_section.to_borrowed());    
         }
-
-        self.filename_section.screen_position = (
-            self.mode_primitive.position()[0] + self.mode_primitive.size()[0] + 6.0,
-            self.scale * 1.03
-        );
     }
 }
 
@@ -182,13 +176,14 @@ impl StatusWidget {
 
     pub fn set_position(&mut self, x: f32, y: f32) {
         let mode_width = self.mode_primitive.size()[0];
+        let after_mode_x = x + mode_width + (self.scale / 2.0);
 
         self.position = [x, y];
         self.background.set_position(x, y);
         self.mode_primitive.set_position(x, y);
         self.mode_section.screen_position = (x + (self.scale / 4.0), y);
-        self.command_section.screen_position = (x + mode_width + self.scale, y);
-        self.filename_section.screen_position = (x + mode_width, y);
+        self.filename_section.screen_position = (after_mode_x, y);
+        self.command_section.screen_position = (after_mode_x + (self.scale / 2.0), y);
         self.dirty = true;
     }
 
@@ -253,7 +248,6 @@ impl StatusWidget {
             language.clone().unwrap_or(String::new()), 
             line_percent,
             line_num, line_count);
-        println!("{}", status_content);
 
         self.status.line_count = line_count;
         self.status.line_current = line_num;
@@ -269,6 +263,7 @@ impl StatusWidget {
     }
 
     pub fn update_filename(&mut self, filename: Option<String>) {
+        self.filename_section.text[0].text = filename.clone().unwrap_or(String::new());
         self.status.filename = filename;
     }
 
