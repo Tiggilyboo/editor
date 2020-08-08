@@ -38,12 +38,12 @@ use vulkano::{
     image::SwapchainImage,
 };
 
-use shaders::{
+use self::shaders::{
     Vertex,
     vertex_shader,
     fragment_shader,
 };
-use crate::render::uniform::{
+use uniform::{
     UniformTransform,
     calculate_transform,
 };

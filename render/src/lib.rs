@@ -1,3 +1,8 @@
+extern crate vulkano;
+extern crate vulkano_win;
+extern crate winit;
+extern crate glyph_brush;
+
 mod core;
 
 pub mod text;
@@ -25,11 +30,11 @@ use vulkano::sync::{
     self,
     GpuFuture,
 };
+use winit::event_loop::EventLoop;
+
 use self::core::RenderCore;
 use self::text::TextContext;
 use self::primitive::PrimitiveContext;
-
-use super::events::EditorEventLoop;
 
 pub struct Renderer {
     core: RenderCore,
@@ -44,7 +49,7 @@ pub struct Renderer {
 }
 
 impl Renderer {
-    pub fn new(events_loop: &EditorEventLoop, title: &str) -> Self {
+    pub fn new<L>(events_loop: &EventLoop<L>, title: &str) -> Self {
         let core = RenderCore::new(events_loop, title);
         let render_pass = core.create_render_pass(None);
 

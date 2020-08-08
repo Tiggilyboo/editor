@@ -19,7 +19,7 @@ use super::widget::{
 use super::primitive::PrimitiveWidget;
 use super::view::Resources;
 
-use crate::editor::{
+use rpc::{
     Mode,
     Action,
     Motion,
@@ -203,7 +203,7 @@ impl StatusWidget {
     pub fn set_mode(&mut self, mode: Mode) {
         self.mode_section.text[0].text = mode.to_string();
         self.mode_section.text[0].extra.color = self.mode_colour;
-        self.mode_primitive.set_colour(mode.colour());
+        self.mode_primitive.set_colour(mode_colour(mode));
 
         if mode != Mode::Command {
             self.update_command_section("");
@@ -339,17 +339,15 @@ impl StatusWidget {
     }
 }
 
-impl Mode {
-    fn colour(&self) -> ColourRGBA {
-        match self {
-            Mode::Normal => MODE_NORMAL_COLOUR,
-            Mode::Command => MODE_NORMAL_COLOUR,
-            Mode::Insert => MODE_INSERT_COLOUR,
-            Mode::Select => MODE_SELECT_COLOUR,
-            Mode::BlockSelect => MODE_SELECT_COLOUR,
-            Mode::LineSelect => MODE_SELECT_COLOUR,
-            Mode::Replace => MODE_REPLACE_COLOUR,
-            _ => MODE_NORMAL_COLOUR,
-        }
+fn mode_colour(mode: Mode) -> ColourRGBA {
+    match mode {
+        Mode::Normal => MODE_NORMAL_COLOUR,
+        Mode::Command => MODE_NORMAL_COLOUR,
+        Mode::Insert => MODE_INSERT_COLOUR,
+        Mode::Select => MODE_SELECT_COLOUR,
+        Mode::BlockSelect => MODE_SELECT_COLOUR,
+        Mode::LineSelect => MODE_SELECT_COLOUR,
+        Mode::Replace => MODE_REPLACE_COLOUR,
+        _ => MODE_NORMAL_COLOUR,
     }
 }

@@ -3,11 +3,13 @@ use std::sync::{
     Weak,
 };
 use serde_json::Value;
-use crate::editor::Action;
-use crate::editor::rpc::Core;
-use super::config::Config;
-use super::theme::Theme;
-use super::theme::Style;
+use rpc::{
+    Action,
+    Config,
+    Theme,
+    Style,
+};
+use crate::editor::editor_rpc::Core;
 
 pub enum EditViewCommands {
     ViewId(String),

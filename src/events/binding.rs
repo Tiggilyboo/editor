@@ -1,5 +1,5 @@
 use std::fmt;
-use crate::editor::{
+use rpc::{
     Action,
     ActionTarget,
     Motion,
@@ -118,7 +118,6 @@ pub fn default_mouse_bindings() -> Vec<MouseBinding> {
         MouseBinding;
     )
 }
-
 pub fn bind_alpha_numeric(mode: Mode, target: ActionTarget) -> Vec<KeyBinding> {
     bindings!(
         KeyBinding;

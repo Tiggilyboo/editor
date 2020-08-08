@@ -1,7 +1,7 @@
-use cgmath::Matrix4;
+pub type Matrix4 = [f32; 16];
 
 pub struct UniformTransform {
-    pub transform: Matrix4<f32>
+    pub transform: Matrix4,
 }
 
 #[inline]
@@ -11,11 +11,11 @@ pub fn calculate_transform(left: f32, right: f32, bottom: f32, top: f32, near: f
     let tz = -(far + near) / (far - near);
 
     UniformTransform {
-        transform: cgmath::Matrix4::new(
+        transform: [ 
             2.0 / (right - left), 0.0, 0.0, 0.0,
             0.0, 2.0 / (top - bottom), 0.0, 0.0,
             0.0, 0.0, -2.0 / (far - near), 0.0,
             tx, ty, tz, 1.0,
-        ),
+        ],
     }
 }

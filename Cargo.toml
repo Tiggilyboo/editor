@@ -4,24 +4,27 @@ version = "0.1.0"
 authors = ["simon"]
 edition = "2018"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
-vulkano = "0.19.0"
-vulkano-shaders = "0.19.0"
-vulkano-win = "0.19.0"
-winit = "0.22.2"
-cgmath = "0.17"
-glyph_brush = "0.7" 
-glyph_brush_layout = "0.2.0"
-glyph_brush_draw_cache = "0.1" 
+render = { path = "./render" }
+rpc = { path = "./rpc" }
 serde = "1.0.114"
 serde_json = "1.0.56"
 dirs = "3.0.1"
+winit = "0.22.2"
+
+[dependencies.glyph_brush]
+version = "0.7"
+default-features = false
 
 [dependencies.xi-core-lib]
 path = "xi-editor/rust/core-lib"
+default-features = false
 
 [dependencies.xi-rpc]
 path = "xi-editor/rust/rpc"
+default-features = false
+
+[workspace]
+members = ["rpc", "render"]
+exclude = ["xi-editor"]
 

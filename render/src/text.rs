@@ -1,10 +1,13 @@
 mod shaders;
-use shaders::{
+mod font;
+mod unicode;
+
+use self::shaders::{
     Vertex,
     vertex_shader,
     fragment_shader,
 };
-use crate::render::uniform::{
+use uniform::{
     UniformTransform,
     calculate_transform,
 };
@@ -75,10 +78,7 @@ use glyph_brush::ab_glyph::{
     Rect,
     point,
 };
-use crate::editor::{
-    font::FontBounds,
-    linecache::count_utf16,
-};
+use self::font::FontBounds;
 
 pub struct TextContext {
     device: Arc<Device>,
@@ -92,7 +92,7 @@ pub struct TextContext {
     index_buffer: Option<Arc<dyn TypedBufferAccess<Content=[u16]> + Send + Sync>>,
     
     glyph_brush: RefCell<GlyphBrush<TextVertex>>,
-    font_context: FontBounds,
+    font_bounds: FontBounds,
 
     descriptor_set: Option<Arc<dyn DescriptorSet + Send + Sync>>,
     texture: TextureCache,
@@ -199,8 +199,8 @@ impl TextContext {
         let font = FontArc::try_from_slice(include_bytes!("../../fonts/Hack-Regular.ttf"))
             .expect("unable to load font");
 
-        let font_context = FontBounds::from(font.clone(), 20.0);
-
+        let font_bounds = FontBounds::new(font.clone(), 20.0);
+        
         let glyph_brush = RefCell::from(
             GlyphBrushBuilder::using_font(font)
                 .cache_glyph_positioning(true)
@@ -266,11 +266,12 @@ impl TextContext {
             0.0, 1.0, 0.0, 0.0
         ).unwrap();
 
+
         TextContext {
             device: device.clone(),
             queue,
             glyph_brush,
-            font_context,
+            font_bounds,
             texture: TextureCache {
                 image: None,
                 cache_dimensions,
@@ -295,7 +296,7 @@ impl TextContext {
     pub fn get_text_width(&self, text: &str) -> f32 {
         let mut w: f32 = 0.0;
         for (_, ch) in text.char_indices() {
-            let bounds = self.font_context.get_char_bounds(ch);
+            let bounds = self.font_bounds.get_char_bounds(ch);
             w += bounds.max.x;
         }
 
@@ -303,11 +304,11 @@ impl TextContext {
     }
 
     pub fn get_font_size(&self) -> f32 {
-        self.font_context.get_scale()
+        self.font_bounds.get_scale()
     }
 
     pub fn set_font_size(&mut self, font_size: f32) {
-        self.font_context.set_scale(font_size);
+        self.font_bounds.set_scale(font_size);
     }
 
     pub fn get_cursor_position(&mut self, section: &Section, offset: usize) -> (f32, f32) {
@@ -323,7 +324,7 @@ impl TextContext {
             if offset <= i {
                 break;
             }
-            let bounds = self.font_context.get_char_bounds(ch);
+            let bounds = self.font_bounds.get_char_bounds(ch);
 
             pos.0 += bounds.max.x;
             if bounds.max.y > pos.1 {

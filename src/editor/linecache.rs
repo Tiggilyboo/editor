@@ -3,7 +3,7 @@ use std::ops::Range;
 use serde_json::Value;
 use serde::Deserialize;
 
-use super::rpc::annotations::{
+use rpc::{
     Annotation,
     AnnotationType,
 };

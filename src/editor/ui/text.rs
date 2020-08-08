@@ -20,7 +20,7 @@ use crate::editor::linecache::{
     Line,
     StyleSpan,
 };
-use crate::editor::rpc::{
+use rpc::{
     Style,
     theme::ToRgbaFloat32,
 };

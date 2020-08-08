@@ -5,9 +5,8 @@ pub mod binding;
 use winit::event_loop::EventLoop;
 
 pub enum EditorEvent {}
-pub type EditorEventLoop = EventLoop<EditorEvent>;
 
-pub fn create_event_loop() -> EditorEventLoop {
+pub fn create_event_loop() -> EventLoop<EditorEvent> {
     EventLoop::<EditorEvent>::with_user_event()
 }
 

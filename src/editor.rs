@@ -1,19 +1,12 @@
+extern crate dirs;
+
 mod xi_thread;
-mod action;
-mod motion;
-mod mode;
 
 pub mod ui;
 pub mod state;
-pub mod rpc;
+pub mod editor_rpc;
 pub mod linecache;
-pub mod font;
-
-extern crate dirs;
-
-pub use action::*;
-pub use motion::*;
-pub use mode::*;
+pub mod commands;
 
 use std::cell::RefCell;
 use std::sync::{Arc, Mutex};
@@ -42,13 +35,15 @@ use ui::view::{
 use ui::widget::Widget;
 use state::EditorState;
 use rpc::{ 
-    Core, 
-    Handler,
     Config, 
     Theme,
     Style,
-    EditViewCommands,
 };
+use editor_rpc::{
+    Core,
+    Handler,
+};
+use commands::EditViewCommands;
 use super::events::{
     state::InputState,
 };
@@ -250,6 +245,7 @@ pub fn run(title: &str, filename: Option<String>) {
         "config_dir": get_xi_dir(),
     }));
     app.open_file_in_view(filename, screen_dimensions, 20.0);
+
 
     events_loop.run(move |event: Event<'_, EditorEvent>, _, control_flow: &mut ControlFlow| {
         *control_flow = ControlFlow::Wait;

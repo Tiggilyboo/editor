@@ -1,14 +1,16 @@
-#![macro_use]
 
-extern crate cgmath;
+extern crate glyph_brush;
+extern crate serde;
+extern crate serde_json;
 extern crate winit;
-extern crate vulkano;
-extern crate vulkano_win;
+extern crate xi_core_lib;
+extern crate xi_rpc;
 
-mod render;
+extern crate render;
+extern crate rpc;
+
 mod events;
 mod editor;
-mod unicode;
 
 use std::env;
 

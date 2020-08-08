@@ -1,17 +1,4 @@
-pub mod config;
-pub mod commands;
-pub mod annotations;
-pub mod theme;
-
-pub use config::Config;
-pub use theme::Theme;
-pub use theme::Style;
-pub use theme::Colour;
-pub use commands::EditViewCommands;
-pub use annotations::{
-    Annotation,
-    AnnotationType,
-};
+pub use super::commands::EditViewCommands;
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};

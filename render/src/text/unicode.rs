@@ -1,5 +1,31 @@
-// Taken from swgillespie/unicode-categories github
 
+pub fn default_categories() -> Vec<&'static [char]> {
+    vec![
+        LETTER_LOWERCASED,
+        LETTER_MODIFIER,
+        LETTER_OTHER,
+        LETTER_UPPERCASE,
+        NUMBER_DECIMAL_DIGIT,
+        NUMBER_LETTER,
+        SEPARATOR_SPACE,
+        SYMBOL_CURRENCY,
+        SYMBOL_MATH,
+        SYMBOL_MODIFIER,
+        SYMBOL_OTHER,
+        PUNCTUATION_CLOSE,
+        PUNCTUATION_CONNECTOR,
+        PUNCTUATION_DASH,
+        PUNCTUATION_FINAL_QUOTE,
+        PUNCTUATION_INITIAL_QUOTE,
+        PUNCTUATION_OPEN,
+        PUNCTUATION_OTHER,
+        MARK_ENCLOSING,
+        MARK_NONSPACING,
+    ]
+}
+
+
+// Taken from swgillespie/unicode-categories github
 pub static LETTER_LOWERCASED : &'static [char] = &[
     '\u{0061}', '\u{0062}', '\u{0063}', '\u{0064}', '\u{0065}', '\u{0066}', '\u{0067}', '\u{0068}',
     '\u{0069}', '\u{006A}', '\u{006B}', '\u{006C}', '\u{006D}', '\u{006E}', '\u{006F}', '\u{0070}',

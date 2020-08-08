@@ -1,3 +1,5 @@
+mod queue_indices;
+
 use std::sync::Arc;
 
 use std::collections::HashSet;
@@ -51,11 +53,9 @@ use vulkano_win::VkSurfaceBuild;
 
 use winit::window::{ WindowBuilder, Window };
 use winit::dpi::LogicalSize;
+use winit::event_loop::EventLoop;
 
-mod queue_indices;
-use queue_indices::QueueFamilyIndices;
-
-use crate::events::EditorEventLoop;
+use self::queue_indices::QueueFamilyIndices;
 
 const VALIDATION_LAYERS: &[&str] = &[
     "VK_LAYER_LUNARG_standard_validation"
@@ -89,7 +89,7 @@ pub struct RenderCore {
 }
 
 impl RenderCore {
-    pub fn new(events_loop: &EditorEventLoop, title: &str) -> Self {
+    pub fn new<L>(events_loop: &EventLoop<L>, title: &str) -> Self {
         let instance = Self::create_instance(); 
         let debug_callback = Self::create_debug_callback(&instance);
         let surface = Self::create_surface(title, events_loop, &instance);
@@ -201,7 +201,7 @@ impl RenderCore {
             .expect("failed to find suitable physical device");
     }
     
-    fn create_surface(title: &str, events_loop: &EditorEventLoop, instance: &Arc<Instance>) -> Arc<Surface<Window>> {
+    fn create_surface<L>(title: &str, events_loop: &EventLoop<L>, instance: &Arc<Instance>) -> Arc<Surface<Window>> {
         WindowBuilder::new()
             .with_title(title)
             .with_resizable(true)

@@ -9,14 +9,12 @@ use winit::event::ModifiersState;
 use super::ui::{
     view::EditView,
 };
-use super::rpc::{
-    EditViewCommands,
-};
-use super::action::{
+use rpc::{ 
+    Mode,
     Action,
     ActionTarget,
 };
-use super::mode::Mode;
+use super::commands::EditViewCommands;
 use crate::events::{
     state::InputState,
     mapper_winit::map_scancode,

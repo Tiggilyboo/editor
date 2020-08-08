@@ -17,7 +17,7 @@ use glyph_brush::{
     Text,
 };
 
-use crate::editor::{
+use rpc::{ 
     Action,
     ActionTarget,
     Mode,
@@ -31,14 +31,14 @@ use serde_json::{
 };
 
 use crate::render::Renderer;
-use crate::editor::rpc::{
-    Core,
+use rpc::{
     Config,
     Theme,
     Style,
-    EditViewCommands,
     theme::ToRgbaFloat32,
 };
+use crate::editor::editor_rpc::Core;
+use crate::editor::commands::EditViewCommands;
 use super::{
     widget::{
         Widget,
