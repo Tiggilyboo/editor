@@ -40,6 +40,7 @@ pub struct StatusWidget {
     depth: f32,
     scale: f32,
     size: [f32; 2],
+    focused: bool,
     bg_colour: ColourRGBA,
     fg_colour: ColourRGBA,
     mode_colour: ColourRGBA,
@@ -100,13 +101,19 @@ impl Widget for StatusWidget {
 
         // Primitives (Background quads)
         self.background.queue_draw(renderer);
-        self.mode_primitive.queue_draw(renderer);
+        if self.focused {
+            self.mode_primitive.queue_draw(renderer);
+        }
 
-        // Mode
         if let ctx = &mut renderer.get_text_context().clone().borrow_mut() {
-            ctx.queue_text(&self.mode_section.to_borrowed());
-            if self.mode() == Mode::Command {
-                ctx.queue_text(&self.command_section.to_borrowed());
+            // Mode
+            if self.focused {
+                ctx.queue_text(&self.mode_section.to_borrowed());
+                if self.mode() == Mode::Command {
+                    ctx.queue_text(&self.command_section.to_borrowed());
+                } else {
+                    ctx.queue_text(&self.filename_section.to_borrowed());
+                }
             } else {
                 ctx.queue_text(&self.filename_section.to_borrowed());
             }
@@ -153,6 +160,7 @@ impl StatusWidget {
             depth: 0.5,
             command_select_pos: 0,
             dirty: true,
+            focused: false,
             background,
             mode_primitive,
             command_section,
@@ -161,6 +169,7 @@ impl StatusWidget {
             status_section,
         };
 
+        widget.set_position(widget.position[0], widget.position[1]);
         widget.set_scale(widget.scale);
         widget.set_colours(widget.bg_colour, widget.fg_colour, widget.mode_colour);
         widget.set_mode(status.mode);
@@ -191,6 +200,10 @@ impl StatusWidget {
         self.size = size;
         self.background.set_size(self.size);
         self.dirty = true;
+    }
+
+    pub fn set_focused(&mut self, focused: bool) {
+        self.focused = focused;
     }
     
     pub fn set_mode_width(&mut self, mode_width: f32) {

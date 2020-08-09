@@ -8,6 +8,7 @@ use super::plugins::{
     PluginState,
     PluginId,
 };
+use crate::events::EditorEventLoopProxy;
 use rpc::{
     Action,
     Config,
@@ -21,7 +22,9 @@ pub enum EditViewCommands {
     ApplyUpdate(Value),
     ScrollTo(usize),
     Core(Weak<Mutex<Core>>),
+    Proxy(EditorEventLoopProxy),
     Resize([f32; 2]),
+    Position([f32; 2]),
     ConfigChanged(Config),
     ThemeChanged(Theme),
     LanguageChanged(String),
@@ -29,5 +32,4 @@ pub enum EditViewCommands {
     PluginStarted(PluginState),
     PluginStopped(PluginId),
     Action(Action),
-    Quit,
 }

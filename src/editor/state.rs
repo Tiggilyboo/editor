@@ -18,6 +18,7 @@ use rpc::{
 use super::commands::EditViewCommands;
 use crate::events::{
     EditorEvent,
+    EditorEventLoopProxy,
     state::InputState,
     mapper_winit::map_scancode,
     binding::{
@@ -43,11 +44,11 @@ pub struct EditorState {
     plugins: HashMap<PluginId, PluginState>, 
     key_bindings: Vec<KeyBinding>,
     mouse_bindings: Vec<MouseBinding>,
-    event_proxy: Arc<EventLoopProxy<EditorEvent>>,
+    event_proxy: EditorEventLoopProxy,
 }
 
 impl EditorState {
-    pub fn new(event_proxy: Arc<EventLoopProxy<EditorEvent>>) -> Self {
+    pub fn new(event_proxy: EventLoopProxy<EditorEvent>) -> Self {
         Self {
             focused: Default::default(),
             views: HashMap::new(),
@@ -58,6 +59,10 @@ impl EditorState {
             key_bindings: default_key_bindings(),
             event_proxy,
         }
+    }
+
+    pub fn get_event_proxy(&self) -> EditorEventLoopProxy {
+        self.event_proxy.clone()
     }
     
     pub fn get_focused_view(&mut self) -> &mut EditView {
@@ -85,6 +90,23 @@ impl EditorState {
             Some(plugin.clone())
         } else {
             None
+        }
+    }
+
+    pub fn align_views_horizontally(&mut self, screen_size: [f32; 2]) {
+        let view_count = self.views.len();
+        let view_height = if view_count > 0 {
+            screen_size[1] / view_count as f32
+        } else {
+            screen_size[1]
+        };
+        
+        let mut view_top = 0.0;
+        for (_, view) in self.views.iter_mut() {
+            view.poke(EditViewCommands::Position([0.0, view_top]));
+            view.poke(EditViewCommands::Resize([screen_size[0], view_height]));
+
+            view_top += view_height;
         }
     }
 
@@ -124,35 +146,37 @@ impl EditorState {
                 return false;
             }
 
-            let mut command: Option<EditViewCommands> = None;
+            let mut action: Option<Action> = None;
             let mut target: Option<ActionTarget> = None;
             if let edit_view = self.get_focused_view() {
                 let mode = edit_view.mode();
 
                 if should_keydown && input.key.is_some() {
-                    if let Some((action, action_target)) 
+                    if let Some((bound_action, action_target)) 
                         = &self.process_keyboard_input(mode, input.modifiers, input.key.unwrap()) {
-                            command = Some(EditViewCommands::Action(action.clone()));
+                            action = Some(bound_action.clone());
                             target = Some(action_target.clone());
                     }
                 }
             }
-            if let edit_view = self.get_focused_view() {
-                if command.is_some() && target.is_some() {
-                    match target.unwrap() {
-                        ActionTarget::EventLoop => {
-                            match command.unwrap() {
-                                EditViewCommands::Action(action) => {
-                                    self.event_proxy.send_event(EditorEvent::Action(action));
-                                },
-                            }
-                        },
-                        _ => {
-                            edit_view.poke_target(command.unwrap(), target.unwrap());
+            if action.is_some() && target.is_some() {
+                match target.unwrap() {
+                    ActionTarget::EventLoop => {
+                        match self.event_proxy.send_event(EditorEvent::Action(action.unwrap())) {
+                            Ok(_) => (),
+                            Err(err) => println!("unable to send event to event_loop: {}", err),
+                        }
+                    },
+                    ActionTarget::FocusedView | ActionTarget::StatusBar => {
+                        if let edit_view = self.get_focused_view() {
+                            edit_view.poke_target(EditViewCommands::Action(action.unwrap()), target.unwrap());
                         }
                     }
-                    handled = true;
                 }
+                handled = true;
+            }
+
+            if let edit_view = self.get_focused_view() {
                 if should_mouse {
                     if input.mouse.line_scroll.1 != 0.0 {
                         edit_view.mouse_scroll(input.mouse.line_scroll.1);

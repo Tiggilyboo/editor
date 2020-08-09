@@ -191,6 +191,12 @@ impl LineCache {
     pub fn get_selections(&self, line_num: usize) -> Vec<&Selection> {
         self.selections.iter().filter(|s| s.line_num == line_num).collect()
     }
+
+    pub fn clear(&mut self) {
+        self.selections.clear();
+        self.lines.clear();
+        self.annotations.clear();
+    }
 }
 
 /// Counts the number of utf-16 code units in the given string.
