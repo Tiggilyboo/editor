@@ -1,5 +1,6 @@
 use super::motion::Motion;
 use super::mode::Mode;
+use super::quantity::Quantity;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum ActionTarget {
@@ -10,17 +11,21 @@ pub enum ActionTarget {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {
-    Motion(Motion),
-    MotionSelect(Motion),
-    MotionDelete(Motion),
+    Open(Option<String>),
+    Split(Option<String>),
+    Motion((Motion, Option<Quantity>)),
+    Select((Motion, Option<Quantity>)),
+    Delete((Motion, Option<Quantity>)),
     SetMode(Mode),
     SetTheme(String),
-    InsertChar(char),
+    SetLanguage(String),
     DefineCommand((String, Box<Action>)),
+    InsertChar(char),
+    Close,
+    DeleteChar,
+    Back,
     ExecuteCommand,
     ToggleLineNumbers,
-    Back,
-    Delete,
     Indent,
     Outdent,
     NewLine,
@@ -28,32 +33,19 @@ pub enum Action {
     SearchPrev,
     SearchStart,
     SearchEnd,
-    Open(Option<String>),
-    Split(Option<String>),
-    Close,
     Save,
     Copy,
     Cut,
     Paste,
     IncreaseFontSize,
     DecreaseFontSize,
-    ScrollPageUp,
-    ScrollPageDown,
-    ScrollHalfPageUp,
-    ScrollHalfPageDown,
-    ScrollLineUp,
-    ScrollLineDown,
-    ScrollToTop,
-    ScrollToBottom,
     ClearSelection,
     SingleSelection,
+    AddCursor(Motion),
     Undo,
     Redo,
     UpperCase,
     LowerCase,
-    AddCursorAbove,
-    AddCursorBelow,
-    SelectAll,
 
     None,
 }

@@ -2,9 +2,10 @@ extern crate serde;
 extern crate serde_json;
 extern crate xi_core_lib;
 
-mod config;
 mod annotations;
 mod action;
+mod config;
+mod quantity;
 mod mode;
 mod motion;
 pub mod theme;
@@ -18,6 +19,7 @@ pub use annotations::{
     AnnotationType,
 };
 pub use action::*;
+pub use quantity::*;
 pub use mode::*;
 pub use motion::*;
 

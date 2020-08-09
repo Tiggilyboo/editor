@@ -110,7 +110,9 @@ impl EditorState {
         }
     }
 
-    pub fn process_keyboard_input(&self, mode: Mode, modifiers: ModifiersState, key: Key) -> Option<(Action, ActionTarget)> {
+    pub fn process_keyboard_input(&self, 
+        mode: Mode, modifiers: ModifiersState, key: Key
+    ) -> Option<(Vec<Action>, ActionTarget)> {
         let kc = match key {
             Key::KeyCode(virtual_keycode) => Some(virtual_keycode),
             Key::ScanCode(scancode) => map_scancode(scancode),
@@ -125,7 +127,7 @@ impl EditorState {
         for binding in self.key_bindings.iter() {
             if binding.is_triggered_by(mode, modifiers, &Key::KeyCode(kc.unwrap())) {
                 return Some((
-                    binding.get_action(),
+                    binding.get_actions(),
                     binding.get_target(),
                 ));
             }
@@ -146,30 +148,34 @@ impl EditorState {
                 return false;
             }
 
-            let mut action: Option<Action> = None;
+            let mut actions: Vec<Action> = vec!();
             let mut target: Option<ActionTarget> = None;
             if let edit_view = self.get_focused_view() {
                 let mode = edit_view.mode();
 
                 if should_keydown && input.key.is_some() {
-                    if let Some((bound_action, action_target)) 
+                    if let Some((bound_actions, action_target)) 
                         = &self.process_keyboard_input(mode, input.modifiers, input.key.unwrap()) {
-                            action = Some(bound_action.clone());
+                            actions = bound_actions.clone();
                             target = Some(action_target.clone());
                     }
                 }
             }
-            if action.is_some() && target.is_some() {
+            if actions.len() > 0 && target.is_some() {
                 match target.unwrap() {
                     ActionTarget::EventLoop => {
-                        match self.event_proxy.send_event(EditorEvent::Action(action.unwrap())) {
-                            Ok(_) => (),
-                            Err(err) => println!("unable to send event to event_loop: {}", err),
+                        for action in actions.iter() {
+                            match self.event_proxy.send_event(EditorEvent::Action(action.clone())) {
+                                Ok(_) => (),
+                                Err(err) => println!("unable to send event to event_loop: {}", err),
+                            }
                         }
                     },
                     ActionTarget::FocusedView | ActionTarget::StatusBar => {
                         if let edit_view = self.get_focused_view() {
-                            edit_view.poke_target(EditViewCommands::Action(action.unwrap()), target.unwrap());
+                            for action in actions.iter() {
+                                edit_view.poke_target(EditViewCommands::Action(action.clone()), target.unwrap());
+                            }
                         }
                     }
                 }

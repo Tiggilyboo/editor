@@ -25,8 +25,8 @@ pub struct Binding<T> {
     mode: Mode,
     notmode: Mode,
     trigger: T,
-    action: Action,
     target: ActionTarget,
+    actions: Vec<Action>,
 }
 
 pub type KeyBinding = Binding<Key>;
@@ -41,12 +41,12 @@ impl<T: Eq> Binding<T> {
             && (self.notmode == Mode::None || self.notmode != mode)
     }
 
-    pub fn get_action(&self) -> Action {
-        self.action.clone()
+    pub fn get_target(&self) -> ActionTarget {
+        self.target
     }
 
-    pub fn get_target(&self) -> ActionTarget {
-        self.target.clone()
+    pub fn get_actions(&self) -> Vec<Action> {
+        self.actions.clone()
     }
 }
 
@@ -59,7 +59,8 @@ macro_rules! bindings {
             $(,+$mode:expr)*
             $(,~$notmode:expr)*
             $(,@$target:expr)*
-            ;$action:expr
+            ;$([$actions:expr])*
+            $($action:expr)*
         );*
         $(;)*
     ) => {{
@@ -71,7 +72,8 @@ macro_rules! bindings {
                 $(,+$mode)*
                 $(,~$notmode)*
                 $(,@$target)*
-                ;$action
+                ;$([$actions])*
+                $($action)*
             );*
         )
     }};
@@ -83,7 +85,8 @@ macro_rules! bindings {
             $(,+$mode:expr)*
             $(,~$notmode:expr)*
             $(,@$target:expr)*
-            ;$action:expr
+            ;$([$actions:expr])*
+            $($action:expr)*
         );*
         $(;)*
     ) => {{
@@ -97,6 +100,8 @@ macro_rules! bindings {
             $(_notmode = $notmode;)*
             let mut _target = ActionTarget::FocusedView;
             $(_target = $target;)*
+            let mut _actions: Vec<Action> = vec!(); 
+            $(_actions = vec!($actions);)*
 
             v.push($ty {
                 trigger: $key,
@@ -104,7 +109,7 @@ macro_rules! bindings {
                 mode: _mode,
                 notmode: _notmode,
                 target: _target,
-                action: $action.into(),
+                actions: _actions,
             });
         )*
 
@@ -274,8 +279,8 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
         KeyBinding;
 
         Escape, ~Mode::Normal; Action::SetMode(Mode::Normal);
-        Escape, +Mode::LineSelect; Action::ClearSelection;
-        Escape, +Mode::BlockSelect; Action::ClearSelection;
+        Escape, +Mode::SelectLine; Action::ClearSelection;
+        Escape, +Mode::SelectBlock; Action::ClearSelection;
         Escape, +Mode::Select; Action::ClearSelection;
         I, +Mode::Normal; Action::SetMode(Mode::Insert);
         V, +Mode::Normal; Action::SetMode(Mode::Select);
@@ -293,8 +298,8 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
     bindings.extend(bind_motions(Mode::Insert));
     bindings.extend(bind_alpha_numeric(Mode::Command, ActionTarget::StatusBar));
     bindings.extend(bind_motion_selects(Mode::Select));
-    bindings.extend(bind_motion_selects(Mode::LineSelect));
-    bindings.extend(bind_motion_selects(Mode::BlockSelect));
+    bindings.extend(bind_motion_selects(Mode::SelectLine));
+    bindings.extend(bind_motion_selects(Mode::SelectBlock));
     bindings.extend(bind_alpha_numeric(Mode::Insert, ActionTarget::FocusedView));
 
     bindings.extend(bindings!(
@@ -324,8 +329,8 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
         L, ~Mode::Insert; Action::Motion(Motion::Right);
 
         Y, +Mode::Select; Action::Copy;
-        Y, +Mode::LineSelect; Action::Copy;
-        Y, +Mode::BlockSelect; Action::Copy;
+        Y, +Mode::SelectLine; Action::Copy;
+        Y, +Mode::SelectBlock; Action::Copy;
         Copy, +Mode::Insert; Action::Copy;
         Cut, +Mode::Insert; Action::Cut;
 

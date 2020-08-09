@@ -4,7 +4,6 @@ use std::hash::{
 };
 use super::widget::{
     hash_widget,
-    calculate_hash,
     Widget,
 };
 use crate::render::Renderer;

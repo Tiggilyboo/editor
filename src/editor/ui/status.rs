@@ -20,8 +20,9 @@ use super::primitive::PrimitiveWidget;
 use super::view::Resources;
 
 use rpc::{
-    Mode,
     Action,
+    Quantity,
+    Mode,
     Motion,
 };
 use crate::render::Renderer;
@@ -220,7 +221,7 @@ impl StatusWidget {
 
         if mode != Mode::Command {
             self.update_command_section("");
-            self.move_command_cursor(Motion::First);
+            self.move_command_cursor(Motion::First, Default::default());
         }
 
         self.status.mode = mode; 
@@ -288,16 +289,23 @@ impl StatusWidget {
         self.command_section.text[0].text.to_string()
     }
 
-    fn move_command_cursor(&mut self, motion: Motion) -> bool {
+    fn move_command_cursor(&mut self, motion: Motion, quantity: Option<Quantity>) -> bool {
+        let n = match quantity.unwrap_or_default() {
+            Quantity::Number(c) => c,
+            _ => 1,
+        };
+
         match motion {
             Motion::Left => {
-                if self.command_select_pos > 0 {
-                    self.command_select_pos -= 1;
+                if self.command_select_pos > n {
+                    self.command_select_pos -= n;
+                } else {
+                    self.command_select_pos = 0;
                 }
             },
             Motion::Right => {
-                if self.command_select_pos < self.command_section.text[0].text.len() {
-                    self.command_select_pos += 1;
+                if self.command_select_pos + n < self.command_section.text[0].text.len() {
+                    self.command_select_pos += n;
                 } else {
                     self.command_select_pos = self.command_section.text[0].text.len();
                 }
@@ -312,41 +320,47 @@ impl StatusWidget {
 
     fn handle_char(&mut self, ch: char) -> bool {
         self.command_section.text[0].text.push(ch);
-        self.move_command_cursor(Motion::Right);
+        self.move_command_cursor(Motion::Right, None);
         true
     }
-    fn handle_delete(&mut self, motion: Motion) -> bool {
-        match motion {
-            Motion::Left => {
-                if self.command_section.text[0].text.len() > 0
-                && self.command_select_pos < self.command_section.text[0].text.len() {
-                    self.command_section.text[0].text.remove(self.command_select_pos);
-                    self.move_command_cursor(Motion::Left);
-                    true
-                } else {
-                    false
-                }
+    fn handle_delete(&mut self, motion: Motion, quantity: Option<Quantity>) -> bool {
+        let q = quantity.unwrap_or_default();
+        match q {
+            Quantity::All | Quantity::Line(_) => {
+                self.command_section.text[0].text = "".to_string();
             },
-            Motion::Right => {
-                if self.command_select_pos + 1 < self.command_section.text[0].text.len() {
-                    self.command_section.text[0].text.remove(self.command_select_pos + 1);
-                    true
-                } else {
-                    false
+            Quantity::Number(n) => {
+                for c in 0..n {
+                    match motion {
+                        Motion::Left => {
+                            if self.command_section.text[0].text.len() > 0
+                            && self.command_select_pos < self.command_section.text[0].text.len() {
+                                self.command_section.text[0].text.remove(self.command_select_pos);
+                                self.move_command_cursor(Motion::Left, None);
+                            }
+                        },
+                        Motion::Right => {
+                            if self.command_select_pos + 1 < self.command_section.text[0].text.len() {
+                                self.command_section.text[0].text.remove(self.command_select_pos + 1);
+                            }
+                        },
+                        _ => break,
+                    }
                 }
-            },
-            _ => false,
-        }
+            }
+            _ => return false,
+        };
+
+        true
     }
 
     pub fn poke(&mut self, action: Box<Action>) -> bool {
         self.dirty = true;
 
         match *action {
-            Action::Back => self.handle_delete(Motion::Left),
-            Action::Delete => self.handle_delete(Motion::Right),
+            Action::Delete((motion, quantity)) => self.handle_delete(motion, quantity),
+            Action::Motion((motion, quantity)) => self.move_command_cursor(motion, quantity),
             Action::InsertChar(ch) => self.handle_char(ch),
-            Action::Motion(motion) => self.move_command_cursor(motion),
             _ => false,
         }
     }
@@ -358,8 +372,8 @@ fn mode_colour(mode: Mode) -> ColourRGBA {
         Mode::Command => MODE_NORMAL_COLOUR,
         Mode::Insert => MODE_INSERT_COLOUR,
         Mode::Select => MODE_SELECT_COLOUR,
-        Mode::BlockSelect => MODE_SELECT_COLOUR,
-        Mode::LineSelect => MODE_SELECT_COLOUR,
+        Mode::SelectBlock => MODE_SELECT_COLOUR,
+        Mode::SelectLine => MODE_SELECT_COLOUR,
         Mode::Replace => MODE_REPLACE_COLOUR,
         _ => MODE_NORMAL_COLOUR,
     }

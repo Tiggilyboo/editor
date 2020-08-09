@@ -5,13 +5,15 @@ pub enum Mode {
     Normal,
     Insert,
     Replace,
-    Select,
-    LineSelect,
-    BlockSelect,
     Command,
-
+    Select,
+    SelectLine,
+    SelectBlock,
+    Window,
+    Motion,
     None,
 }
+
 impl fmt::Display for Mode {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> fmt::Result {
         match self {
@@ -20,8 +22,10 @@ impl fmt::Display for Mode {
             Mode::Replace => write!(f, "REPLACE"),
             Mode::Command => write!(f, "COMMAND"),
             Mode::Select => write!(f, "VISUAL"),
-            Mode::BlockSelect => write!(f, "V-BLOCK"),
-            Mode::LineSelect => write!(f, "V-LINE"),
+            Mode::SelectBlock => write!(f, "V-BLOCK"),
+            Mode::SelectLine => write!(f, "V-LINE"),
+            Mode::Window => write!(f, "WINDOW"),
+            Mode::Motion => write!(f, "MOTION"),
             _ => write!(f, "{:?}", self),
         }
     }
