@@ -5,6 +5,7 @@ use super::mode::Mode;
 pub enum ActionTarget {
     FocusedView,
     StatusBar,
+    EventLoop,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -14,10 +15,10 @@ pub enum Action {
     MotionDelete(Motion),
     SetMode(Mode),
     SetTheme(String),
-    ToggleLineNumbers,
     InsertChar(char),
     DefineCommand((String, Box<Action>)),
     ExecuteCommand,
+    ToggleLineNumbers,
     Back,
     Delete,
     Indent,

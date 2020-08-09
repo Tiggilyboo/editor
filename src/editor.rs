@@ -1,6 +1,7 @@
 extern crate dirs;
 
 mod xi_thread;
+mod plugins;
 
 pub mod ui;
 pub mod state;
@@ -28,6 +29,8 @@ use serde_json::{
     json,
     from_value,
 };
+use plugins::PluginState;
+use xi_core_lib::plugins::Command;
 
 use ui::view::{
     EditView,
@@ -127,11 +130,27 @@ impl App {
         self.set_default_theme();
     }
 
+    pub fn close_view(&self, view_id: String) {
+        self.send_notification("close_view", &json!({ "view_id": view_id }));
+
+        let mut last_view = false;
+        if let Ok(ref mut state) = self.state.clone().try_lock() {
+            state.views.remove(&view_id);
+            if state.views.len() == 0 {
+                last_view = true;
+            }
+        }
+        if last_view {
+
+        }
+    }
+
     // TODO: Derive from config somewhere?
     fn set_default_theme(&self) {
         self.send_notification("set_theme", &json!({ "theme_name": "Solarized (dark)" }));
     }
 
+    // TODO: RPC this crap in structs, this is dirty
     fn handle_cmd(&self, method: &str, params: &Value) {
         match method {
             "update" => self.send_view_cmd(EditViewCommands::ApplyUpdate(params["update"].clone())),
@@ -191,6 +210,64 @@ impl App {
                     }
                 }
             }
+            "available_plugins" => {
+                let mut available_plugins: Vec<PluginState> = vec!();
+                let raw_plugins = params["plugins"].as_array();
+
+                if let Ok(ref mut state) = self.state.clone().try_lock() {
+                    if let Some(plugins) = raw_plugins {
+                        for p in plugins.iter() {
+                            let name = p["name"].as_str().unwrap().to_string();
+                            let active = p["running"].as_bool().unwrap();
+                            
+                            available_plugins.push(PluginState {
+                                name,
+                                active,
+                                commands: vec![],
+                            });
+                        }
+
+                        state.set_available_plugins(available_plugins);
+                    }
+                }
+            },
+            "plugin_started" => {
+                let view_id = params["view_id"].as_str().unwrap().to_string();
+                let plugin = params["plugin"].as_str().unwrap().to_string();
+
+                if let Ok(ref mut state) = self.state.clone().try_lock() {
+                    let plugin = state.get_plugin(plugin.clone()).unwrap_or(PluginState {
+                        name: plugin,
+                        active: true,
+                        commands: vec![],
+                    });
+                    if let Some(edit_view) = state.views.get_mut(&view_id) {
+                        edit_view.poke(EditViewCommands::PluginStarted(plugin));
+                    }
+                }
+            },
+            "plugin_stopped" => {
+                let view_id = params["view_id"].as_str().unwrap().to_string();
+                let plugin = params["plugin"].as_str().unwrap().to_string();
+
+                if let Ok(ref mut state) = self.state.clone().try_lock() {
+                    if let Some(edit_view) = state.views.get_mut(&view_id) {
+                        edit_view.poke(EditViewCommands::PluginStopped(plugin));
+                    }
+                }
+            },
+            "update_cmds" => {
+                let _view_id = params["view_id"].as_str().unwrap().to_string();
+                let _plugin = params["plugin"].as_str().unwrap().to_string();
+                let cmds = params["cmds"].as_array().unwrap();
+
+                for raw_cmd in cmds.iter() {
+                    if let Ok(cmd) = from_value::<Command>(raw_cmd.clone()) {
+                        println!("Command needs to be mapped to actions: {:?}", cmd);
+                    }
+                }
+                
+            },
             _ => println!("unhandled core->fe method: {}", method),
         }
     }
@@ -246,12 +323,15 @@ pub fn run(title: &str, filename: Option<String>) {
     }));
     app.open_file_in_view(filename, screen_dimensions, 20.0);
 
-
     events_loop.run(move |event: Event<'_, EditorEvent>, _, control_flow: &mut ControlFlow| {
         *control_flow = ControlFlow::Wait;
 
         match event {
-            Event::UserEvent(_event) => {},
+            Event::UserEvent(event) =>  match event {
+                Action(Action::Quit) => {
+                    *control_flow = ControlFlow::Exit;
+                },
+            },
             Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => {
                 *control_flow = ControlFlow::Exit;
             },

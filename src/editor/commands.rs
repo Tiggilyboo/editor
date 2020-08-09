@@ -3,6 +3,11 @@ use std::sync::{
     Weak,
 };
 use serde_json::Value;
+
+use super::plugins::{
+    PluginState,
+    PluginId,
+};
 use rpc::{
     Action,
     Config,
@@ -21,5 +26,8 @@ pub enum EditViewCommands {
     ThemeChanged(Theme),
     LanguageChanged(String),
     DefineStyle(Style),
-    Action(Action) 
+    PluginStarted(PluginState),
+    PluginStopped(PluginId),
+    Action(Action),
+    Quit,
 }

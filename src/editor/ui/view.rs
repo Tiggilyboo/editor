@@ -4,12 +4,15 @@ use std::hash::{
     Hash,
     Hasher,
 };
-
 use std::sync::{
     Mutex,
     Weak,
 };
 
+use serde_json::{
+    json,
+    Value,
+};
 use glyph_brush::{
     OwnedSection,
     Section,
@@ -22,23 +25,21 @@ use rpc::{
     ActionTarget,
     Mode,
     Motion,
-};
-use crate::editor::linecache::LineCache;
-use serde_json::{
-    json,
-    Value,
-    Map,
-};
-
-use crate::render::Renderer;
-use rpc::{
     Config,
     Theme,
     Style,
     theme::ToRgbaFloat32,
 };
-use crate::editor::editor_rpc::Core;
-use crate::editor::commands::EditViewCommands;
+use crate::render::Renderer;
+use crate::editor::{
+    plugins::{
+        PluginId,
+        PluginState,
+    },
+    linecache::LineCache,
+    editor_rpc::Core,
+    commands::EditViewCommands,
+};
 use super::{
     widget::{
         Widget,
@@ -167,6 +168,7 @@ impl Widget for EditView {
         let x0 = pad + gutter_width;
         let mut y = self.line_to_content_y(first_line) - self.scroll_offset;
 
+        // Background & Gutter
         self.background.queue_draw(renderer);
         self.gutter.set_width(gutter_width);
         self.gutter.queue_draw(renderer);
@@ -287,7 +289,6 @@ impl EditView {
             language: None,
         };
         let status_bar = StatusWidget::new(2, status, &resources);
-        println!("created status bar");
 
         Self {
             index,
@@ -401,13 +402,13 @@ impl EditView {
     }
 
     fn save_to_file(&mut self) {
-        if self.view_id.is_some() {
+        if self.view_id.is_some() && self.filepath.is_some() {
             self.send_notification("save", &json!({
                 "view_id": self.view_id,
                 "file_path": self.filepath,
             }));
         } else {
-            self.status_bar.update_command_section("Unable to save, no filepath set");
+            self.status_bar.update_command_section("Unable to save, no view set");
         }
     }
 
@@ -512,6 +513,13 @@ impl EditView {
         self.send_notification("set_theme", &json!({ "theme_name": theme_name }));
     }
 
+    fn plugin_started(&mut self, plugin: PluginState) {
+        println!("Plugin started: {:?}", plugin);
+    }
+    fn plugin_stopped(&mut self, plugin_id: PluginId) {
+        println!("Plugin stopped: {}", plugin_id);
+    }
+
     fn set_mode(&mut self, mode: Mode) {
         self.status_bar.set_mode(mode);
         self.dirty = true;
@@ -541,7 +549,7 @@ impl EditView {
             "e" => actions.push(Action::Open),
             "q" => actions.push(Action::Quit),
             "wq" => actions.extend(vec![Action::Save, Action::Quit]),
-            _ => {}
+            _ => {},
         }
 
         if actions.len() == 0 {
@@ -563,6 +571,8 @@ impl EditView {
             EditViewCommands::ThemeChanged(theme) => self.theme_changed(theme),
             EditViewCommands::LanguageChanged(language_id) => self.language_changed(language_id),
             EditViewCommands::DefineStyle(style) => self.define_style(style),
+            EditViewCommands::PluginStarted(plugin) => self.plugin_started(plugin),
+            EditViewCommands::PluginStopped(plugin_id) => self.plugin_stopped(plugin_id), 
             EditViewCommands::Action(action) => match action {
                     Action::InsertChar(ch) => self.send_char(ch),
                     Action::SetMode(mode) => self.set_mode(mode),

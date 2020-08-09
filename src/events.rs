@@ -3,8 +3,11 @@ pub mod mapper_winit;
 pub mod binding;
 
 use winit::event_loop::EventLoop;
+use rpc::Action;
 
-pub enum EditorEvent {}
+pub enum EditorEvent {
+    Action(Action),
+}
 
 pub fn create_event_loop() -> EventLoop<EditorEvent> {
     EventLoop::<EditorEvent>::with_user_event()

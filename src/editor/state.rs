@@ -5,6 +5,7 @@ use std::sync::{
 use std::collections::HashMap;
 
 use winit::event::ModifiersState;
+use winit::event_loop::EventLoopProxy;
 
 use super::ui::{
     view::EditView,
@@ -16,6 +17,7 @@ use rpc::{
 };
 use super::commands::EditViewCommands;
 use crate::events::{
+    EditorEvent,
     state::InputState,
     mapper_winit::map_scancode,
     binding::{
@@ -26,27 +28,35 @@ use crate::events::{
         default_key_bindings,
     },
 };
+use super::plugins::{
+    PluginId,
+    PluginState,
+};
 
 pub type ViewId = String;
 
 pub struct EditorState {
     pub focused: Option<ViewId>,
     pub views: HashMap<ViewId, EditView>, 
-    available_themes: Option<Vec<String>>,
-    available_languages: Option<Vec<String>>, 
+    themes: Vec<String>,
+    languages: Vec<String>, 
+    plugins: HashMap<PluginId, PluginState>, 
     key_bindings: Vec<KeyBinding>,
     mouse_bindings: Vec<MouseBinding>,
+    event_proxy: Arc<EventLoopProxy<EditorEvent>>,
 }
 
 impl EditorState {
-    pub fn new() -> Self {
+    pub fn new(event_proxy: Arc<EventLoopProxy<EditorEvent>>) -> Self {
         Self {
             focused: Default::default(),
             views: HashMap::new(),
-            available_themes: None,
-            available_languages: None,
+            plugins: HashMap::new(),
+            themes: vec![],
+            languages: vec![],
             mouse_bindings: default_mouse_bindings(),
             key_bindings: default_key_bindings(),
+            event_proxy,
         }
     }
     
@@ -59,10 +69,23 @@ impl EditorState {
     }
 
     pub fn set_available_themes(&mut self, themes: Vec<String>) {
-        self.available_themes = Some(themes);
+        self.themes = themes;
     }
     pub fn set_available_languages(&mut self, languages: Vec<String>) {
-        self.available_languages = Some(languages);
+        self.languages = languages;
+    }
+    pub fn set_available_plugins(&mut self, plugins: Vec<PluginState>) {
+        for plugin in plugins.iter() {
+            let name = plugin.name.clone();
+            self.plugins.insert(name, plugin.clone());
+        }
+    }
+    pub fn get_plugin(&self, plugin_id: PluginId) -> Option<PluginState> {
+        if let Some(plugin) = self.plugins.get(&plugin_id) {
+            Some(plugin.clone())
+        } else {
+            None
+        }
     }
 
     pub fn process_keyboard_input(&self, mode: Mode, modifiers: ModifiersState, key: Key) -> Option<(Action, ActionTarget)> {
@@ -70,7 +93,6 @@ impl EditorState {
             Key::KeyCode(virtual_keycode) => Some(virtual_keycode),
             Key::ScanCode(scancode) => map_scancode(scancode),
         };
-        println!("process_keyboard_input - mode: {:?}, key: {:?}", mode, key);
         if kc.is_none() {
             return None;
         }
@@ -116,8 +138,19 @@ impl EditorState {
                 }
             }
             if let edit_view = self.get_focused_view() {
-                if command.is_some() {
-                    edit_view.poke_target(command.unwrap(), target.unwrap());
+                if command.is_some() && target.is_some() {
+                    match target.unwrap() {
+                        ActionTarget::EventLoop => {
+                            match command.unwrap() {
+                                EditViewCommands::Action(action) => {
+                                    self.event_proxy.send_event(EditorEvent::Action(action));
+                                },
+                            }
+                        },
+                        _ => {
+                            edit_view.poke_target(command.unwrap(), target.unwrap());
+                        }
+                    }
                     handled = true;
                 }
                 if should_mouse {
