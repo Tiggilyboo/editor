@@ -1,7 +1,7 @@
 # editor
 A cross platform low-level code editor
 
-![preview](https://i.imgur.com/4N6zNcF.png)
+![preview](https://imgur.com/download/EM5hMzA/)
 
 ## Frontend
 This editor is a frontend for [xi-editor](https://github.com/xi-editor/xi-editor)
