@@ -655,26 +655,14 @@ impl EditView {
                 Action::Open(filename) => self.open_file(filename),
                 Action::Split(filename) => self.split_view(filename),
                 Action::Close => self.close_view(),
+                Action::Save => self.save_to_file(),
                 Action::InsertChar(ch) => self.send_char(ch),
                 Action::SetMode(mode) => self.set_mode(mode),
                 Action::SetTheme(theme) => self.set_theme(theme.as_str()),
                 Action::SetLanguage(language) => self.set_language(language.as_str()),
                 Action::ToggleLineNumbers => self.show_line_numbers(!self.show_line_numbers),
-                Action::Save => self.save_to_file(),
-                Action::Back => self.send_action("delete_backward"),
-                Action::DeleteChar => self.send_action("delete_forward"),
-                Action::Delete((motion, quantity)) => match motion {
-                    Motion::Left => self.send_action("delete_backward"),
-                    Motion::Right => self.send_action("delete_forward"),
-                    _ => (),
-                },
                 Action::Undo => self.send_action("undo"),
                 Action::Redo => self.send_action("redo"),
-                Action::AddCursor(motion) => match motion {
-                    Motion::Up => self.send_action("add_selection_above"),
-                    Motion::Down => self.send_action("add_selection_below"),
-                    _ => (),
-                },
                 Action::ClearSelection => self.send_action("collapse_selections"),
                 Action::SingleSelection => self.send_action("cancel_operation"),
                 Action::NewLine => self.send_action("insert_newline"),
@@ -689,23 +677,27 @@ impl EditView {
                         });
                 },
                 Action::Motion((motion, quantity)) => match quantity.unwrap_or_default() {
-                    Quantity::Number(n) => for c in 0..n { match motion {
+                    Quantity::Number(n) => for _ in 0..n { match motion {
                         Motion::Up => self.send_action("move_up"),
                         Motion::Down => self.send_action("move_down"),
                         Motion::Left => self.send_action("move_left"),
                         Motion::Right => self.send_action("move_right"),
                         Motion::First => self.send_action("move_to_left_end_of_line"),
+                        Motion::FirstOccupied => self.send_action("move_to_left_end_of_line"), // TODO: inaccurate
                         Motion::Last => self.send_action("move_to_right_end_of_line"),
-                        Motion::WordLeft => self.send_action("move_word_left"),
-                        Motion::WordRight => self.send_action("move_word_right"),
-                        _ => (),
+                        _ => return false,
                     } },
-                    Quantity::Page(n) => for c in 0..n { match motion {
+                    Quantity::Page(n) => for _ in 0..n { match motion {
                         Motion::Up => self.send_action("scroll_page_up"),
                         Motion::Down => self.send_action("scroll_page_down"),
-                        _ => (),
+                        _ => return false,
                     } },
-                    _ => (),
+                    Quantity::Word(n) => for _ in 0..n { match motion {
+                        Motion::Left => self.send_action("move_word_left"),
+                        Motion::Right => self.send_action("move_word_right"),
+                        _ => return false,
+                    } },
+                    _ => return false,
                 },
                 Action::Select((motion, quantity)) => match quantity.unwrap_or_default() {
                     Quantity::All => self.send_action("select_all"),
@@ -721,18 +713,32 @@ impl EditView {
                             self.send_action("move_down_and_modify_selection");
                         }
                     },
-                    Quantity::Number(n) => match motion {
+                    Quantity::Number(n) => for _ in 0..n { match motion {
                         Motion::Up => self.send_action("move_up_and_modify_selection"),
                         Motion::Down => self.send_action("move_down_and_modify_selection"),
                         Motion::Left => self.send_action("move_left_and_modify_selection"),
                         Motion::Right => self.send_action("move_right_and_modify_selection"),
                         Motion::First => self.send_action("move_to_left_end_of_line_and_modify_selection"),
+                        Motion::FirstOccupied => self.send_action("move_to_left_end_of_line_and_modify_selection"),
                         Motion::Last => self.send_action("move_to_right_end_of_line_and_modify_selection"),
-                        Motion::WordLeft => self.send_action("move_word_left_and_modify_selection"),
-                        Motion::WordRight => self.send_action("move_word_right_and_modify_selection"),
                         _ => return false,
-                    },
+                    } },
+                    Quantity::Word(n) => for _ in 0 ..n { match motion {
+                        Motion::Left => self.send_action("move_word_left_and_modify_selection"),
+                        Motion::Right => self.send_action("move_word_right_and_modify_selection"),
+                        _ => return false,
+                    } },
                     _ => return false,
+                },
+                Action::Delete((motion, quantity)) => match motion {
+                    Motion::Left => self.send_action("delete_backward"),
+                    Motion::Right => self.send_action("delete_forward"),
+                    _ => (),
+                },
+                Action::AddCursor(motion) => match motion {
+                    Motion::Up => self.send_action("add_selection_above"),
+                    Motion::Down => self.send_action("add_selection_below"),
+                    _ => (),
                 },
                 _ => return false,
             },

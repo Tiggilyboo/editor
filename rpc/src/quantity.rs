@@ -4,6 +4,7 @@ pub enum Quantity {
     Page(usize),
     Line(usize),
     Word(usize),
+    Semantic(usize),
     All,
 }
 

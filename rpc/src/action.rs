@@ -9,21 +9,22 @@ pub enum ActionTarget {
     EventLoop,
 }
 
+pub type MotionQuantity = (Motion, Option<Quantity>);
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {
     Open(Option<String>),
     Split(Option<String>),
-    Motion((Motion, Option<Quantity>)),
-    Select((Motion, Option<Quantity>)),
-    Delete((Motion, Option<Quantity>)),
+    Motion(MotionQuantity),
+    Select(MotionQuantity),
+    Delete(MotionQuantity),
+    AddCursor(Motion),
     SetMode(Mode),
     SetTheme(String),
     SetLanguage(String),
     DefineCommand((String, Box<Action>)),
     InsertChar(char),
     Close,
-    DeleteChar,
-    Back,
     ExecuteCommand,
     ToggleLineNumbers,
     Indent,
@@ -41,11 +42,8 @@ pub enum Action {
     DecreaseFontSize,
     ClearSelection,
     SingleSelection,
-    AddCursor(Motion),
     Undo,
     Redo,
     UpperCase,
     LowerCase,
-
-    None,
 }
