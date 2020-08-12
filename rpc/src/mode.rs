@@ -2,15 +2,17 @@ use std::fmt;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub enum Mode {
-    Normal,
-    Insert,
-    Replace,
-    Command,
-    Select,
-    SelectLine,
-    SelectBlock,
-    Window,
-    Motion,
+    Normal,         
+    Insert,         // i
+    Delete,         // d
+    Replace,        // R
+    Command,        // :
+    Select,         // v
+    SelectLine,     // V
+    SelectBlock,    // C-v
+    Window,         // w
+    Motion,         // g
+    FindReplace,    // ?
     None,
 }
 

@@ -14,6 +14,7 @@ use rpc::{
     Config,
     Theme,
     Style,
+    Query,
 };
 use crate::editor::editor_rpc::Core;
 
@@ -31,5 +32,6 @@ pub enum EditViewCommands {
     DefineStyle(Style),
     PluginStarted(PluginState),
     PluginStopped(PluginId),
+    Queries(Vec<Query>),
     Action(Action),
 }

@@ -309,7 +309,11 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
         Back, +Mode::Command, @ActionTarget::StatusBar; motion!(Delete Left);
         Delete, +Mode::Command, @ActionTarget::StatusBar; motion!(Delete Right);
         Return, +Mode::Command; Action::ExecuteCommand;
-        D,      shift!(), +Mode::Normal; motion!(Delete Last);
+        A,      +Mode::Normal; motion!(Motion Right), Action::SetMode(Mode::Insert);
+        A,      shift!(), +Mode::Normal; motion!(Motion Last), Action::SetMode(Mode::Insert);
+        D,      +Mode::Normal; Action::SetMode(Mode::Delete);
+        D,      +Mode::Delete; motion!(Motion First), motion!(Select Last), Action::Cut, motion!(Delete Left), Action::SetMode(Mode::Normal);
+        D,      shift!(), +Mode::Normal; motion!(Select Last), motion!(Delete Left);
     );
     bindings.extend(bind_motions(Mode::Normal));
     bindings.extend(bind_motions(Mode::Insert));
@@ -338,10 +342,10 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
         Delete, ~Mode::Insert; motion!(Motion Right); 
         Space, ~Mode::Insert; motion!(Motion Right); 
         
-        Y, +Mode::Select; Action::Copy;
-        Y, +Mode::SelectLine; Action::Copy;
-        Y, +Mode::SelectBlock; Action::Copy;
-        Copy, +Mode::Insert; Action::Copy;
+        Y, +Mode::Select; Action::Yank;
+        Y, +Mode::SelectLine; Action::Yank;
+        Y, +Mode::SelectBlock; Action::Yank;
+        Copy, +Mode::Insert; Action::Yank;
         Cut, +Mode::Insert; Action::Cut;
 
         P, ~Mode::Insert; Action::Paste;
@@ -360,6 +364,12 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
 
         Up, shift!() | ctrl!(), +Mode::Insert; Action::AddCursor(Motion::Up);
         Down, shift!() | ctrl!(), +Mode::Insert; Action::AddCursor(Motion::Down);
+        
+        W,      +Mode::Normal; motion!(Motion Right by Word);
+        E,      +Mode::Normal; motion!(Motion RightEnd by Word);
+        W,      shift!(), +Mode::Normal; motion!(Motion RightEnd by Semantic);
+        O,      +Mode::Normal; motion!(Motion Last), Action::NewLine, Action::SetMode(Mode::Insert);
+        O,      shift!(), +Mode::Normal; motion!(Motion Up), motion!(Motion Last), Action::NewLine, Action::SetMode(Mode::Insert);
     ));
 
     bindings

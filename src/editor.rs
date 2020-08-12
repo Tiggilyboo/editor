@@ -45,6 +45,7 @@ use rpc::{
     Theme,
     Style,
     Action,
+    FindStatus,
 };
 use editor_rpc::{
     Core,
@@ -272,6 +273,15 @@ impl App {
                     }
                 }
                 
+            },
+            "find_status" => {
+                if let Ok(find_status) = from_value::<FindStatus>(params.clone()) {
+                    if let Ok(ref mut state) = self.state.clone().try_lock() {
+                        if let Some(ref mut view) = state.views.get_mut(&find_status.view_id) {
+                            view.poke(EditViewCommands::Queries(find_status.queries));
+                        }
+                    }
+                }
             },
             _ => println!("unhandled core->fe method: {}", method),
         }

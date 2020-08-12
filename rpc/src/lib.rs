@@ -8,6 +8,7 @@ mod config;
 mod quantity;
 mod mode;
 mod motion;
+mod find;
 pub mod theme;
 
 pub use config::Config;
@@ -18,6 +19,7 @@ pub use annotations::{
     Annotation,
     AnnotationType,
 };
+pub use find::*;
 pub use action::*;
 pub use quantity::*;
 pub use mode::*;

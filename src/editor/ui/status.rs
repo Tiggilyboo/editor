@@ -17,17 +17,17 @@ use super::widget::{
     hash_widget,
 };
 use super::primitive::PrimitiveWidget;
+use super::editable_text::EditableTextWidget;
 use super::view::Resources;
+use super::colour::ColourRGBA;
 
 use rpc::{
     Action,
-    Quantity,
     Mode,
     Motion,
+    Quantity,
 };
 use crate::render::Renderer;
-
-type ColourRGBA = [f32; 4];
 
 // TODO: Derive from config
 const MODE_NORMAL_COLOUR: ColourRGBA = [0.3, 0.9, 0.3, 1.0];
@@ -51,8 +51,7 @@ pub struct StatusWidget {
     mode_section: OwnedSection,
     filename_section: OwnedSection,
     status_section: OwnedSection,
-    command_section: OwnedSection,
-    command_select_pos: usize,
+    command_widget: EditableTextWidget,
 
     dirty: bool,
 }
@@ -106,13 +105,16 @@ impl Widget for StatusWidget {
             self.mode_primitive.queue_draw(renderer);
         }
 
+        // Command Widget
+        if self.focused && self.mode() == Mode::Command {
+            self.command_widget.queue_draw(renderer);
+        }
+
         if let ctx = &mut renderer.get_text_context().clone().borrow_mut() {
             // Mode
             if self.focused {
                 ctx.queue_text(&self.mode_section.to_borrowed());
-                if self.mode() == Mode::Command {
-                    ctx.queue_text(&self.command_section.to_borrowed());
-                } else {
+                if self.mode() != Mode::Command {
                     ctx.queue_text(&self.filename_section.to_borrowed());
                 }
             } else {
@@ -144,7 +146,7 @@ impl StatusWidget {
     pub fn new(index: usize, status: Status, resources: &Resources) -> Self {
         let background = PrimitiveWidget::new(2, [0.0, 0.0, 0.2], [0.0, 0.0], resources.bg);
         let mode_primitive = PrimitiveWidget::new(3, [0.0, 0.0, 0.2], [0.0, 0.0], MODE_NORMAL_COLOUR);
-        let command_section = create_empty_section(HorizontalAlign::Left);
+        let command_widget = EditableTextWidget::new(4, resources); 
         let filename_section = create_empty_section(HorizontalAlign::Left);
         let mode_section = create_empty_section(HorizontalAlign::Left);
         let status_section = create_empty_section(HorizontalAlign::Left);
@@ -159,12 +161,11 @@ impl StatusWidget {
             mode_colour: resources.sel,
             scale: resources.scale,
             depth: 0.5,
-            command_select_pos: 0,
             dirty: true,
             focused: false,
             background,
             mode_primitive,
-            command_section,
+            command_widget,
             filename_section,
             mode_section,
             status_section,
@@ -191,9 +192,10 @@ impl StatusWidget {
         self.position = [x, y];
         self.background.set_position(x, y);
         self.mode_primitive.set_position(x, y);
+        self.command_widget.set_position(after_mode_x + (self.scale / 2.0), y);
+        self.command_widget.set_size([self.size[0] - mode_width, self.size[1]]);
         self.mode_section.screen_position = (x + (self.scale / 4.0), y);
         self.filename_section.screen_position = (after_mode_x, y);
-        self.command_section.screen_position = (after_mode_x + (self.scale / 2.0), y);
         self.dirty = true;
     }
 
@@ -214,14 +216,18 @@ impl StatusWidget {
         self.dirty = true;
     }
 
+    pub fn set_command_text(&mut self, command: &str) {
+        self.command_widget.set_text(command);
+    }
+
     pub fn set_mode(&mut self, mode: Mode) {
         self.mode_section.text[0].text = mode.to_string();
         self.mode_section.text[0].extra.color = self.mode_colour;
         self.mode_primitive.set_colour(mode_colour(mode));
 
         if mode != Mode::Command {
-            self.update_command_section("");
-            self.move_command_cursor(Motion::First, Default::default());
+            self.set_command_text("");
+            self.command_widget.poke(Action::Motion((Motion::First, Some(Quantity::default()))));
         }
 
         self.status.mode = mode; 
@@ -233,10 +239,10 @@ impl StatusWidget {
         self.bg_colour = bg;
         self.mode_colour = mode;
         self.background.set_colour(self.bg_colour);
+        self.command_widget.set_colour(fg);
 
         self.mode_section.text[0].extra.color = mode;
         self.status_section.text[0].extra.color = fg;
-        self.command_section.text[0].extra.color = fg;
         self.filename_section.text[0].extra.color = fg;
     }
 
@@ -245,9 +251,9 @@ impl StatusWidget {
         self.size[1] = scale;
 
         let pxs = PxScale::from(scale);
+        self.command_widget.set_scale(scale);
         self.mode_section.text[0].scale = pxs;
         self.status_section.text[0].scale = pxs;
-        self.command_section.text[0].scale = pxs;
         self.filename_section.text[0].scale = pxs;
     }
 
@@ -272,97 +278,25 @@ impl StatusWidget {
         self.status_section.text[0].extra.color = self.fg_colour;
     }
 
-    pub fn update_command_section(&mut self, command: &str) {
-        self.command_section.text[0].text = command.to_string();
-    }
-
     pub fn update_filename(&mut self, filename: Option<String>) {
         self.filename_section.text[0].text = filename.clone().unwrap_or(String::new());
         self.status.filename = filename;
     }
 
+    #[inline]
     pub fn mode(&self) -> Mode {
         self.status.mode
     }
 
+    #[inline]
     pub fn get_command(&self) -> String {
-        self.command_section.text[0].text.to_string()
+        self.command_widget.text() 
     }
 
-    fn move_command_cursor(&mut self, motion: Motion, quantity: Option<Quantity>) -> bool {
-        let n = match quantity.unwrap_or_default() {
-            Quantity::Number(c) => c,
-            _ => 1,
-        };
-
-        match motion {
-            Motion::Left => {
-                if self.command_select_pos > n {
-                    self.command_select_pos -= n;
-                } else {
-                    self.command_select_pos = 0;
-                }
-            },
-            Motion::Right => {
-                if self.command_select_pos + n < self.command_section.text[0].text.len() {
-                    self.command_select_pos += n;
-                } else {
-                    self.command_select_pos = self.command_section.text[0].text.len();
-                }
-            },
-            Motion::First => self.command_select_pos = 0,
-            Motion::Last => self.command_select_pos = self.command_section.text[0].text.len(),
-            _ => return false,
-        }
-
-        true
-    }
-
-    fn handle_char(&mut self, ch: char) -> bool {
-        self.command_section.text[0].text.push(ch);
-        self.move_command_cursor(Motion::Right, None);
-        true
-    }
-    fn handle_delete(&mut self, motion: Motion, quantity: Option<Quantity>) -> bool {
-        let q = quantity.unwrap_or_default();
-        match q {
-            Quantity::All | Quantity::Line(_) => {
-                self.command_section.text[0].text = "".to_string();
-            },
-            Quantity::Number(n) => {
-                for c in 0..n {
-                    match motion {
-                        Motion::Left => {
-                            if self.command_section.text[0].text.len() > 0
-                            && self.command_select_pos < self.command_section.text[0].text.len() {
-                                self.command_section.text[0].text.remove(self.command_select_pos);
-                                self.move_command_cursor(Motion::Left, None);
-                            }
-                        },
-                        Motion::Right => {
-                            if self.command_select_pos + 1 < self.command_section.text[0].text.len() {
-                                self.command_section.text[0].text.remove(self.command_select_pos + 1);
-                            }
-                        },
-                        _ => break,
-                    }
-                }
-            }
-            _ => return false,
-        };
-
-        true
-    }
-
+    #[inline]
     pub fn poke(&mut self, action: Box<Action>) -> bool {
         self.dirty = true;
-
-        match *action {
-            Action::Delete((motion, quantity)) => self.handle_delete(motion, quantity),
-            Action::Motion((motion, quantity)) => self.move_command_cursor(motion, quantity),
-            Action::InsertChar(ch) => self.handle_char(ch),
-            _ => false,
-        }
+        self.command_widget.poke(*action)
     }
 }
 

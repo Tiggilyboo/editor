@@ -8,6 +8,7 @@ use super::widget::{
     Widget,
     hash_widget,
 };
+use super::colour::ColourRGBA;
 use crate::render::Renderer;
 
 use glyph_brush::{
@@ -30,7 +31,6 @@ pub struct TextWidget {
     dirty: bool,
     section: OwnedSection,
     cursor: Vec<usize>,
-    styles: Vec<StyleSpan>,
 }
 
 impl Hash for TextWidget {
@@ -41,7 +41,7 @@ impl Hash for TextWidget {
 }
 
 impl TextWidget {
-    pub fn from_line(index: usize, line: &Line, scale: f32, colour: [f32; 4], styles: &HashMap<usize, Style>) -> Self {
+    pub fn from_line(index: usize, line: &Line, scale: f32, colour: ColourRGBA, styles: &HashMap<usize, Style>) -> Self {
         let text = line.text().trim_end_matches(|c| c == '\r' || c == '\n');
         let section = Section::default()
             .with_layout(Layout::default_single_line());
@@ -80,29 +80,8 @@ impl TextWidget {
             index,
             dirty: true,
             cursor: line.cursor().to_owned(),
-            styles: line.styles().to_vec(),
             section: section.with_text(texts).to_owned(),
         }
-    }
-
-    pub fn new(index: usize, text: &str, scale: f32, colour: [f32; 4], depth: f32) -> Self {
-        Self {
-            index,
-            dirty: true,
-            cursor: vec!(),
-            styles: vec!(),
-            section: Section::default()
-                .add_text(Text::new(text)
-                    .with_color(colour)
-                    .with_z(depth)
-                    .with_scale(scale)
-                ).with_layout(Layout::default_single_line())
-                .to_owned(),
-        }
-    }
-
-    pub fn set_colour(&mut self, text_index: usize, colour: [f32; 4]) {
-        self.section.text[text_index].extra.color = colour;
     }
 
     pub fn set_position(&mut self, x: f32, y: f32) {

@@ -24,6 +24,7 @@ use rpc::{
     Action,
     ActionTarget,
     Quantity,
+    Query,
     Mode,
     Motion,
     Config,
@@ -46,6 +47,7 @@ use crate::events::{
     EditorEvent,
 };
 use super::{
+    colour::ColourRGBA,
     widget::{
         Widget,
         hash_widget,
@@ -56,13 +58,13 @@ use super::{
         StatusWidget,
         Status,
     },
+    find_replace::FindWidget,
 };
 
 pub const CURSOR_TEXT: &str = "\u{2588}";
 
 type Method = String;
 type Params = Value;
-type ColourRGBA = [f32; 4];
 
 pub struct Resources {
     pub fg: ColourRGBA,
@@ -116,6 +118,7 @@ pub struct EditView {
     gutter: PrimitiveWidget,
     background: PrimitiveWidget,
     status_bar: StatusWidget,
+    find_replace: FindWidget,
     current_line: usize,
     show_line_numbers: bool,
 }
@@ -130,6 +133,7 @@ impl Hash for EditView {
         self.gutter.hash(state);
         self.background.hash(state);
         self.status_bar.hash(state);
+        self.find_replace.hash(state);
         self.current_line.hash(state);
         self.show_line_numbers.hash(state);
     }
@@ -301,6 +305,7 @@ impl EditView {
             language: None,
         };
         let status_bar = StatusWidget::new(2, status, &resources);
+        let find_replace = FindWidget::new(3, &resources);
 
         let pad = resources.scale / 4.0;
         let position = [pad, pad];
@@ -325,6 +330,7 @@ impl EditView {
             event_proxy: None,
             filepath: filename,
             status_bar,
+            find_replace,
             resources,
             background,
             gutter,
@@ -441,8 +447,6 @@ impl EditView {
                 "view_id": self.view_id,
                 "file_path": self.filepath,
             }));
-        } else {
-            self.status_bar.update_command_section("Unable to save, no view set");
         }
     }
 
@@ -557,6 +561,10 @@ impl EditView {
     fn plugin_stopped(&mut self, plugin_id: PluginId) {
         println!("Plugin stopped: {}", plugin_id);
     }
+    fn queries_changed(&mut self, queries: Vec<Query>) {
+        self.find_replace.set_queries(queries);
+    }
+
     fn close_view(&mut self) {
         if let Some(view_id) = self.view_id.clone() {
             self.send_notification("close_view", &json!({ "view_id": view_id }));
@@ -608,7 +616,7 @@ impl EditView {
 
     pub fn execute_command(&mut self) -> Vec<Action> {
         let command_text = self.status_bar.get_command();
-        self.status_bar.update_command_section("");
+        self.status_bar.set_command_text("");
         self.set_mode(Mode::Normal);
 
         let mut actions: Vec<Action> = vec!(); 
@@ -619,6 +627,7 @@ impl EditView {
             None
         };
 
+        // TODO: Abstract and make this not crap
         match args[0] {
             "e" => actions.push(Action::Open(arg1)),
             "w" => actions.push(Action::Save),
@@ -629,8 +638,7 @@ impl EditView {
         }
 
         if actions.len() == 0 {
-            let message = format!("No command found: '{}'", command_text.clone());
-            self.status_bar.update_filename(Some(message));
+            println!("No command found: '{}'", command_text.clone());
         }
 
         actions
@@ -651,6 +659,7 @@ impl EditView {
             EditViewCommands::DefineStyle(style) => self.define_style(style),
             EditViewCommands::PluginStarted(plugin) => self.plugin_started(plugin),
             EditViewCommands::PluginStopped(plugin_id) => self.plugin_stopped(plugin_id), 
+            EditViewCommands::Queries(queries) => self.queries_changed(queries),
             EditViewCommands::Action(action) => match action {
                 Action::Open(filename) => self.open_file(filename),
                 Action::Split(filename) => self.split_view(filename),
@@ -666,7 +675,14 @@ impl EditView {
                 Action::ClearSelection => self.send_action("collapse_selections"),
                 Action::SingleSelection => self.send_action("cancel_operation"),
                 Action::NewLine => self.send_action("insert_newline"),
-                Action::Copy => self.send_action("yank"),
+                Action::Cut => self.send_action("yank"),
+                Action::Copy => self.send_action("copy"),
+                Action::Yank => self.send_action("copy"), // xi-editor "yank" is like cut, we want vim behaviour...
+                Action::Paste => self.send_action("paste"),
+                Action::Indent => self.send_action("indent"),
+                Action::Outdent => self.send_action("outdent"),
+                Action::InsertTab => self.send_action("insert_tab"),
+                Action::DuplicateLine => self.send_action("duplicate_line"),
                 Action::IncreaseFontSize => self.increase_font_size(),
                 Action::DecreaseFontSize => self.decrease_font_size(),
                 Action::ExecuteCommand => {
