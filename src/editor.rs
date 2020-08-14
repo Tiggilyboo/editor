@@ -1,6 +1,7 @@
 extern crate dirs;
 
 mod xi_thread;
+mod plugins;
 
 pub mod ui;
 pub mod state;
@@ -18,7 +19,10 @@ use super::events::{
     self,
 };
 
-use winit::event_loop::ControlFlow;
+use winit::event_loop::{
+    ControlFlow,
+    EventLoopProxy,
+};
 use winit::event::{
     WindowEvent,
     Event,
@@ -28,6 +32,8 @@ use serde_json::{
     json,
     from_value,
 };
+use plugins::PluginState;
+use xi_core_lib::plugins::Command;
 
 use ui::view::{
     EditView,
@@ -38,6 +44,8 @@ use rpc::{
     Config, 
     Theme,
     Style,
+    Action,
+    FindStatus,
 };
 use editor_rpc::{
     Core,
@@ -74,10 +82,10 @@ impl AppDispatcher {
 }
 
 impl App {
-    fn new(core: Core) -> Self { 
+    fn new(core: Core, event_loop_proxy: EventLoopProxy<EditorEvent>) -> Self { 
         Self {
             core: Arc::new(Mutex::new(core)),
-            state: Arc::new(Mutex::new(EditorState::new())),
+            state: Arc::new(Mutex::new(EditorState::new(event_loop_proxy))),
             input: Arc::new(Mutex::new(InputState::new())),
         }
     }
@@ -97,9 +105,8 @@ impl App {
         view_state.poke(command);
     }
 
-    pub fn open_file_in_view(&self, filename: Option<String>, screen_size: [f32; 2], font_size: f32) {
+    pub fn open_new_view(&self, filename: Option<String>, screen_size: [f32; 2], font_size: f32) {
         let mut params = json!({});
-
         if filename.is_some() {
             params["file_path"] = json!(filename);
         };
@@ -114,10 +121,13 @@ impl App {
                 state.focused = Some(view_id.clone());
                 state.views.insert(view_id.clone(), EditView::new(0, font_size, filename));
 
+                let proxy = state.get_event_proxy().clone();
                 let edit_view = state.get_focused_view();
                 edit_view.poke(EditViewCommands::Core(core));
+                edit_view.poke(EditViewCommands::Proxy(proxy));
                 edit_view.poke(EditViewCommands::ViewId(view_id));
-                edit_view.poke(EditViewCommands::Resize(screen_size));
+
+                state.align_views_horizontally(screen_size);
             } else {
                 println!("unable to lock state to set focused view_id with new EditView widget");
             }
@@ -127,11 +137,26 @@ impl App {
         self.set_default_theme();
     }
 
+    pub fn close_view(&self, view_id: String) -> bool {
+        if let Ok(ref mut state) = self.state.clone().try_lock() {
+            state.views.remove(&view_id);
+            if state.views.len() > 0 {
+                state.focused = Some(state.views.iter().nth(0).unwrap().0.clone());
+                return false;
+            } else {
+                return true;
+            }
+        }
+
+        false
+    }
+
     // TODO: Derive from config somewhere?
     fn set_default_theme(&self) {
         self.send_notification("set_theme", &json!({ "theme_name": "Solarized (dark)" }));
     }
 
+    // TODO: RPC this crap in structs, this is dirty
     fn handle_cmd(&self, method: &str, params: &Value) {
         match method {
             "update" => self.send_view_cmd(EditViewCommands::ApplyUpdate(params["update"].clone())),
@@ -191,6 +216,73 @@ impl App {
                     }
                 }
             }
+            "available_plugins" => {
+                let mut available_plugins: Vec<PluginState> = vec!();
+                let raw_plugins = params["plugins"].as_array();
+
+                if let Ok(ref mut state) = self.state.clone().try_lock() {
+                    if let Some(plugins) = raw_plugins {
+                        for p in plugins.iter() {
+                            let name = p["name"].as_str().unwrap().to_string();
+                            let active = p["running"].as_bool().unwrap();
+                            
+                            available_plugins.push(PluginState {
+                                name,
+                                active,
+                                commands: vec![],
+                            });
+                        }
+
+                        state.set_available_plugins(available_plugins);
+                    }
+                }
+            },
+            "plugin_started" => {
+                let view_id = params["view_id"].as_str().unwrap().to_string();
+                let plugin = params["plugin"].as_str().unwrap().to_string();
+
+                if let Ok(ref mut state) = self.state.clone().try_lock() {
+                    let plugin = state.get_plugin(plugin.clone()).unwrap_or(PluginState {
+                        name: plugin,
+                        active: true,
+                        commands: vec![],
+                    });
+                    if let Some(edit_view) = state.views.get_mut(&view_id) {
+                        edit_view.poke(EditViewCommands::PluginStarted(plugin));
+                    }
+                }
+            },
+            "plugin_stopped" => {
+                let view_id = params["view_id"].as_str().unwrap().to_string();
+                let plugin = params["plugin"].as_str().unwrap().to_string();
+
+                if let Ok(ref mut state) = self.state.clone().try_lock() {
+                    if let Some(edit_view) = state.views.get_mut(&view_id) {
+                        edit_view.poke(EditViewCommands::PluginStopped(plugin));
+                    }
+                }
+            },
+            "update_cmds" => {
+                let _view_id = params["view_id"].as_str().unwrap().to_string();
+                let _plugin = params["plugin"].as_str().unwrap().to_string();
+                let cmds = params["cmds"].as_array().unwrap();
+
+                for raw_cmd in cmds.iter() {
+                    if let Ok(cmd) = from_value::<Command>(raw_cmd.clone()) {
+                        println!("Command needs to be mapped to actions: {:?}", cmd);
+                    }
+                }
+                
+            },
+            "find_status" => {
+                if let Ok(find_status) = from_value::<FindStatus>(params.clone()) {
+                    if let Ok(ref mut state) = self.state.clone().try_lock() {
+                        if let Some(ref mut view) = state.views.get_mut(&find_status.view_id) {
+                            view.poke(EditViewCommands::Queries(find_status.queries));
+                        }
+                    }
+                }
+            },
             _ => println!("unhandled core->fe method: {}", method),
         }
     }
@@ -238,20 +330,48 @@ pub fn run(title: &str, filename: Option<String>) {
     let handler = AppDispatcher::new();
     let (xi_peer, rx) = xi_thread::start_xi_thread();
     let core = Core::new(xi_peer, rx, handler.clone());
-    let app = App::new(core);
+
+    let event_proxy = events_loop.create_proxy();
+    let app = App::new(core, event_proxy);
 
     handler.set_app(&app);
     app.send_notification("client_started", &json!({
         "config_dir": get_xi_dir(),
     }));
-    app.open_file_in_view(filename, screen_dimensions, 20.0);
-
+    app.open_new_view(filename, screen_dimensions, 20.0);
 
     events_loop.run(move |event: Event<'_, EditorEvent>, _, control_flow: &mut ControlFlow| {
         *control_flow = ControlFlow::Wait;
 
         match event {
-            Event::UserEvent(_event) => {},
+            Event::UserEvent(event) => match event {
+                EditorEvent::Action(Action::Open(filename)) => {
+                    let view_id = if let Ok(state) = app.state.clone().try_lock() {
+                        state.focused.clone()
+                    } else {
+                        None
+                    };
+                    app.close_view(view_id.unwrap());
+                    app.open_new_view(filename, screen_dimensions, 20.0);  
+                },
+                EditorEvent::Action(Action::Split(filename)) => {
+                    app.open_new_view(filename, screen_dimensions, 20.0);
+                },
+                EditorEvent::Action(Action::Close) => {
+                    let view_id = if let Ok(state) = app.state.clone().try_lock() {
+                        state.focused.clone()
+                    } else {
+                        None
+                    };
+                    if view_id.is_some() && app.close_view(view_id.unwrap()) {
+                        *control_flow = ControlFlow::Exit;
+                    }
+                    if let Ok(ref mut state) = &mut app.state.clone().try_lock() {
+                        state.align_views_horizontally(screen_dimensions);
+                    }
+                },
+                _ => (),
+            },
             Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => {
                 *control_flow = ControlFlow::Exit;
             },
@@ -263,10 +383,8 @@ pub fn run(title: &str, filename: Option<String>) {
                 screen_dimensions[1] = size.height as f32;
                 
                 if let Ok(ref mut state) = app.state.clone().try_lock() {
-                    if state.focused.is_some() {
-                        let edit_view = state.get_focused_view();
-                        edit_view.poke(EditViewCommands::Resize(screen_dimensions));
-                    }
+                    state.align_views_horizontally(screen_dimensions);
+                    renderer.borrow().request_redraw();
                 }
             },
             Event::RedrawRequested(_window_id) => {
@@ -283,10 +401,18 @@ pub fn run(title: &str, filename: Option<String>) {
 
                     if let Ok(ref mut state) = app.state.clone().try_lock() {
                         if state.focused.is_some() {
-                            let view = state.get_focused_view();
-                            if view.dirty() {
-                                view.queue_draw(&mut renderer.borrow_mut());
-                                view.set_dirty(false);
+                            let focused = state.focused.clone().unwrap();
+                            let mut needs_redraw = false;
+                            for (id, view) in state.views.iter_mut() {
+                                let view_id = id.as_str().clone();
+                                if view.dirty() {
+                                    view.set_focused(view_id == focused); 
+                                    view.queue_draw(&mut renderer.borrow_mut());
+                                    view.set_dirty(false);
+                                    needs_redraw = true;
+                                }
+                            }
+                            if needs_redraw {
                                 renderer.borrow().request_redraw();
                             }
                         }

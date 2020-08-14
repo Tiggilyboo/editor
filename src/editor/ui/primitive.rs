@@ -4,9 +4,9 @@ use std::hash::{
 };
 use super::widget::{
     hash_widget,
-    calculate_hash,
     Widget,
 };
+use super::colour::ColourRGBA;
 use crate::render::Renderer;
 use crate::render::primitive::Primitive;
 
@@ -15,12 +15,12 @@ pub struct PrimitiveWidget {
     position: [f32; 2],
     depth: f32,
     size: [f32; 2],
-    colour: [f32; 4],
+    colour: ColourRGBA,
     dirty: bool,
 }
 
 impl PrimitiveWidget {
-    pub fn new(index: usize, position: [f32; 3], size: [f32; 2], colour: [f32; 4]) -> Self {
+    pub fn new(index: usize, position: [f32; 3], size: [f32; 2], colour: ColourRGBA) -> Self {
         Self {
             index,
             position: [position[0], position[1]],
@@ -55,7 +55,7 @@ impl PrimitiveWidget {
         self.dirty = dirty;
     }
 
-    pub fn set_colour(&mut self, colour: [f32; 4]) {
+    pub fn set_colour(&mut self, colour: ColourRGBA) {
         self.colour = colour;
         self.dirty = true;
     }
@@ -64,7 +64,7 @@ impl PrimitiveWidget {
         self.depth
     }
 
-    pub fn colour(&self) -> [f32; 4] {
+    pub fn colour(&self) -> ColourRGBA {
         self.colour
     }
 }

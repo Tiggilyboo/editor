@@ -4,12 +4,15 @@ use std::hash::{
     Hash,
     Hasher,
 };
-
 use std::sync::{
     Mutex,
     Weak,
 };
 
+use serde_json::{
+    json,
+    Value,
+};
 use glyph_brush::{
     OwnedSection,
     Section,
@@ -20,43 +23,48 @@ use glyph_brush::{
 use rpc::{ 
     Action,
     ActionTarget,
+    Quantity,
+    Query,
     Mode,
     Motion,
-};
-use crate::editor::linecache::LineCache;
-use serde_json::{
-    json,
-    Value,
-    Map,
-};
-
-use crate::render::Renderer;
-use rpc::{
     Config,
     Theme,
     Style,
     theme::ToRgbaFloat32,
 };
-use crate::editor::editor_rpc::Core;
-use crate::editor::commands::EditViewCommands;
+use crate::render::Renderer;
+use crate::editor::{
+    plugins::{
+        PluginId,
+        PluginState,
+    },
+    linecache::LineCache,
+    editor_rpc::Core,
+    commands::EditViewCommands,
+};
+use crate::events::{
+    EditorEventLoopProxy,
+    EditorEvent,
+};
 use super::{
+    colour::ColourRGBA,
     widget::{
         Widget,
         hash_widget,
     },
     text::TextWidget,
+    editable_text::CURSOR_TEXT,
     primitive::PrimitiveWidget,
     status::{
         StatusWidget,
         Status,
     },
+    find_replace::FindWidget,
 };
 
-pub const CURSOR_TEXT: &str = "\u{2588}";
 
 type Method = String;
 type Params = Value;
-type ColourRGBA = [f32; 4];
 
 pub struct Resources {
     pub fg: ColourRGBA,
@@ -92,13 +100,16 @@ impl Resources {
 pub struct EditView {
     index: usize,
     size: [f32; 2],
+    position: [f32; 2],
     dirty: bool,
+    focused: bool,
     view_id: Option<String>,
     filepath: Option<String>,
     line_cache: LineCache,
     scroll_offset: f32,
     viewport: Range<usize>,
     core: Weak<Mutex<Core>>,
+    event_proxy: Option<EditorEventLoopProxy>,
     pending: Vec<(Method, Params)>,
     config: Option<Config>,
     theme: Option<Theme>,
@@ -107,6 +118,7 @@ pub struct EditView {
     gutter: PrimitiveWidget,
     background: PrimitiveWidget,
     status_bar: StatusWidget,
+    find_replace: FindWidget,
     current_line: usize,
     show_line_numbers: bool,
 }
@@ -121,6 +133,7 @@ impl Hash for EditView {
         self.gutter.hash(state);
         self.background.hash(state);
         self.status_bar.hash(state);
+        self.find_replace.hash(state);
         self.current_line.hash(state);
         self.show_line_numbers.hash(state);
     }
@@ -132,8 +145,7 @@ impl Widget for EditView {
     }
 
     fn position(&self) -> [f32; 2] {
-        let pad = self.resources.scale / 4.0;
-        [pad, pad]
+        self.position
     }
 
     fn size(&self) -> [f32; 2] {
@@ -146,7 +158,7 @@ impl Widget for EditView {
         let line_gap = self.resources.line_gap();
         let pad = self.resources.pad();
         let drawable_height = self.drawable_text_height();
-        let first_line = self.y_to_line(0.0);
+        let first_line = self.y_to_line(self.position[1]);
         let last_line = std::cmp::min(self.y_to_line(drawable_height) + 1, self.line_cache.height());
         
         // Ensure our text context is up to date
@@ -164,9 +176,10 @@ impl Widget for EditView {
         } else {
             0.0
         };
-        let x0 = pad + gutter_width;
-        let mut y = self.line_to_content_y(first_line) - self.scroll_offset;
+        let x0 = self.position[0] + pad + gutter_width;
+        let mut y = self.position[1] + self.line_to_content_y(first_line) - self.scroll_offset;
 
+        // Background & Gutter
         self.background.queue_draw(renderer);
         self.gutter.set_width(gutter_width);
         self.gutter.queue_draw(renderer);
@@ -177,6 +190,7 @@ impl Widget for EditView {
 
         self.status_bar.set_mode_width(mode_width);
         self.status_bar.set_scale(line_gap);
+        self.status_bar.set_focused(self.focused);
         self.status_bar.queue_draw(renderer);
     
         // Selection start index, background = 0, gutter = 1, status_bar = 2, 3, 4
@@ -187,21 +201,23 @@ impl Widget for EditView {
                 let line_len = line_content.len();
 
                 // Selections
-                for selection in self.line_cache.get_selections(line_num).iter() {
-                    if selection.start_col == selection.end_col
-                    || selection.start_col >= line_len 
-                    || selection.end_col >= line_len {
-                        continue;
+                if self.focused {
+                    for selection in self.line_cache.get_selections(line_num).iter() {
+                        if selection.start_col == selection.end_col
+                        || selection.start_col >= line_len 
+                        || selection.end_col >= line_len {
+                            continue;
+                        }
+                        let sel_content = &line_content[selection.start_col..selection.end_col];
+                        let sel_x0 = text_ctx.borrow().get_text_width(&line_content[..selection.start_col]);
+                        let width = text_ctx.borrow().get_text_width(sel_content);
+
+                        let mut selection = PrimitiveWidget::new(
+                            s_ix, [x0 + sel_x0, y, 0.2], [width, scale], self.resources.sel);
+
+                        selection.queue_draw(renderer);
+                        s_ix += 1;
                     }
-                    let sel_content = &line_content[selection.start_col..selection.end_col];
-                    let sel_x0 = text_ctx.borrow().get_text_width(&line_content[..selection.start_col]);
-                    let width = text_ctx.borrow().get_text_width(sel_content);
-
-                    let mut selection = PrimitiveWidget::new(
-                        s_ix, [x0 + sel_x0, y, 0.2], [width, scale], self.resources.sel);
-
-                    selection.queue_draw(renderer);
-                    s_ix += 1;
                 }
 
                 // Line body
@@ -209,16 +225,18 @@ impl Widget for EditView {
                 text_widget.queue_draw(renderer);
 
                 // Cursors
-                let cursors = text_widget.get_cursor();
-                for offset in cursors {
-                    let section = &text_widget.get_section().to_borrowed();
-                    let pos = text_ctx.borrow_mut()
-                        .get_cursor_position(section, offset); 
+                if self.focused {
+                    let cursors = text_widget.get_cursor();
+                    for offset in cursors {
+                        let section = &text_widget.get_section().to_borrowed();
+                        let pos = text_ctx.borrow_mut()
+                            .get_cursor_position(section, offset); 
 
-                    let mut offside = create_offside_section(CURSOR_TEXT, self.resources.cursor, scale);
-                    offside.screen_position = pos;
-                    text_ctx.borrow_mut()
-                        .queue_text(&offside.to_borrowed());
+                        let mut offside = create_offside_section(CURSOR_TEXT, self.resources.cursor, scale);
+                        offside.screen_position = pos;
+                        text_ctx.borrow_mut()
+                            .queue_text(&offside.to_borrowed());
+                    }
                 }
 
                 // Line numbers
@@ -287,11 +305,16 @@ impl EditView {
             language: None,
         };
         let status_bar = StatusWidget::new(2, status, &resources);
-        println!("created status bar");
+        let find_replace = FindWidget::new(3, &resources);
+
+        let pad = resources.scale / 4.0;
+        let position = [pad, pad];
 
         Self {
             index,
             size,
+            position,
+            focused: false,
             dirty: true,
             view_id: None,
             config: None,
@@ -304,8 +327,10 @@ impl EditView {
             show_line_numbers: false,
             core: Default::default(),
             pending: Default::default(),
+            event_proxy: None,
             filepath: filename,
             status_bar,
+            find_replace,
             resources,
             background,
             gutter,
@@ -334,11 +359,27 @@ impl EditView {
         self.size = [size[0], height];
         self.gutter.set_height(height);
         self.background.set_size([size[0], height]);
-        self.status_bar.set_position(0.0, height); 
+        self.status_bar.set_position(self.position[0], height); 
         self.dirty = true;
 
         let (w, h) = (size[0], self.drawable_text_height());
         self.send_edit_cmd("resize", &json!({ "width": w, "height": h }));
+        self.update_viewport();
+    }
+    fn set_position(&mut self, x: f32, y: f32) {
+        self.position = [x, y];
+        self.status_bar.set_position(x, y + self.size[1] - self.status_bar.size()[1]);
+        self.background.set_position(x, y);
+        self.gutter.set_position(x, y);
+        self.dirty = true;
+    }
+    pub fn set_focused(&mut self, focused: bool) {
+        if self.focused != focused {
+            self.dirty = true;
+            self.status_bar.set_dirty(true);
+        }
+        self.status_bar.set_focused(focused);
+        self.focused = focused;
     }
 
     fn go_to_line(&mut self, line: usize) {
@@ -401,13 +442,11 @@ impl EditView {
     }
 
     fn save_to_file(&mut self) {
-        if self.view_id.is_some() {
+        if self.view_id.is_some() && self.filepath.is_some() {
             self.send_notification("save", &json!({
                 "view_id": self.view_id,
                 "file_path": self.filepath,
             }));
-        } else {
-            self.status_bar.update_command_section("Unable to save, no filepath set");
         }
     }
 
@@ -495,6 +534,7 @@ impl EditView {
         self.status_bar.set_colours(
             self.resources.gutter_bg.clone(), 
             self.resources.fg.clone(),
+            self.resources.cursor.clone(),
             BLACK);
         self.status_bar.set_scale(self.resources.scale);
 
@@ -512,6 +552,50 @@ impl EditView {
         self.send_notification("set_theme", &json!({ "theme_name": theme_name }));
     }
 
+    fn set_language(&mut self, language: &str) {
+        self.send_notification("set_language", &json!({ "language": language }));
+    }
+
+    fn plugin_started(&mut self, plugin: PluginState) {
+        println!("Plugin started: {:?}", plugin);
+    }
+    fn plugin_stopped(&mut self, plugin_id: PluginId) {
+        println!("Plugin stopped: {}", plugin_id);
+    }
+    fn queries_changed(&mut self, queries: Vec<Query>) {
+        self.find_replace.set_queries(queries);
+    }
+
+    fn close_view(&mut self) {
+        if let Some(view_id) = self.view_id.clone() {
+            self.send_notification("close_view", &json!({ "view_id": view_id }));
+            if let Some(proxy) = &self.event_proxy {
+                match proxy.send_event(EditorEvent::Action(Action::Close)) {
+                    Ok(_) => (),
+                    Err(err) => panic!(err),
+                }
+            }
+        }
+    }
+    fn open_file(&mut self, filename: Option<String>) {
+        if let Some(proxy) = &self.event_proxy {
+            match proxy.send_event(EditorEvent::Action(Action::Open(filename.clone()))) {
+                Ok(_) => {
+                    drop(self);
+                },
+                Err(err) => panic!(err),
+            }
+        }
+    }
+    fn split_view(&self, filename: Option<String>) {
+        if let Some(proxy) = &self.event_proxy {
+            match proxy.send_event(EditorEvent::Action(Action::Split(filename))) {
+                Ok(_) => (),
+                Err(err) => panic!(err),
+            }
+        }
+    }
+
     fn set_mode(&mut self, mode: Mode) {
         self.status_bar.set_mode(mode);
         self.dirty = true;
@@ -527,94 +611,172 @@ impl EditView {
                 EditViewCommands::Action(action) => self.status_bar.poke(Box::new(action)),
                 _ => return false,
             },
+            ActionTarget::EventLoop => return false,
         }
     }
 
     pub fn execute_command(&mut self) -> Vec<Action> {
         let command_text = self.status_bar.get_command();
-        self.status_bar.update_command_section("");
+        self.status_bar.set_command_text("");
         self.set_mode(Mode::Normal);
 
         let mut actions: Vec<Action> = vec!(); 
-        match command_text.clone().as_str()  {
+        let args: Vec<&str> = command_text.split(" ").collect();
+        let arg1 = if args.len() > 1 {
+            Some(args[1].to_string())
+        } else {
+            None
+        };
+
+        // TODO: Abstract and make this not crap
+        match args[0] {
+            "e" => actions.push(Action::Open(arg1)),
             "w" => actions.push(Action::Save),
-            "e" => actions.push(Action::Open),
-            "q" => actions.push(Action::Quit),
-            "wq" => actions.extend(vec![Action::Save, Action::Quit]),
-            _ => {}
+            "q" => actions.push(Action::Close),
+            "wq" => actions.extend(vec![Action::Save, Action::Close]),
+            "sp" => actions.push(Action::Split(self.filepath.clone())),
+            _ => {},
         }
 
         if actions.len() == 0 {
-            let message = format!("No command found: '{}'", command_text.clone());
-            self.status_bar.update_filename(Some(message));
+            println!("No command found: '{}'", command_text.clone());
         }
 
         actions
+    }
+
+    fn handle_action(&mut self, action: Action) -> bool {
+        match action {
+            Action::Open(filename) => self.open_file(filename),
+            Action::Split(filename) => self.split_view(filename),
+            Action::Close => self.close_view(),
+            Action::Save => self.save_to_file(),
+            Action::InsertChar(ch) => self.send_char(ch),
+            Action::SetMode(mode) => self.set_mode(mode),
+            Action::SetTheme(theme) => self.set_theme(theme.as_str()),
+            Action::SetLanguage(language) => self.set_language(language.as_str()),
+            Action::ToggleLineNumbers => self.show_line_numbers(!self.show_line_numbers),
+            Action::Undo => self.send_action("undo"),
+            Action::Redo => self.send_action("redo"),
+            Action::ClearSelection => self.send_action("collapse_selections"),
+            Action::SingleSelection => self.send_action("cancel_operation"),
+            Action::NewLine => self.send_action("insert_newline"),
+            Action::Cut => self.send_action("yank"),
+            Action::Copy => self.send_action("copy"),
+            Action::Yank => self.send_action("copy"), // xi-editor "yank" is like cut, we want vim behaviour...
+            Action::Paste => self.send_action("paste"),
+            Action::Indent => self.send_action("indent"),
+            Action::Outdent => self.send_action("outdent"),
+            Action::InsertTab => self.send_action("insert_tab"),
+            Action::DuplicateLine => self.send_action("duplicate_line"),
+            Action::IncreaseFontSize => self.increase_font_size(),
+            Action::DecreaseFontSize => self.decrease_font_size(),
+            Action::ExecuteCommand => {
+                self.execute_command().iter()
+                    .filter(|a| match a { Action::ExecuteCommand => false, _ => true })
+                    .for_each(|a| { 
+                        self.poke(EditViewCommands::Action(a.clone())); 
+                    });
+            },
+            Action::Motion((motion, quantity)) => match quantity.unwrap_or_default() {
+                Quantity::Number(n) => for _ in 0..n { match motion {
+                    Motion::Up => self.send_action("move_up"),
+                    Motion::Down => self.send_action("move_down"),
+                    Motion::Left => self.send_action("move_left"),
+                    Motion::Right => self.send_action("move_right"),
+                    Motion::First => self.send_action("move_to_left_end_of_line"),
+                    Motion::FirstOccupied => self.send_action("move_to_left_end_of_line"), // TODO: inaccurate
+                    Motion::Last => self.send_action("move_to_right_end_of_line"),
+                    _ => return false,
+                } },
+                Quantity::Page(n) => for _ in 0..n { match motion {
+                    Motion::Up => self.send_action("scroll_page_up"),
+                    Motion::Down => self.send_action("scroll_page_down"),
+                    _ => return false,
+                } },
+                Quantity::Word(n) => for _ in 0..n { match motion {
+                    Motion::Left => self.send_action("move_word_left"),
+                    Motion::Right => self.send_action("move_word_right"),
+                    _ => return false,
+                } },
+                _ => return false,
+            },
+            Action::Select((motion, quantity)) => match quantity.unwrap_or_default() {
+                Quantity::All => self.send_action("select_all"),
+                Quantity::Line(n) => {
+                    let last = if self.line_cache.height() > self.current_line + n {
+                        self.current_line + n
+                    } else {
+                        self.line_cache.height()
+                    };
+                    self.send_action("move_to_left_end_of_line");
+                    self.send_action("move_to_right_end_of_line_and_modify_selection");
+                    for l in self.current_line..last {
+                        self.send_action("move_down_and_modify_selection");
+                    }
+                },
+                Quantity::Number(n) => for _ in 0..n { match motion {
+                    Motion::Up => self.send_action("move_up_and_modify_selection"),
+                    Motion::Down => self.send_action("move_down_and_modify_selection"),
+                    Motion::Left => self.send_action("move_left_and_modify_selection"),
+                    Motion::Right => self.send_action("move_right_and_modify_selection"),
+                    Motion::First => self.send_action("move_to_left_end_of_line_and_modify_selection"),
+                    Motion::FirstOccupied => self.send_action("move_to_left_end_of_line_and_modify_selection"),
+                    Motion::Last => self.send_action("move_to_right_end_of_line_and_modify_selection"),
+                    _ => return false,
+                } },
+                Quantity::Word(n) => for _ in 0 ..n { match motion {
+                    Motion::Left => self.send_action("move_word_left_and_modify_selection"),
+                    Motion::Right => self.send_action("move_word_right_and_modify_selection"),
+                    _ => return false,
+                } },
+                _ => return false,
+            },
+            Action::Delete((motion, quantity)) => match motion {
+                Motion::Left => self.send_action("delete_backward"),
+                Motion::Right => self.send_action("delete_forward"),
+                Motion::Up => {
+                    self.handle_action(Action::Motion((Motion::Up, None)));
+                    self.handle_action(Action::Motion((Motion::First, None)));
+                    self.handle_action(Action::Select((Motion::Last, None)));
+                    self.handle_action(Action::Delete((Motion::Left, Some(Quantity::Number(2)))));
+                },
+                Motion::Down => {
+                    self.handle_action(Action::Motion((Motion::Down, None)));
+                    self.handle_action(Action::Motion((Motion::First, None)));
+                    self.handle_action(Action::Select((Motion::Last, None)));
+                    self.handle_action(Action::Delete((Motion::Left, Some(Quantity::Number(2)))));
+                },
+                _ => (),
+            },
+            Action::AddCursor(motion) => match motion {
+                Motion::Up => self.send_action("add_selection_above"),
+                Motion::Down => self.send_action("add_selection_below"),
+                _ => (),
+            },
+            _ => return false,
+        }
+
+        true
     }
 
     pub fn poke(&mut self, command: EditViewCommands) -> bool {
         match command {
             EditViewCommands::ViewId(view_id) => self.set_view(view_id),
             EditViewCommands::Core(core) => self.core = core.clone(),
+            EditViewCommands::Proxy(event_proxy) => self.event_proxy = Some(event_proxy),
             EditViewCommands::ApplyUpdate(update) => self.apply_update(&update),
             EditViewCommands::ScrollTo(line) => self.scroll_to(line),
             EditViewCommands::Resize(size) => self.resize(size),
+            EditViewCommands::Position(position) => self.set_position(position[0], position[1]),
             EditViewCommands::ConfigChanged(config) => self.config_changed(config),
             EditViewCommands::ThemeChanged(theme) => self.theme_changed(theme),
             EditViewCommands::LanguageChanged(language_id) => self.language_changed(language_id),
             EditViewCommands::DefineStyle(style) => self.define_style(style),
-            EditViewCommands::Action(action) => match action {
-                    Action::InsertChar(ch) => self.send_char(ch),
-                    Action::SetMode(mode) => self.set_mode(mode),
-                    Action::SetTheme(theme) => self.set_theme(theme.as_str()),
-                    Action::ToggleLineNumbers => self.show_line_numbers(!self.show_line_numbers),
-                    Action::Save => self.save_to_file(),
-                    Action::Back => self.send_action("delete_backward"),
-                    Action::Delete => self.send_action("delete_forward"),
-                    Action::Undo => self.send_action("undo"),
-                    Action::Redo => self.send_action("redo"),
-                    Action::AddCursorAbove => self.send_action("add_selection_above"),
-                    Action::AddCursorBelow => self.send_action("add_selection_below"),
-                    Action::ClearSelection => self.send_action("collapse_selections"),
-                    Action::SingleSelection => self.send_action("cancel_operation"),
-                    Action::SelectAll => self.send_action("select_all"),
-                    Action::NewLine => self.send_action("insert_newline"),
-                    Action::Copy => self.send_action("yank"),
-                    Action::ScrollPageUp => self.send_action("scroll_page_up"),
-                    Action::ScrollPageDown => self.send_action("scroll_page_down"),
-                    Action::IncreaseFontSize => self.increase_font_size(),
-                    Action::DecreaseFontSize => self.decrease_font_size(),
-                    Action::ExecuteCommand => {
-                        self.execute_command().iter()
-                            .filter(|a| match a { Action::ExecuteCommand => false, _ => true })
-                            .for_each(|a| { 
-                                self.poke(EditViewCommands::Action(a.clone())); 
-                            });
-                    },
-                    Action::Motion(motion) => match motion {
-                        Motion::Up => self.send_action("move_up"),
-                        Motion::Down => self.send_action("move_down"),
-                        Motion::Left => self.send_action("move_left"),
-                        Motion::Right => self.send_action("move_right"),
-                        Motion::First => self.send_action("move_to_left_end_of_line"),
-                        Motion::Last => self.send_action("move_to_right_end_of_line"),
-                        Motion::WordLeft => self.send_action("move_word_left"),
-                        Motion::WordRight => self.send_action("move_word_right"),
-                        _ => return false,
-                    },
-                    Action::MotionSelect(motion) => match motion {
-                        Motion::Up => self.send_action("move_up_and_modify_selection"),
-                        Motion::Down => self.send_action("move_down_and_modify_selection"),
-                        Motion::Left => self.send_action("move_left_and_modify_selection"),
-                        Motion::Right => self.send_action("move_right_and_modify_selection"),
-                        Motion::First => self.send_action("move_to_left_end_of_line_and_modify_selection"),
-                        Motion::Last => self.send_action("move_to_right_end_of_line_and_modify_selection"),
-                        Motion::WordLeft => self.send_action("move_word_left_and_modify_selection"),
-                        Motion::WordRight => self.send_action("move_word_right_and_modify_selection"),
-                        _ => return false,
-                    },
-                    _ => return false,
-            },
+            EditViewCommands::PluginStarted(plugin) => self.plugin_started(plugin),
+            EditViewCommands::PluginStopped(plugin_id) => self.plugin_stopped(plugin_id), 
+            EditViewCommands::Queries(queries) => self.queries_changed(queries),
+            EditViewCommands::Action(action) => return self.handle_action(action),
         }
 
         true
@@ -649,7 +811,7 @@ impl EditView {
 
     fn y_to_line(&self, y: f32) -> usize {
         let pad = self.resources.pad();
-        let mut line = (y + self.scroll_offset - pad) / self.resources.line_gap();
+        let mut line = (y + self.scroll_offset - pad - self.position[1]) / self.resources.line_gap();
         if line < 0.0 { line = 0.0; }
         let line = line.floor() as usize;
 
@@ -657,7 +819,7 @@ impl EditView {
     }
 
     fn update_viewport(&mut self) {
-        let first_line = self.y_to_line(0.0);
+        let first_line = self.y_to_line(self.position[1]);
         let last_line = first_line + ((self.drawable_text_height() / self.resources.line_gap()).floor() as usize) + 1;
         let viewport = first_line..last_line;
 
@@ -670,7 +832,7 @@ impl EditView {
 
     #[inline]
     fn line_to_content_y(&self, line_num: usize) -> f32 {
-        self.resources.pad() + (line_num as f32) * self.resources.line_gap()
+        self.position[0] + self.resources.pad() + (line_num as f32) * self.resources.line_gap()
     }
 
     pub fn scroll_to(&mut self, line_num: usize) {
@@ -686,6 +848,8 @@ impl EditView {
         self.current_line = line_num + 1;
         self.status_bar.update_line_status(self.current_line, self.line_cache.height(), self.language.clone());
     }
+
+    
 
     pub fn set_dirty(&mut self, dirty: bool) {
         self.status_bar.set_dirty(dirty);

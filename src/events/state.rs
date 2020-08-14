@@ -102,6 +102,7 @@ impl InputState {
                     } else if input.virtual_keycode.is_some() {
                         Some(Key::KeyCode(input.virtual_keycode.unwrap()))
                     } else {
+                        println!("scancode not mapped: {}", input.scancode);
                         Some(Key::ScanCode(input.scancode))
                     }
                 } else if input.state == ElementState::Released {

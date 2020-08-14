@@ -1,57 +1,52 @@
 use super::motion::Motion;
 use super::mode::Mode;
+use super::quantity::Quantity;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum ActionTarget {
     FocusedView,
     StatusBar,
+    EventLoop,
 }
+
+pub type MotionQuantity = (Motion, Option<Quantity>);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {
-    Motion(Motion),
-    MotionSelect(Motion),
-    MotionDelete(Motion),
+    Open(Option<String>),
+    Split(Option<String>),
+    Motion(MotionQuantity),
+    Select(MotionQuantity),
+    Delete(MotionQuantity),
+    AddCursor(Motion),
     SetMode(Mode),
     SetTheme(String),
-    ToggleLineNumbers,
-    InsertChar(char),
+    SetLanguage(String),
     DefineCommand((String, Box<Action>)),
+    InsertChar(char),
+    Close,
     ExecuteCommand,
-    Back,
-    Delete,
+    ToggleLineNumbers,
     Indent,
     Outdent,
+    InsertTab,
     NewLine,
+    DuplicateLine,
     SearchNext,
     SearchPrev,
     SearchStart,
     SearchEnd,
-    Open,
-    Quit,
     Save,
     Copy,
+    Yank,
     Cut,
     Paste,
     IncreaseFontSize,
     DecreaseFontSize,
-    ScrollPageUp,
-    ScrollPageDown,
-    ScrollHalfPageUp,
-    ScrollHalfPageDown,
-    ScrollLineUp,
-    ScrollLineDown,
-    ScrollToTop,
-    ScrollToBottom,
     ClearSelection,
     SingleSelection,
     Undo,
     Redo,
     UpperCase,
     LowerCase,
-    AddCursorAbove,
-    AddCursorBelow,
-    SelectAll,
-
-    None,
 }

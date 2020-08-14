@@ -1,9 +1,9 @@
-use std::fmt;
 use rpc::{
     Action,
     ActionTarget,
     Motion,
     Mode,
+    Quantity,
 };
 
 use winit::event::{
@@ -26,8 +26,8 @@ pub struct Binding<T> {
     mode: Mode,
     notmode: Mode,
     trigger: T,
-    action: Action,
     target: ActionTarget,
+    actions: Vec<Action>,
 }
 
 pub type KeyBinding = Binding<Key>;
@@ -42,13 +42,53 @@ impl<T: Eq> Binding<T> {
             && (self.notmode == Mode::None || self.notmode != mode)
     }
 
-    pub fn get_action(&self) -> Action {
-        self.action.clone()
+    pub fn get_target(&self) -> ActionTarget {
+        self.target
     }
 
-    pub fn get_target(&self) -> ActionTarget {
-        self.target.clone()
+    pub fn get_actions(&self) -> Vec<Action> {
+        println!("actions: {:?}", self.actions.clone());
+        self.actions.clone()
     }
+}
+macro_rules! motion {
+    (
+        $action:ident
+        $motion:ident 
+        $(by$quantity:ident)?
+    ) => {{
+        let mut _motion: Motion = Motion::$motion;
+        let mut _quantity: Option<Quantity> = None;
+        $(_quantity = Some(Quantity::$quantity(1));)*
+        Action::$action((_motion, _quantity))
+    }};
+}
+macro_rules! shift { () => {{ ModifiersState::SHIFT }}; }
+macro_rules! ctrl { () => {{ ModifiersState::CTRL }}; }
+macro_rules! mods_empty { () => {{ ModifiersState::empty() }}; }
+
+macro_rules! key_binding {
+    ($key:ident
+     ,$mods:expr
+     ,$mode:ident
+     ,$target:expr
+     ;$($action:expr),*
+    ) => {{
+        let mut _mods: ModifiersState = $mods;
+        let _notmode = Mode::None;
+        let mut _mode: Mode = Mode::$mode;
+        let mut _target: ActionTarget = $target;
+        let mut _actions: Vec<Action> = Vec::new();
+        $(_actions.push($action);)*
+        KeyBinding {
+            trigger: Key::KeyCode($key),
+            mods: _mods,
+            mode: _mode,
+            notmode: _notmode,
+            target: _target,
+            actions: _actions,
+        }
+    }};
 }
 
 macro_rules! bindings {
@@ -56,11 +96,11 @@ macro_rules! bindings {
         KeyBinding;
         $(
             $key:ident
-            $(,$mods:expr)*
-            $(,+$mode:expr)*
-            $(,~$notmode:expr)*
-            $(,@$target:expr)*
-            ;$action:expr
+            $(,$mods:expr)?
+            $(,+$mode:expr)?
+            $(,~$notmode:expr)?
+            $(,@$target:expr)?
+            ;$($action:expr),*
         );*
         $(;)*
     ) => {{
@@ -68,11 +108,11 @@ macro_rules! bindings {
             KeyBinding;
             $(
                 Key::KeyCode($key)
-                $(,$mods)*
-                $(,+$mode)*
-                $(,~$notmode)*
-                $(,@$target)*
-                ;$action
+                $(,$mods)?
+                $(,+$mode)?
+                $(,~$notmode)?
+                $(,@$target)?
+                ;$($action),*
             );*
         )
     }};
@@ -80,24 +120,26 @@ macro_rules! bindings {
         $ty:ident;
         $(
             $key:expr
-            $(,$mods:expr)*
-            $(,+$mode:expr)*
-            $(,~$notmode:expr)*
-            $(,@$target:expr)*
-            ;$action:expr
+            $(,$mods:expr)?
+            $(,+$mode:expr)?
+            $(,~$notmode:expr)?
+            $(,@$target:expr)?
+            ;$($action:expr),*
         );*
         $(;)*
     ) => {{
         let mut v = Vec::new();
         $(
             let mut _mods = ModifiersState::empty();
-            $(_mods = $mods;)*
+            $(_mods = $mods;)?
             let mut _mode = Mode::None;
-            $(_mode = $mode;)*
+            $(_mode = $mode;)?
             let mut _notmode = Mode::None;
-            $(_notmode = $notmode;)*
+            $(_notmode = $notmode;)?
             let mut _target = ActionTarget::FocusedView;
-            $(_target = $target;)*
+            $(_target = $target;)?
+            let mut _actions: Vec<Action> = vec!(); 
+            $(_actions.push($action);)*
 
             v.push($ty {
                 trigger: $key,
@@ -105,11 +147,47 @@ macro_rules! bindings {
                 mode: _mode,
                 notmode: _notmode,
                 target: _target,
-                action: $action.into(),
+                actions: _actions,
             });
         )*
 
         v
+    }};
+}
+
+macro_rules! bind_extended_motions {
+    ($mode:ident, $action:ident, $target:expr) => {{
+        vec![
+            key_binding!(H,     mods_empty!(),  $mode, $target; motion!($action Left)),
+            key_binding!(J,     mods_empty!(),  $mode, $target; motion!($action Down)),
+            key_binding!(K,     mods_empty!(),  $mode, $target; motion!($action Up)),
+            key_binding!(L,     mods_empty!(),  $mode, $target; motion!($action Right)),
+            key_binding!(W,     mods_empty!(),  $mode, $target; motion!($action Right by Word)),
+            key_binding!(E,     mods_empty!(),  $mode, $target; motion!($action RightEnd by Word)),
+            key_binding!(W,     shift!(),       $mode, $target; motion!($action Right by Semantic)),
+            key_binding!(Key0,  mods_empty!(),  $mode, $target; motion!($action First)),
+            key_binding!(Key4,  shift!(),       $mode, $target; motion!($action Last)),
+            key_binding!(Key5,  shift!(),       $mode, $target; motion!($action Bracket)),
+            key_binding!(Key6,  shift!(),       $mode, $target; motion!($action FirstOccupied)),
+        ]
+    }};
+}
+macro_rules! bind_motions {
+    ($mode:ident, $action:ident, $target:expr) => {{
+       vec![
+           key_binding!(Home,   mods_empty!(), $mode, $target; motion!($action First)), 
+           key_binding!(End,    mods_empty!(), $mode, $target; motion!($action Last)), 
+
+           key_binding!(Up,     shift!(), $mode, $target; motion!($action Up by Page)), 
+           key_binding!(Down,   shift!(), $mode, $target; motion!($action Down by Page)), 
+
+           key_binding!(Left,   ctrl!(), $mode, $target; motion!($action Left by Word)), 
+           key_binding!(Right,  ctrl!(), $mode, $target; motion!($action Right by Word)), 
+           key_binding!(Left,   mods_empty!(), $mode, $target; motion!($action Left)), 
+           key_binding!(Right,  mods_empty!(), $mode, $target; motion!($action Right)), 
+           key_binding!(Up,     mods_empty!(), $mode, $target; motion!($action Up)), 
+           key_binding!(Down,   mods_empty!(), $mode, $target; motion!($action Down)),
+        ]
     }};
 }
 
@@ -118,35 +196,51 @@ pub fn default_mouse_bindings() -> Vec<MouseBinding> {
         MouseBinding;
     )
 }
-pub fn bind_alpha_numeric(mode: Mode, target: ActionTarget) -> Vec<KeyBinding> {
+pub fn bind_numeric(mode: Mode, target: ActionTarget) -> Vec<KeyBinding> {
     bindings!(
         KeyBinding;
-        A, ModifiersState::SHIFT, +mode, @target; Action::InsertChar('A');
-        B, ModifiersState::SHIFT, +mode, @target; Action::InsertChar('B');
-        C, ModifiersState::SHIFT, +mode, @target; Action::InsertChar('C');
-        D, ModifiersState::SHIFT, +mode, @target; Action::InsertChar('D');
-        E, ModifiersState::SHIFT, +mode, @target; Action::InsertChar('E');
-        F, ModifiersState::SHIFT, +mode, @target; Action::InsertChar('F');
-        G, ModifiersState::SHIFT, +mode, @target; Action::InsertChar('G');
-        H, ModifiersState::SHIFT, +mode, @target; Action::InsertChar('H');
-        I, ModifiersState::SHIFT, +mode, @target; Action::InsertChar('I');
-        J, ModifiersState::SHIFT, +mode, @target; Action::InsertChar('J');
-        K, ModifiersState::SHIFT, +mode, @target; Action::InsertChar('K');
-        L, ModifiersState::SHIFT, +mode, @target; Action::InsertChar('L');
-        M, ModifiersState::SHIFT, +mode, @target; Action::InsertChar('M');
-        N, ModifiersState::SHIFT, +mode, @target; Action::InsertChar('N');
-        O, ModifiersState::SHIFT, +mode, @target; Action::InsertChar('O');
-        P, ModifiersState::SHIFT, +mode, @target; Action::InsertChar('P');
-        Q, ModifiersState::SHIFT, +mode, @target; Action::InsertChar('Q');
-        R, ModifiersState::SHIFT, +mode, @target; Action::InsertChar('R');
-        S, ModifiersState::SHIFT, +mode, @target; Action::InsertChar('S');
-        T, ModifiersState::SHIFT, +mode, @target; Action::InsertChar('T');
-        U, ModifiersState::SHIFT, +mode, @target; Action::InsertChar('U');
-        V, ModifiersState::SHIFT, +mode, @target; Action::InsertChar('V');
-        W, ModifiersState::SHIFT, +mode, @target; Action::InsertChar('W');
-        X, ModifiersState::SHIFT, +mode, @target; Action::InsertChar('X');
-        Y, ModifiersState::SHIFT, +mode, @target; Action::InsertChar('Y');
-        Z, ModifiersState::SHIFT, +mode, @target; Action::InsertChar('Z');
+
+        Key1, +mode, @target; Action::InsertChar('1');
+        Key2, +mode, @target; Action::InsertChar('2');
+        Key3, +mode, @target; Action::InsertChar('3');
+        Key4, +mode, @target; Action::InsertChar('4');
+        Key5, +mode, @target; Action::InsertChar('5');
+        Key6, +mode, @target; Action::InsertChar('6');
+        Key7, +mode, @target; Action::InsertChar('7');
+        Key8, +mode, @target; Action::InsertChar('8');
+        Key9, +mode, @target; Action::InsertChar('9');
+        Key0, +mode, @target; Action::InsertChar('0');
+    )
+}
+pub fn bind_alpha_numeric(mode: Mode, target: ActionTarget) -> Vec<KeyBinding> {
+    let mut bindings = bindings!(
+        KeyBinding;
+        A, shift!(), +mode, @target; Action::InsertChar('A');
+        B, shift!(), +mode, @target; Action::InsertChar('B');
+        C, shift!(), +mode, @target; Action::InsertChar('C');
+        D, shift!(), +mode, @target; Action::InsertChar('D');
+        E, shift!(), +mode, @target; Action::InsertChar('E');
+        F, shift!(), +mode, @target; Action::InsertChar('F');
+        G, shift!(), +mode, @target; Action::InsertChar('G');
+        H, shift!(), +mode, @target; Action::InsertChar('H');
+        I, shift!(), +mode, @target; Action::InsertChar('I');
+        J, shift!(), +mode, @target; Action::InsertChar('J');
+        K, shift!(), +mode, @target; Action::InsertChar('K');
+        L, shift!(), +mode, @target; Action::InsertChar('L');
+        M, shift!(), +mode, @target; Action::InsertChar('M');
+        N, shift!(), +mode, @target; Action::InsertChar('N');
+        O, shift!(), +mode, @target; Action::InsertChar('O');
+        P, shift!(), +mode, @target; Action::InsertChar('P');
+        Q, shift!(), +mode, @target; Action::InsertChar('Q');
+        R, shift!(), +mode, @target; Action::InsertChar('R');
+        S, shift!(), +mode, @target; Action::InsertChar('S');
+        T, shift!(), +mode, @target; Action::InsertChar('T');
+        U, shift!(), +mode, @target; Action::InsertChar('U');
+        V, shift!(), +mode, @target; Action::InsertChar('V');
+        W, shift!(), +mode, @target; Action::InsertChar('W');
+        X, shift!(), +mode, @target; Action::InsertChar('X');
+        Y, shift!(), +mode, @target; Action::InsertChar('Y');
+        Z, shift!(), +mode, @target; Action::InsertChar('Z');
         
         A, +mode, @target; Action::InsertChar('a');
         B, +mode, @target; Action::InsertChar('b');
@@ -175,39 +269,28 @@ pub fn bind_alpha_numeric(mode: Mode, target: ActionTarget) -> Vec<KeyBinding> {
         Y, +mode, @target; Action::InsertChar('y');
         Z, +mode, @target; Action::InsertChar('z');
 
-        Key1, ModifiersState::SHIFT, +mode, @target; Action::InsertChar('!');
-        Key2, ModifiersState::SHIFT, +mode, @target; Action::InsertChar('@');
-        Key3, ModifiersState::SHIFT, +mode, @target; Action::InsertChar('#');
-        Key4, ModifiersState::SHIFT, +mode, @target; Action::InsertChar('$');
-        Key5, ModifiersState::SHIFT, +mode, @target; Action::InsertChar('%');
-        Key6, ModifiersState::SHIFT, +mode, @target; Action::InsertChar('^');
-        Key7, ModifiersState::SHIFT, +mode, @target; Action::InsertChar('&');
-        Key8, ModifiersState::SHIFT, +mode, @target; Action::InsertChar('*');
-        Key9, ModifiersState::SHIFT, +mode, @target; Action::InsertChar('(');
-        Key0, ModifiersState::SHIFT, +mode, @target; Action::InsertChar(')');
+        Key1, shift!(), +mode, @target; Action::InsertChar('!');
+        Key2, shift!(), +mode, @target; Action::InsertChar('@');
+        Key3, shift!(), +mode, @target; Action::InsertChar('#');
+        Key4, shift!(), +mode, @target; Action::InsertChar('$');
+        Key5, shift!(), +mode, @target; Action::InsertChar('%');
+        Key6, shift!(), +mode, @target; Action::InsertChar('^');
+        Key7, shift!(), +mode, @target; Action::InsertChar('&');
+        Key8, shift!(), +mode, @target; Action::InsertChar('*');
+        Key9, shift!(), +mode, @target; Action::InsertChar('(');
+        Key0, shift!(), +mode, @target; Action::InsertChar(')');
         
-        Key1, +mode, @target; Action::InsertChar('1');
-        Key2, +mode, @target; Action::InsertChar('2');
-        Key3, +mode, @target; Action::InsertChar('3');
-        Key4, +mode, @target; Action::InsertChar('4');
-        Key5, +mode, @target; Action::InsertChar('5');
-        Key6, +mode, @target; Action::InsertChar('6');
-        Key7, +mode, @target; Action::InsertChar('7');
-        Key8, +mode, @target; Action::InsertChar('8');
-        Key9, +mode, @target; Action::InsertChar('9');
-        Key0, +mode, @target; Action::InsertChar('0');
-
-        Grave,      ModifiersState::SHIFT, +mode, @target; Action::InsertChar('~');
-        Minus,      ModifiersState::SHIFT, +mode, @target; Action::InsertChar('_');
-        Add,        ModifiersState::SHIFT, +mode, @target; Action::InsertChar('+');
-        LBracket,   ModifiersState::SHIFT, +mode, @target; Action::InsertChar('{');
-        RBracket,   ModifiersState::SHIFT, +mode, @target; Action::InsertChar('}');
-        Backslash,  ModifiersState::SHIFT, +mode, @target; Action::InsertChar('|');
-        Colon,      ModifiersState::SHIFT, +mode, @target; Action::InsertChar(':');
-        Apostrophe, ModifiersState::SHIFT, +mode, @target; Action::InsertChar('"');
-        Comma,      ModifiersState::SHIFT, +mode, @target; Action::InsertChar('<');
-        Period,     ModifiersState::SHIFT, +mode, @target; Action::InsertChar('>');
-        Slash,      ModifiersState::SHIFT, +mode, @target; Action::InsertChar('?');
+        Grave,      shift!(), +mode, @target; Action::InsertChar('~');
+        Minus,      shift!(), +mode, @target; Action::InsertChar('_');
+        Add,        shift!(), +mode, @target; Action::InsertChar('+');
+        LBracket,   shift!(), +mode, @target; Action::InsertChar('{');
+        RBracket,   shift!(), +mode, @target; Action::InsertChar('}');
+        Backslash,  shift!(), +mode, @target; Action::InsertChar('|');
+        Colon,      shift!(), +mode, @target; Action::InsertChar(':');
+        Apostrophe, shift!(), +mode, @target; Action::InsertChar('"');
+        Comma,      shift!(), +mode, @target; Action::InsertChar('<');
+        Period,     shift!(), +mode, @target; Action::InsertChar('>');
+        Slash,      shift!(), +mode, @target; Action::InsertChar('?');
 
         Grave,      +mode, @target; Action::InsertChar('`');
         Minus,      +mode, @target; Action::InsertChar('-');
@@ -221,53 +304,10 @@ pub fn bind_alpha_numeric(mode: Mode, target: ActionTarget) -> Vec<KeyBinding> {
         Period,     +mode, @target; Action::InsertChar('.');
         Slash,      +mode, @target; Action::InsertChar('/');
         Space,      +mode, @target; Action::InsertChar(' ');
-    )
-}
+    );
+    bindings.extend(bind_numeric(mode, target));
 
-pub fn bind_motion_selects(mode: Mode) -> Vec<KeyBinding> {
-    bindings!(
-        KeyBinding;
-
-        Left,   +mode; Action::MotionSelect(Motion::Left);
-        Right,  +mode; Action::MotionSelect(Motion::Right);
-        Up,     +mode; Action::MotionSelect(Motion::Up);
-        Down,   +mode; Action::MotionSelect(Motion::Down);
-        H,      +mode; Action::MotionSelect(Motion::Left);
-        J,      +mode; Action::MotionSelect(Motion::Down);
-        K,      +mode; Action::MotionSelect(Motion::Up);
-        L,      +mode; Action::MotionSelect(Motion::Right);
-
-        W,      +mode; Action::MotionSelect(Motion::WordRight);
-        E,      +mode; Action::MotionSelect(Motion::WordRightEnd);
-        Key4,   +mode; Action::MotionSelect(Motion::Last);
-
-        W, ModifiersState::SHIFT, +mode; Action::MotionSelect(Motion::WordRight);
-        Key5, ModifiersState::SHIFT, +mode; Action::MotionSelect(Motion::Bracket);
-        Key6, ModifiersState::SHIFT, +mode; Action::MotionSelect(Motion::FirstOccupied);
-    )
-}
-
-pub fn bind_motions(mode: Mode) -> Vec<KeyBinding> {
-    bindings!(
-        KeyBinding;
-
-        Home,   +mode; Action::Motion(Motion::First);
-        End,    +mode; Action::Motion(Motion::Last);
-        Key0,   +mode; Action::Motion(Motion::First);
-        Key4,   ModifiersState::SHIFT, +mode; Action::Motion(Motion::Last);
-        Key5,   ModifiersState::SHIFT, +mode; Action::Motion(Motion::Bracket);
-        Key6,   ModifiersState::SHIFT, +mode; Action::Motion(Motion::FirstOccupied);
-
-        Up,     ModifiersState::SHIFT, +mode; Action::ScrollPageUp;
-        Down,   ModifiersState::SHIFT, +mode; Action::ScrollPageDown;
-
-        Left,   ModifiersState::CTRL, +mode; Action::Motion(Motion::WordLeft);
-        Right,  ModifiersState::CTRL, +mode; Action::Motion(Motion::WordRight);
-        Left,   +mode; Action::Motion(Motion::Left);
-        Right,  +mode; Action::Motion(Motion::Right);
-        Up,     +mode; Action::Motion(Motion::Up);
-        Down,   +mode; Action::Motion(Motion::Down);
-    )
+    bindings
 }
 
 pub fn default_key_bindings() -> Vec<KeyBinding> {
@@ -275,27 +315,38 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
         KeyBinding;
 
         Escape, ~Mode::Normal; Action::SetMode(Mode::Normal);
-        Escape, +Mode::LineSelect; Action::ClearSelection;
-        Escape, +Mode::BlockSelect; Action::ClearSelection;
+        Escape, +Mode::SelectLine; Action::ClearSelection;
+        Escape, +Mode::SelectBlock; Action::ClearSelection;
         Escape, +Mode::Select; Action::ClearSelection;
         I, +Mode::Normal; Action::SetMode(Mode::Insert);
         V, +Mode::Normal; Action::SetMode(Mode::Select);
-        V, ModifiersState::SHIFT, +Mode::Normal; Action::SetMode(Mode::BlockSelect);
-        V, ModifiersState::CTRL, +Mode::Normal; Action::SetMode(Mode::LineSelect);
-        R, ModifiersState::SHIFT, +Mode::Normal; Action::SetMode(Mode::Replace);
-        Colon, ModifiersState::SHIFT, +Mode::Normal; Action::SetMode(Mode::Command);
+        V, ctrl!(), +Mode::Normal; Action::SetMode(Mode::SelectBlock);
+        V, shift!(), +Mode::Normal; Action::SetMode(Mode::SelectLine);
+        R, shift!(), +Mode::Normal; Action::SetMode(Mode::Replace);
+        Colon, shift!(), +Mode::Normal; Action::SetMode(Mode::Command);
 
-        Back, +Mode::Command, @ActionTarget::StatusBar; Action::Back;
-        Delete, +Mode::Command, @ActionTarget::StatusBar; Action::Delete;
+        Back,   +Mode::Command, @ActionTarget::StatusBar; motion!(Delete Left);
+        Delete, +Mode::Command, @ActionTarget::StatusBar; motion!(Delete Right);
         Return, +Mode::Command; Action::ExecuteCommand;
-        D,      ModifiersState::SHIFT, +Mode::Normal; Action::MotionDelete(Motion::Last);
+        A,      +Mode::Normal; motion!(Motion Right), Action::SetMode(Mode::Insert);
+        A,      shift!(), +Mode::Normal; motion!(Motion Last), Action::SetMode(Mode::Insert);
+        D,      +Mode::Normal; Action::SetMode(Mode::Delete);
+        D,      +Mode::Delete; motion!(Motion First), motion!(Select Last), Action::Cut, motion!(Delete Left), Action::SetMode(Mode::Normal);
+        D,      shift!(), +Mode::Normal; motion!(Select Last), motion!(Delete Left);
     );
-    bindings.extend(bind_motions(Mode::Normal));
-    bindings.extend(bind_motions(Mode::Insert));
+    bindings.extend(bind_motions!(Normal, Motion, ActionTarget::FocusedView));
+    bindings.extend(bind_motions!(Insert, Motion, ActionTarget::FocusedView));
+    bindings.extend(bind_motions!(Select, Select, ActionTarget::FocusedView));
+    bindings.extend(bind_motions!(SelectLine, Select, ActionTarget::FocusedView));
+    bindings.extend(bind_motions!(SelectBlock, Select, ActionTarget::FocusedView));
+    bindings.extend(bind_motions!(Delete, Delete, ActionTarget::FocusedView));
+    bindings.extend(bind_motions!(Command, Motion, ActionTarget::StatusBar));
+    bindings.extend(bind_extended_motions!(Normal, Motion, ActionTarget::FocusedView));
+    bindings.extend(bind_extended_motions!(Select, Select, ActionTarget::FocusedView));
+    bindings.extend(bind_extended_motions!(SelectLine, Select, ActionTarget::FocusedView));
+    bindings.extend(bind_extended_motions!(SelectBlock, Select, ActionTarget::FocusedView));
+    bindings.extend(bind_extended_motions!(Delete, Delete, ActionTarget::FocusedView));
     bindings.extend(bind_alpha_numeric(Mode::Command, ActionTarget::StatusBar));
-    bindings.extend(bind_motion_selects(Mode::Select));
-    bindings.extend(bind_motion_selects(Mode::LineSelect));
-    bindings.extend(bind_motion_selects(Mode::BlockSelect));
     bindings.extend(bind_alpha_numeric(Mode::Insert, ActionTarget::FocusedView));
 
     bindings.extend(bindings!(
@@ -306,46 +357,42 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
         F3; Action::SetTheme(String::from("InspiredGitHub"));
         F5; Action::ToggleLineNumbers;
 
-        PageUp, ~Mode::Command; Action::ScrollPageUp;
-        PageDown, ~Mode::Command; Action::ScrollPageDown;
+        PageUp, ~Mode::Command; motion!(Motion Up by Page);
+        PageDown, ~Mode::Command; motion!(Motion Down by Page);
 
-        Return, +Mode::Normal; Action::Motion(Motion::Down);
+        Return, +Mode::Normal; motion!(Motion Down), motion!(Motion FirstOccupied);
         Return, +Mode::Insert; Action::NewLine;
-        Back, +Mode::Insert; Action::Back;
-        Delete, +Mode::Insert; Action::Delete;
-        Back, ~Mode::Insert; Action::Motion(Motion::Left);
-        Delete, ~Mode::Insert; Action::Motion(Motion::Right);
-        Space, ~Mode::Insert; Action::Motion(Motion::Right);
+        Back, +Mode::Insert; motion!(Delete Left);
+        Delete, +Mode::Insert; motion!(Delete Right);
+        Back, ~Mode::Insert; motion!(Motion Left); 
+        Delete, ~Mode::Insert; motion!(Motion Right); 
+        Space, ~Mode::Insert; motion!(Motion Right); 
         
-        W, ~Mode::Insert; Action::Motion(Motion::WordRight);
-        E, ~Mode::Insert; Action::Motion(Motion::WordRightEnd);
-        H, ~Mode::Insert; Action::Motion(Motion::Left);
-        J, ~Mode::Insert; Action::Motion(Motion::Down);
-        K, ~Mode::Insert; Action::Motion(Motion::Up);
-        L, ~Mode::Insert; Action::Motion(Motion::Right);
-
-        Y, +Mode::Select; Action::Copy;
-        Y, +Mode::LineSelect; Action::Copy;
-        Y, +Mode::BlockSelect; Action::Copy;
-        Copy, +Mode::Insert; Action::Copy;
+        Y, +Mode::Select; Action::Yank;
+        Y, +Mode::SelectLine; Action::Yank;
+        Y, +Mode::SelectBlock; Action::Yank;
+        Copy, +Mode::Insert; Action::Yank;
         Cut, +Mode::Insert; Action::Cut;
 
-        P, ~Mode::Insert; Action::Paste;
+        P, +Mode::Normal; Action::Paste;
         Paste, +Mode::Insert; Action::Paste;
         
-        U, ~Mode::Insert; Action::Undo;
-        R, ModifiersState::CTRL, ~Mode::Insert; Action::Redo;
+        U, +Mode::Normal; Action::Undo;
+        R, ctrl!(), +Mode::Normal; Action::Redo;
 
         Tab, +Mode::Insert; Action::Indent;
-        Tab, ModifiersState::SHIFT, +Mode::Insert; Action::Outdent;
+        Tab, shift!(), +Mode::Insert; Action::Outdent;
 
-        Minus, ModifiersState::CTRL; Action::DecreaseFontSize;
-        Subtract, ModifiersState::CTRL; Action::DecreaseFontSize;
-        Equals, ModifiersState::CTRL; Action::IncreaseFontSize;
-        Add, ModifiersState::CTRL; Action::IncreaseFontSize;
+        Minus, ctrl!(); Action::DecreaseFontSize;
+        Subtract, ctrl!(); Action::DecreaseFontSize;
+        Equals, ctrl!(); Action::IncreaseFontSize;
+        Add, ctrl!(); Action::IncreaseFontSize;
 
-        Up, ModifiersState::SHIFT | ModifiersState::CTRL, +Mode::Insert; Action::AddCursorAbove;
-        Down, ModifiersState::SHIFT | ModifiersState::CTRL, +Mode::Insert; Action::AddCursorBelow;
+        Up, shift!() | ctrl!(), +Mode::Insert; Action::AddCursor(Motion::Up);
+        Down, shift!() | ctrl!(), +Mode::Insert; Action::AddCursor(Motion::Down);
+        
+        O,      +Mode::Normal; motion!(Motion Last), Action::NewLine, Action::SetMode(Mode::Insert);
+        O,      shift!(), +Mode::Normal; motion!(Motion Up), motion!(Motion Last), Action::NewLine, Action::SetMode(Mode::Insert);
     ));
 
     bindings

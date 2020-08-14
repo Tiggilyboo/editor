@@ -4,6 +4,7 @@ use winit::event::{
 };
 
 // Due to some missing scancodes in winit, we map them here
+#[inline]
 pub fn map_scancode(scancode: ScanCode) -> Option<VirtualKeyCode> {
     match scancode {
         0x02 => Some(VirtualKeyCode::Key1),
@@ -27,7 +28,6 @@ pub fn map_scancode(scancode: ScanCode) -> Option<VirtualKeyCode> {
         0x1a => Some(VirtualKeyCode::LBracket),
         0x1b => Some(VirtualKeyCode::RBracket),
         _ => {
-            println!("scancode not mapped: {:x}", scancode);
             None
         }
     }
