@@ -42,8 +42,6 @@ pub struct StatusWidget {
     scale: f32,
     size: [f32; 2],
     focused: bool,
-    bg_colour: ColourRGBA,
-    fg_colour: ColourRGBA,
     mode_colour: ColourRGBA,
     status: Status,
     background: PrimitiveWidget,
@@ -52,7 +50,6 @@ pub struct StatusWidget {
     filename_section: OwnedSection,
     status_section: OwnedSection,
     command_widget: EditableTextWidget,
-
     dirty: bool,
 }
 
@@ -70,9 +67,6 @@ impl Hash for StatusWidget {
         hash_widget(self, state);
         self.depth.to_le_bytes().hash(state);
         self.scale.to_le_bytes().hash(state);
-        self.bg_colour.iter().for_each(|b| b.to_le_bytes().hash(state));
-        self.fg_colour.iter().for_each(|b| b.to_le_bytes().hash(state));
-        self.mode_colour.iter().for_each(|b| b.to_le_bytes().hash(state));
         self.status.hash(state);
         self.background.hash(state);
         self.mode_primitive.hash(state);
@@ -154,10 +148,8 @@ impl StatusWidget {
         let mut widget = Self {
             index,
             status: status.clone(),
-            size: [0.0, resources.scale * 1.03],
+            size: [0.0, resources.scale],
             position: [0.0, 0.0],
-            bg_colour: resources.bg,
-            fg_colour: resources.fg,
             mode_colour: resources.sel,
             scale: resources.scale,
             depth: 0.5,
@@ -165,15 +157,15 @@ impl StatusWidget {
             focused: false,
             background,
             mode_primitive,
-            command_widget,
             filename_section,
             mode_section,
             status_section,
+            command_widget,
         };
 
         widget.set_position(widget.position[0], widget.position[1]);
         widget.set_scale(widget.scale);
-        widget.set_colours(widget.bg_colour, widget.fg_colour, widget.mode_colour);
+        widget.set_colours(resources.bg, resources.fg, widget.mode_colour, resources.cursor);
         widget.set_mode(status.mode);
         widget.update_filename(status.filename);
         widget.update_line_status(status.line_current, status.line_count, status.language.clone());
@@ -227,6 +219,7 @@ impl StatusWidget {
 
         if mode != Mode::Command {
             self.set_command_text("");
+            self.command_widget.set_focused(false);
             self.command_widget.poke(Action::Motion((Motion::First, Some(Quantity::default()))));
         }
 
@@ -234,12 +227,10 @@ impl StatusWidget {
         self.dirty = true;
     }
 
-    pub fn set_colours(&mut self, bg: ColourRGBA, fg: ColourRGBA, mode: ColourRGBA) {
-        self.fg_colour = fg;
-        self.bg_colour = bg;
+    pub fn set_colours(&mut self, bg: ColourRGBA, fg: ColourRGBA, cur: ColourRGBA, mode: ColourRGBA) {
         self.mode_colour = mode;
-        self.background.set_colour(self.bg_colour);
-        self.command_widget.set_colour(fg);
+        self.background.set_colour(bg);
+        self.command_widget.set_colours(fg, cur);
 
         self.mode_section.text[0].extra.color = mode;
         self.status_section.text[0].extra.color = fg;
@@ -275,7 +266,6 @@ impl StatusWidget {
 
         self.status_section.text[0].text = status_content;
         self.status_section.text[0].scale = PxScale::from(self.scale);
-        self.status_section.text[0].extra.color = self.fg_colour;
     }
 
     pub fn update_filename(&mut self, filename: Option<String>) {
@@ -296,6 +286,7 @@ impl StatusWidget {
     #[inline]
     pub fn poke(&mut self, action: Box<Action>) -> bool {
         self.dirty = true;
+        self.command_widget.set_focused(true);
         self.command_widget.poke(*action)
     }
 }

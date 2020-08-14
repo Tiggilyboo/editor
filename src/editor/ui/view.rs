@@ -53,6 +53,7 @@ use super::{
         hash_widget,
     },
     text::TextWidget,
+    editable_text::CURSOR_TEXT,
     primitive::PrimitiveWidget,
     status::{
         StatusWidget,
@@ -61,7 +62,6 @@ use super::{
     find_replace::FindWidget,
 };
 
-pub const CURSOR_TEXT: &str = "\u{2588}";
 
 type Method = String;
 type Params = Value;
@@ -534,6 +534,7 @@ impl EditView {
         self.status_bar.set_colours(
             self.resources.gutter_bg.clone(), 
             self.resources.fg.clone(),
+            self.resources.cursor.clone(),
             BLACK);
         self.status_bar.set_scale(self.resources.scale);
 
@@ -644,6 +645,121 @@ impl EditView {
         actions
     }
 
+    fn handle_action(&mut self, action: Action) -> bool {
+        match action {
+            Action::Open(filename) => self.open_file(filename),
+            Action::Split(filename) => self.split_view(filename),
+            Action::Close => self.close_view(),
+            Action::Save => self.save_to_file(),
+            Action::InsertChar(ch) => self.send_char(ch),
+            Action::SetMode(mode) => self.set_mode(mode),
+            Action::SetTheme(theme) => self.set_theme(theme.as_str()),
+            Action::SetLanguage(language) => self.set_language(language.as_str()),
+            Action::ToggleLineNumbers => self.show_line_numbers(!self.show_line_numbers),
+            Action::Undo => self.send_action("undo"),
+            Action::Redo => self.send_action("redo"),
+            Action::ClearSelection => self.send_action("collapse_selections"),
+            Action::SingleSelection => self.send_action("cancel_operation"),
+            Action::NewLine => self.send_action("insert_newline"),
+            Action::Cut => self.send_action("yank"),
+            Action::Copy => self.send_action("copy"),
+            Action::Yank => self.send_action("copy"), // xi-editor "yank" is like cut, we want vim behaviour...
+            Action::Paste => self.send_action("paste"),
+            Action::Indent => self.send_action("indent"),
+            Action::Outdent => self.send_action("outdent"),
+            Action::InsertTab => self.send_action("insert_tab"),
+            Action::DuplicateLine => self.send_action("duplicate_line"),
+            Action::IncreaseFontSize => self.increase_font_size(),
+            Action::DecreaseFontSize => self.decrease_font_size(),
+            Action::ExecuteCommand => {
+                self.execute_command().iter()
+                    .filter(|a| match a { Action::ExecuteCommand => false, _ => true })
+                    .for_each(|a| { 
+                        self.poke(EditViewCommands::Action(a.clone())); 
+                    });
+            },
+            Action::Motion((motion, quantity)) => match quantity.unwrap_or_default() {
+                Quantity::Number(n) => for _ in 0..n { match motion {
+                    Motion::Up => self.send_action("move_up"),
+                    Motion::Down => self.send_action("move_down"),
+                    Motion::Left => self.send_action("move_left"),
+                    Motion::Right => self.send_action("move_right"),
+                    Motion::First => self.send_action("move_to_left_end_of_line"),
+                    Motion::FirstOccupied => self.send_action("move_to_left_end_of_line"), // TODO: inaccurate
+                    Motion::Last => self.send_action("move_to_right_end_of_line"),
+                    _ => return false,
+                } },
+                Quantity::Page(n) => for _ in 0..n { match motion {
+                    Motion::Up => self.send_action("scroll_page_up"),
+                    Motion::Down => self.send_action("scroll_page_down"),
+                    _ => return false,
+                } },
+                Quantity::Word(n) => for _ in 0..n { match motion {
+                    Motion::Left => self.send_action("move_word_left"),
+                    Motion::Right => self.send_action("move_word_right"),
+                    _ => return false,
+                } },
+                _ => return false,
+            },
+            Action::Select((motion, quantity)) => match quantity.unwrap_or_default() {
+                Quantity::All => self.send_action("select_all"),
+                Quantity::Line(n) => {
+                    let last = if self.line_cache.height() > self.current_line + n {
+                        self.current_line + n
+                    } else {
+                        self.line_cache.height()
+                    };
+                    self.send_action("move_to_left_end_of_line");
+                    self.send_action("move_to_right_end_of_line_and_modify_selection");
+                    for l in self.current_line..last {
+                        self.send_action("move_down_and_modify_selection");
+                    }
+                },
+                Quantity::Number(n) => for _ in 0..n { match motion {
+                    Motion::Up => self.send_action("move_up_and_modify_selection"),
+                    Motion::Down => self.send_action("move_down_and_modify_selection"),
+                    Motion::Left => self.send_action("move_left_and_modify_selection"),
+                    Motion::Right => self.send_action("move_right_and_modify_selection"),
+                    Motion::First => self.send_action("move_to_left_end_of_line_and_modify_selection"),
+                    Motion::FirstOccupied => self.send_action("move_to_left_end_of_line_and_modify_selection"),
+                    Motion::Last => self.send_action("move_to_right_end_of_line_and_modify_selection"),
+                    _ => return false,
+                } },
+                Quantity::Word(n) => for _ in 0 ..n { match motion {
+                    Motion::Left => self.send_action("move_word_left_and_modify_selection"),
+                    Motion::Right => self.send_action("move_word_right_and_modify_selection"),
+                    _ => return false,
+                } },
+                _ => return false,
+            },
+            Action::Delete((motion, quantity)) => match motion {
+                Motion::Left => self.send_action("delete_backward"),
+                Motion::Right => self.send_action("delete_forward"),
+                Motion::Up => {
+                    self.handle_action(Action::Motion((Motion::Up, None)));
+                    self.handle_action(Action::Motion((Motion::First, None)));
+                    self.handle_action(Action::Select((Motion::Last, None)));
+                    self.handle_action(Action::Delete((Motion::Left, Some(Quantity::Number(2)))));
+                },
+                Motion::Down => {
+                    self.handle_action(Action::Motion((Motion::Down, None)));
+                    self.handle_action(Action::Motion((Motion::First, None)));
+                    self.handle_action(Action::Select((Motion::Last, None)));
+                    self.handle_action(Action::Delete((Motion::Left, Some(Quantity::Number(2)))));
+                },
+                _ => (),
+            },
+            Action::AddCursor(motion) => match motion {
+                Motion::Up => self.send_action("add_selection_above"),
+                Motion::Down => self.send_action("add_selection_below"),
+                _ => (),
+            },
+            _ => return false,
+        }
+
+        true
+    }
+
     pub fn poke(&mut self, command: EditViewCommands) -> bool {
         match command {
             EditViewCommands::ViewId(view_id) => self.set_view(view_id),
@@ -660,104 +776,7 @@ impl EditView {
             EditViewCommands::PluginStarted(plugin) => self.plugin_started(plugin),
             EditViewCommands::PluginStopped(plugin_id) => self.plugin_stopped(plugin_id), 
             EditViewCommands::Queries(queries) => self.queries_changed(queries),
-            EditViewCommands::Action(action) => match action {
-                Action::Open(filename) => self.open_file(filename),
-                Action::Split(filename) => self.split_view(filename),
-                Action::Close => self.close_view(),
-                Action::Save => self.save_to_file(),
-                Action::InsertChar(ch) => self.send_char(ch),
-                Action::SetMode(mode) => self.set_mode(mode),
-                Action::SetTheme(theme) => self.set_theme(theme.as_str()),
-                Action::SetLanguage(language) => self.set_language(language.as_str()),
-                Action::ToggleLineNumbers => self.show_line_numbers(!self.show_line_numbers),
-                Action::Undo => self.send_action("undo"),
-                Action::Redo => self.send_action("redo"),
-                Action::ClearSelection => self.send_action("collapse_selections"),
-                Action::SingleSelection => self.send_action("cancel_operation"),
-                Action::NewLine => self.send_action("insert_newline"),
-                Action::Cut => self.send_action("yank"),
-                Action::Copy => self.send_action("copy"),
-                Action::Yank => self.send_action("copy"), // xi-editor "yank" is like cut, we want vim behaviour...
-                Action::Paste => self.send_action("paste"),
-                Action::Indent => self.send_action("indent"),
-                Action::Outdent => self.send_action("outdent"),
-                Action::InsertTab => self.send_action("insert_tab"),
-                Action::DuplicateLine => self.send_action("duplicate_line"),
-                Action::IncreaseFontSize => self.increase_font_size(),
-                Action::DecreaseFontSize => self.decrease_font_size(),
-                Action::ExecuteCommand => {
-                    self.execute_command().iter()
-                        .filter(|a| match a { Action::ExecuteCommand => false, _ => true })
-                        .for_each(|a| { 
-                            self.poke(EditViewCommands::Action(a.clone())); 
-                        });
-                },
-                Action::Motion((motion, quantity)) => match quantity.unwrap_or_default() {
-                    Quantity::Number(n) => for _ in 0..n { match motion {
-                        Motion::Up => self.send_action("move_up"),
-                        Motion::Down => self.send_action("move_down"),
-                        Motion::Left => self.send_action("move_left"),
-                        Motion::Right => self.send_action("move_right"),
-                        Motion::First => self.send_action("move_to_left_end_of_line"),
-                        Motion::FirstOccupied => self.send_action("move_to_left_end_of_line"), // TODO: inaccurate
-                        Motion::Last => self.send_action("move_to_right_end_of_line"),
-                        _ => return false,
-                    } },
-                    Quantity::Page(n) => for _ in 0..n { match motion {
-                        Motion::Up => self.send_action("scroll_page_up"),
-                        Motion::Down => self.send_action("scroll_page_down"),
-                        _ => return false,
-                    } },
-                    Quantity::Word(n) => for _ in 0..n { match motion {
-                        Motion::Left => self.send_action("move_word_left"),
-                        Motion::Right => self.send_action("move_word_right"),
-                        _ => return false,
-                    } },
-                    _ => return false,
-                },
-                Action::Select((motion, quantity)) => match quantity.unwrap_or_default() {
-                    Quantity::All => self.send_action("select_all"),
-                    Quantity::Line(n) => {
-                        let last = if self.line_cache.height() > self.current_line + n {
-                            self.current_line + n
-                        } else {
-                            self.line_cache.height()
-                        };
-                        self.send_action("move_to_left_end_of_line");
-                        self.send_action("move_to_right_end_of_line_and_modify_selection");
-                        for l in self.current_line..last {
-                            self.send_action("move_down_and_modify_selection");
-                        }
-                    },
-                    Quantity::Number(n) => for _ in 0..n { match motion {
-                        Motion::Up => self.send_action("move_up_and_modify_selection"),
-                        Motion::Down => self.send_action("move_down_and_modify_selection"),
-                        Motion::Left => self.send_action("move_left_and_modify_selection"),
-                        Motion::Right => self.send_action("move_right_and_modify_selection"),
-                        Motion::First => self.send_action("move_to_left_end_of_line_and_modify_selection"),
-                        Motion::FirstOccupied => self.send_action("move_to_left_end_of_line_and_modify_selection"),
-                        Motion::Last => self.send_action("move_to_right_end_of_line_and_modify_selection"),
-                        _ => return false,
-                    } },
-                    Quantity::Word(n) => for _ in 0 ..n { match motion {
-                        Motion::Left => self.send_action("move_word_left_and_modify_selection"),
-                        Motion::Right => self.send_action("move_word_right_and_modify_selection"),
-                        _ => return false,
-                    } },
-                    _ => return false,
-                },
-                Action::Delete((motion, quantity)) => match motion {
-                    Motion::Left => self.send_action("delete_backward"),
-                    Motion::Right => self.send_action("delete_forward"),
-                    _ => (),
-                },
-                Action::AddCursor(motion) => match motion {
-                    Motion::Up => self.send_action("add_selection_above"),
-                    Motion::Down => self.send_action("add_selection_below"),
-                    _ => (),
-                },
-                _ => return false,
-            },
+            EditViewCommands::Action(action) => return self.handle_action(action),
         }
 
         true

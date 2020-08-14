@@ -55,7 +55,7 @@ macro_rules! motion {
     (
         $action:ident
         $motion:ident 
-        $(by$quantity:ident)*
+        $(by$quantity:ident)?
     ) => {{
         let mut _motion: Motion = Motion::$motion;
         let mut _quantity: Option<Quantity> = None;
@@ -63,11 +63,32 @@ macro_rules! motion {
         Action::$action((_motion, _quantity))
     }};
 }
-macro_rules! shift {
-    () => {{ ModifiersState::SHIFT }};
-}
-macro_rules! ctrl {
-    () => {{ ModifiersState::CTRL }};
+macro_rules! shift { () => {{ ModifiersState::SHIFT }}; }
+macro_rules! ctrl { () => {{ ModifiersState::CTRL }}; }
+macro_rules! mods_empty { () => {{ ModifiersState::empty() }}; }
+
+macro_rules! key_binding {
+    ($key:ident
+     ,$mods:expr
+     ,$mode:ident
+     ,$target:expr
+     ;$($action:expr),*
+    ) => {{
+        let mut _mods: ModifiersState = $mods;
+        let _notmode = Mode::None;
+        let mut _mode: Mode = Mode::$mode;
+        let mut _target: ActionTarget = $target;
+        let mut _actions: Vec<Action> = Vec::new();
+        $(_actions.push($action);)*
+        KeyBinding {
+            trigger: Key::KeyCode($key),
+            mods: _mods,
+            mode: _mode,
+            notmode: _notmode,
+            target: _target,
+            actions: _actions,
+        }
+    }};
 }
 
 macro_rules! bindings {
@@ -134,13 +155,65 @@ macro_rules! bindings {
     }};
 }
 
+macro_rules! bind_extended_motions {
+    ($mode:ident, $action:ident, $target:expr) => {{
+        vec![
+            key_binding!(H,     mods_empty!(),  $mode, $target; motion!($action Left)),
+            key_binding!(J,     mods_empty!(),  $mode, $target; motion!($action Down)),
+            key_binding!(K,     mods_empty!(),  $mode, $target; motion!($action Up)),
+            key_binding!(L,     mods_empty!(),  $mode, $target; motion!($action Right)),
+            key_binding!(W,     mods_empty!(),  $mode, $target; motion!($action Right by Word)),
+            key_binding!(E,     mods_empty!(),  $mode, $target; motion!($action RightEnd by Word)),
+            key_binding!(W,     shift!(),       $mode, $target; motion!($action Right by Semantic)),
+            key_binding!(Key0,  mods_empty!(),  $mode, $target; motion!($action First)),
+            key_binding!(Key4,  shift!(),       $mode, $target; motion!($action Last)),
+            key_binding!(Key5,  shift!(),       $mode, $target; motion!($action Bracket)),
+            key_binding!(Key6,  shift!(),       $mode, $target; motion!($action FirstOccupied)),
+        ]
+    }};
+}
+macro_rules! bind_motions {
+    ($mode:ident, $action:ident, $target:expr) => {{
+       vec![
+           key_binding!(Home,   mods_empty!(), $mode, $target; motion!($action First)), 
+           key_binding!(End,    mods_empty!(), $mode, $target; motion!($action Last)), 
+
+           key_binding!(Up,     shift!(), $mode, $target; motion!($action Up by Page)), 
+           key_binding!(Down,   shift!(), $mode, $target; motion!($action Down by Page)), 
+
+           key_binding!(Left,   ctrl!(), $mode, $target; motion!($action Left by Word)), 
+           key_binding!(Right,  ctrl!(), $mode, $target; motion!($action Right by Word)), 
+           key_binding!(Left,   mods_empty!(), $mode, $target; motion!($action Left)), 
+           key_binding!(Right,  mods_empty!(), $mode, $target; motion!($action Right)), 
+           key_binding!(Up,     mods_empty!(), $mode, $target; motion!($action Up)), 
+           key_binding!(Down,   mods_empty!(), $mode, $target; motion!($action Down)),
+        ]
+    }};
+}
+
 pub fn default_mouse_bindings() -> Vec<MouseBinding> {
     bindings!(
         MouseBinding;
     )
 }
-pub fn bind_alpha_numeric(mode: Mode, target: ActionTarget) -> Vec<KeyBinding> {
+pub fn bind_numeric(mode: Mode, target: ActionTarget) -> Vec<KeyBinding> {
     bindings!(
+        KeyBinding;
+
+        Key1, +mode, @target; Action::InsertChar('1');
+        Key2, +mode, @target; Action::InsertChar('2');
+        Key3, +mode, @target; Action::InsertChar('3');
+        Key4, +mode, @target; Action::InsertChar('4');
+        Key5, +mode, @target; Action::InsertChar('5');
+        Key6, +mode, @target; Action::InsertChar('6');
+        Key7, +mode, @target; Action::InsertChar('7');
+        Key8, +mode, @target; Action::InsertChar('8');
+        Key9, +mode, @target; Action::InsertChar('9');
+        Key0, +mode, @target; Action::InsertChar('0');
+    )
+}
+pub fn bind_alpha_numeric(mode: Mode, target: ActionTarget) -> Vec<KeyBinding> {
+    let mut bindings = bindings!(
         KeyBinding;
         A, shift!(), +mode, @target; Action::InsertChar('A');
         B, shift!(), +mode, @target; Action::InsertChar('B');
@@ -207,17 +280,6 @@ pub fn bind_alpha_numeric(mode: Mode, target: ActionTarget) -> Vec<KeyBinding> {
         Key9, shift!(), +mode, @target; Action::InsertChar('(');
         Key0, shift!(), +mode, @target; Action::InsertChar(')');
         
-        Key1, +mode, @target; Action::InsertChar('1');
-        Key2, +mode, @target; Action::InsertChar('2');
-        Key3, +mode, @target; Action::InsertChar('3');
-        Key4, +mode, @target; Action::InsertChar('4');
-        Key5, +mode, @target; Action::InsertChar('5');
-        Key6, +mode, @target; Action::InsertChar('6');
-        Key7, +mode, @target; Action::InsertChar('7');
-        Key8, +mode, @target; Action::InsertChar('8');
-        Key9, +mode, @target; Action::InsertChar('9');
-        Key0, +mode, @target; Action::InsertChar('0');
-
         Grave,      shift!(), +mode, @target; Action::InsertChar('~');
         Minus,      shift!(), +mode, @target; Action::InsertChar('_');
         Add,        shift!(), +mode, @target; Action::InsertChar('+');
@@ -242,53 +304,10 @@ pub fn bind_alpha_numeric(mode: Mode, target: ActionTarget) -> Vec<KeyBinding> {
         Period,     +mode, @target; Action::InsertChar('.');
         Slash,      +mode, @target; Action::InsertChar('/');
         Space,      +mode, @target; Action::InsertChar(' ');
-    )
-}
+    );
+    bindings.extend(bind_numeric(mode, target));
 
-pub fn bind_motion_selects(mode: Mode) -> Vec<KeyBinding> {
-    bindings!(
-        KeyBinding;
-
-        Left,   +mode; motion!(Select Left);
-        Right,  +mode; motion!(Select Right);
-        Up,     +mode; motion!(Select Up);
-        Down,   +mode; motion!(Select Down);
-        H,      +mode; motion!(Select Left); 
-        J,      +mode; motion!(Select Down); 
-        K,      +mode; motion!(Select Up); 
-        L,      +mode; motion!(Select Right); 
-
-        W,      +mode; motion!(Select Right by Word);
-        E,      +mode; motion!(Select RightEnd by Word); 
-        Key4,   +mode; motion!(Select Last);
-
-        W, shift!(), +mode; motion!(Select Right by Semantic); 
-        Key5, shift!(), +mode; motion!(Select Bracket); 
-        Key6, shift!(), +mode; motion!(Select FirstOccupied); 
-    )
-}
-
-pub fn bind_motions(mode: Mode) -> Vec<KeyBinding> {
-    bindings!(
-        KeyBinding;
-
-        Home,   +mode; motion!(Motion First); 
-        End,    +mode; motion!(Motion Last); 
-        Key0,   +mode; motion!(Motion First); 
-        Key4,   shift!(), +mode; motion!(Motion Last); 
-        Key5,   shift!(), +mode; motion!(Motion Bracket); 
-        Key6,   shift!(), +mode; motion!(Motion FirstOccupied); 
-
-        Up,     shift!(), +mode; motion!(Motion Up by Page); 
-        Down,   shift!(), +mode; motion!(Motion Down by Page); 
-
-        Left,   ctrl!(), +mode; motion!(Motion Left by Word); 
-        Right,  ctrl!(), +mode; motion!(Motion Right by Word); 
-        Left,   +mode; motion!(Motion Left); 
-        Right,  +mode; motion!(Motion Right); 
-        Up,     +mode; motion!(Motion Up); 
-        Down,   +mode; motion!(Motion Down);
-    )
+    bindings
 }
 
 pub fn default_key_bindings() -> Vec<KeyBinding> {
@@ -306,7 +325,7 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
         R, shift!(), +Mode::Normal; Action::SetMode(Mode::Replace);
         Colon, shift!(), +Mode::Normal; Action::SetMode(Mode::Command);
 
-        Back, +Mode::Command, @ActionTarget::StatusBar; motion!(Delete Left);
+        Back,   +Mode::Command, @ActionTarget::StatusBar; motion!(Delete Left);
         Delete, +Mode::Command, @ActionTarget::StatusBar; motion!(Delete Right);
         Return, +Mode::Command; Action::ExecuteCommand;
         A,      +Mode::Normal; motion!(Motion Right), Action::SetMode(Mode::Insert);
@@ -315,12 +334,19 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
         D,      +Mode::Delete; motion!(Motion First), motion!(Select Last), Action::Cut, motion!(Delete Left), Action::SetMode(Mode::Normal);
         D,      shift!(), +Mode::Normal; motion!(Select Last), motion!(Delete Left);
     );
-    bindings.extend(bind_motions(Mode::Normal));
-    bindings.extend(bind_motions(Mode::Insert));
+    bindings.extend(bind_motions!(Normal, Motion, ActionTarget::FocusedView));
+    bindings.extend(bind_motions!(Insert, Motion, ActionTarget::FocusedView));
+    bindings.extend(bind_motions!(Select, Select, ActionTarget::FocusedView));
+    bindings.extend(bind_motions!(SelectLine, Select, ActionTarget::FocusedView));
+    bindings.extend(bind_motions!(SelectBlock, Select, ActionTarget::FocusedView));
+    bindings.extend(bind_motions!(Delete, Delete, ActionTarget::FocusedView));
+    bindings.extend(bind_motions!(Command, Motion, ActionTarget::StatusBar));
+    bindings.extend(bind_extended_motions!(Normal, Motion, ActionTarget::FocusedView));
+    bindings.extend(bind_extended_motions!(Select, Select, ActionTarget::FocusedView));
+    bindings.extend(bind_extended_motions!(SelectLine, Select, ActionTarget::FocusedView));
+    bindings.extend(bind_extended_motions!(SelectBlock, Select, ActionTarget::FocusedView));
+    bindings.extend(bind_extended_motions!(Delete, Delete, ActionTarget::FocusedView));
     bindings.extend(bind_alpha_numeric(Mode::Command, ActionTarget::StatusBar));
-    bindings.extend(bind_motion_selects(Mode::Select));
-    bindings.extend(bind_motion_selects(Mode::SelectLine));
-    bindings.extend(bind_motion_selects(Mode::SelectBlock));
     bindings.extend(bind_alpha_numeric(Mode::Insert, ActionTarget::FocusedView));
 
     bindings.extend(bindings!(
@@ -348,11 +374,11 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
         Copy, +Mode::Insert; Action::Yank;
         Cut, +Mode::Insert; Action::Cut;
 
-        P, ~Mode::Insert; Action::Paste;
+        P, +Mode::Normal; Action::Paste;
         Paste, +Mode::Insert; Action::Paste;
         
-        U, ~Mode::Insert; Action::Undo;
-        R, ctrl!(), ~Mode::Insert; Action::Redo;
+        U, +Mode::Normal; Action::Undo;
+        R, ctrl!(), +Mode::Normal; Action::Redo;
 
         Tab, +Mode::Insert; Action::Indent;
         Tab, shift!(), +Mode::Insert; Action::Outdent;
@@ -365,9 +391,6 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
         Up, shift!() | ctrl!(), +Mode::Insert; Action::AddCursor(Motion::Up);
         Down, shift!() | ctrl!(), +Mode::Insert; Action::AddCursor(Motion::Down);
         
-        W,      +Mode::Normal; motion!(Motion Right by Word);
-        E,      +Mode::Normal; motion!(Motion RightEnd by Word);
-        W,      shift!(), +Mode::Normal; motion!(Motion RightEnd by Semantic);
         O,      +Mode::Normal; motion!(Motion Last), Action::NewLine, Action::SetMode(Mode::Insert);
         O,      shift!(), +Mode::Normal; motion!(Motion Up), motion!(Motion Last), Action::NewLine, Action::SetMode(Mode::Insert);
     ));

@@ -19,7 +19,6 @@ use glyph_brush::{
 };
 use crate::editor::linecache::{
     Line,
-    StyleSpan,
 };
 use rpc::{
     Style,
