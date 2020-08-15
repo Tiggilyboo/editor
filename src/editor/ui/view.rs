@@ -397,10 +397,13 @@ impl EditView {
         let core = self.core.upgrade();
         if core.is_some() && self.view_id.is_some() {
             let core = core.unwrap();
-            core.lock().unwrap().send_notification(method, params);
-            println!("fe->core: {}", json!({
-                method: params,
-            }));
+            if !core.lock().unwrap().send_notification(method, params) {
+                self.pending.push((method.to_owned(), params.clone()));  
+            } else {
+                println!("fe->core: {}", json!({
+                    method: params,
+                }));
+            }
         } else {
             println!("queueing pending method: {}", method);
             self.pending.push((method.to_owned(), params.clone()));
@@ -418,7 +421,10 @@ impl EditView {
             });
 
             let core = core.unwrap();
-            core.lock().unwrap().send_notification("edit", &edit_params);
+            if !core.lock().unwrap().send_notification("edit", &edit_params) {
+                self.pending.push(("edit".to_string(), edit_params));
+            }
+
         } else {
             println!("queueing pending method: {}", method);
             self.pending.push((method.to_owned(), params.clone()));
@@ -441,12 +447,19 @@ impl EditView {
         }
     }
 
-    fn save_to_file(&mut self) {
-        if self.view_id.is_some() && self.filepath.is_some() {
+    fn save_to_file(&mut self, filename: Option<String>) {
+        let filename = if filename.is_some() { 
+            filename
+        } else {
+            self.filepath.clone()
+        };
+        if self.view_id.is_some() && filename.is_some() {
             self.send_notification("save", &json!({
                 "view_id": self.view_id,
-                "file_path": self.filepath,
+                "file_path": filename,
             }));
+        } else {
+            println!("Unable to save: '{:?}'", filename);
         }
     }
 
@@ -550,6 +563,7 @@ impl EditView {
 
     fn set_theme(&mut self, theme_name: &str) {
         self.send_notification("set_theme", &json!({ "theme_name": theme_name }));
+        self.update_viewport(); 
     }
 
     fn set_language(&mut self, language: &str) {
@@ -578,11 +592,14 @@ impl EditView {
         }
     }
     fn open_file(&mut self, filename: Option<String>) {
+        let filename = if filename.is_some() {
+            filename
+        } else {
+            self.filepath.clone()
+        };
         if let Some(proxy) = &self.event_proxy {
             match proxy.send_event(EditorEvent::Action(Action::Open(filename.clone()))) {
-                Ok(_) => {
-                    drop(self);
-                },
+                Ok(_) => {},
                 Err(err) => panic!(err),
             }
         }
@@ -625,15 +642,15 @@ impl EditView {
         let arg1 = if args.len() > 1 {
             Some(args[1].to_string())
         } else {
-            None
+            self.filepath.clone()
         };
 
         // TODO: Abstract and make this not crap
         match args[0] {
             "e" => actions.push(Action::Open(arg1)),
-            "w" => actions.push(Action::Save),
+            "w" => actions.push(Action::Save(arg1)),
             "q" => actions.push(Action::Close),
-            "wq" => actions.extend(vec![Action::Save, Action::Close]),
+            "wq" => actions.extend(vec![Action::Save(arg1), Action::Close]),
             "sp" => actions.push(Action::Split(self.filepath.clone())),
             _ => {},
         }
@@ -649,12 +666,12 @@ impl EditView {
         match action {
             Action::Open(filename) => self.open_file(filename),
             Action::Split(filename) => self.split_view(filename),
-            Action::Close => self.close_view(),
-            Action::Save => self.save_to_file(),
+            Action::Save(filename) => self.save_to_file(filename),
             Action::InsertChar(ch) => self.send_char(ch),
             Action::SetMode(mode) => self.set_mode(mode),
             Action::SetTheme(theme) => self.set_theme(theme.as_str()),
             Action::SetLanguage(language) => self.set_language(language.as_str()),
+            Action::Close => self.close_view(),
             Action::ToggleLineNumbers => self.show_line_numbers(!self.show_line_numbers),
             Action::Undo => self.send_action("undo"),
             Action::Redo => self.send_action("redo"),

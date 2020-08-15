@@ -70,32 +70,37 @@ impl Core {
         core
     }
 
-    pub fn send_notification(&self, method: &str, params: &Value) {
+    pub fn send_notification(&self, method: &str, params: &Value) -> bool {
         let cmd = json!({
             "method": method,
             "params": params,
         });
         if let Ok(ref state) = self.state.try_lock() {
             state.xi_peer.send_json(&cmd);
+            true
         } else {
-            println!("core > send_notification: unable to lock core state to send xi_peer notification");
+            false
         }
     }
 
     /// Calls the callback with the result (from a different thread).
-    pub fn send_request<F>(&mut self, method: &str, params: &Value, callback: F)
+    pub fn send_request<F>(&mut self, method: &str, params: &Value, callback: F) -> bool
         where F: FnOnce(&Value) + Send + 'static
     {
         println!("core > send_request, method = {}", method);
-        let mut state = self.state.lock().unwrap();
-        let id = state.id;
-        let cmd = json!({
-            "method": method,
-            "params": params,
-            "id": id,
-        });
-        state.xi_peer.send_json(&cmd);
-        state.pending.insert(id, Box::new(callback));
-        state.id += 1;
+        if let Ok(ref mut state) = &mut self.state.try_lock() {
+            let id = state.id;
+            let cmd = json!({
+                "method": method,
+                "params": params,
+                "id": id,
+            });
+            state.xi_peer.send_json(&cmd);
+            state.pending.insert(id, Box::new(callback));
+            state.id += 1;
+            true
+        } else {
+            false
+        }
     }
 }

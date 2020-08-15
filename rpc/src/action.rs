@@ -14,6 +14,7 @@ pub type MotionQuantity = (Motion, Option<Quantity>);
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {
     Open(Option<String>),
+    Save(Option<String>),
     Split(Option<String>),
     Motion(MotionQuantity),
     Select(MotionQuantity),
@@ -36,7 +37,6 @@ pub enum Action {
     SearchPrev,
     SearchStart,
     SearchEnd,
-    Save,
     Copy,
     Yank,
     Cut,

@@ -35,3 +35,4 @@ pub enum EditViewCommands {
     Queries(Vec<Query>),
     Action(Action),
 }
+
