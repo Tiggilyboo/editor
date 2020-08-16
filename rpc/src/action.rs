@@ -2,11 +2,19 @@ use super::motion::Motion;
 use super::mode::Mode;
 use super::quantity::Quantity;
 
+pub type PluginId = String;
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum ActionTarget {
     FocusedView,
     StatusBar,
     EventLoop,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PluginAction {
+    Start(PluginId),
+    Stop(PluginId),
 }
 
 pub type MotionQuantity = (Motion, Option<Quantity>);
@@ -20,11 +28,11 @@ pub enum Action {
     Select(MotionQuantity),
     Delete(MotionQuantity),
     AddCursor(Motion),
+    InsertChar(char),
     SetMode(Mode),
     SetTheme(String),
     SetLanguage(String),
-    DefineCommand((String, Box<Action>)),
-    InsertChar(char),
+    Plugin(PluginAction),
     Close,
     ExecuteCommand,
     ToggleLineNumbers,

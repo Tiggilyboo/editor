@@ -248,7 +248,7 @@ impl App {
                         commands: vec![],
                     });
                     if let Some(edit_view) = state.views.get_mut(&view_id) {
-                        edit_view.poke(EditViewCommands::PluginStarted(plugin));
+                        edit_view.poke(EditViewCommands::PluginChanged(plugin));
                     }
                 }
             },
@@ -263,13 +263,22 @@ impl App {
                 }
             },
             "update_cmds" => {
-                let _view_id = params["view_id"].as_str().unwrap().to_string();
-                let _plugin = params["plugin"].as_str().unwrap().to_string();
+                let view_id = params["view_id"].as_str().unwrap().to_string();
+                let plugin_id = params["plugin"].as_str().unwrap().to_string();
                 let cmds = params["cmds"].as_array().unwrap();
 
+                let mut commands: Vec<Command> = vec!();
                 for raw_cmd in cmds.iter() {
                     if let Ok(cmd) = from_value::<Command>(raw_cmd.clone()) {
-                        println!("Command needs to be mapped to actions: {:?}", cmd);
+                        commands.push(cmd);
+                    }
+                }
+                if let Ok(ref mut state) = self.state.clone().try_lock() {
+                    state.set_plugin_commands(plugin_id.clone(), commands);
+                    let plugin = state.get_plugin(plugin_id).unwrap();
+
+                    if let Some(edit_view) = state.views.get_mut(&view_id) {
+                        edit_view.poke(EditViewCommands::PluginChanged(plugin));
                     }
                 }
                 

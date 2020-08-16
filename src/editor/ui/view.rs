@@ -23,6 +23,8 @@ use glyph_brush::{
 use rpc::{ 
     Action,
     ActionTarget,
+    PluginAction,
+    PluginId,
     Quantity,
     Query,
     Mode,
@@ -35,7 +37,6 @@ use rpc::{
 use crate::render::Renderer;
 use crate::editor::{
     plugins::{
-        PluginId,
         PluginState,
     },
     linecache::LineCache,
@@ -570,7 +571,7 @@ impl EditView {
         self.send_notification("set_language", &json!({ "language": language }));
     }
 
-    fn plugin_started(&mut self, plugin: PluginState) {
+    fn plugin_changed(&mut self, plugin: PluginState) {
         println!("Plugin started: {:?}", plugin);
     }
     fn plugin_stopped(&mut self, plugin_id: PluginId) {
@@ -638,20 +639,33 @@ impl EditView {
         self.set_mode(Mode::Normal);
 
         let mut actions: Vec<Action> = vec!(); 
-        let args: Vec<&str> = command_text.split(" ").collect();
-        let arg1 = if args.len() > 1 {
-            Some(args[1].to_string())
+        let args: Vec<String> = command_text.split(" ").map(|a| a.to_string()).collect();
+
+        let filename = if args.len() > 1 {
+            Some(args[1].clone())
         } else {
             self.filepath.clone()
         };
 
         // TODO: Abstract and make this not crap
-        match args[0] {
-            "e" => actions.push(Action::Open(arg1)),
-            "w" => actions.push(Action::Save(arg1)),
+        match args[0].as_str() {
+            "e" => actions.push(Action::Open(filename)),
+            "w" => actions.push(Action::Save(filename)),
             "q" => actions.push(Action::Close),
-            "wq" => actions.extend(vec![Action::Save(arg1), Action::Close]),
-            "sp" => actions.push(Action::Split(self.filepath.clone())),
+            "wq" => actions.extend(vec![Action::Save(filename), Action::Close]),
+            "sp" => actions.push(Action::Split(filename)),
+            "plug" => {
+                if args.len() < 3 {
+                    println!("usage: plug [start|stop] <plugin_name>");
+                } else {
+                    let plugin_id = PluginId::from(args[2].clone());
+                    match args[1].as_str() {
+                        "start" => actions.push(Action::Plugin(PluginAction::Start(plugin_id))),
+                        "stop" => actions.push(Action::Plugin(PluginAction::Stop(plugin_id))),
+                        _ => println!("args: {:?}", args),
+                    }
+                }
+            },
             _ => {},
         }
 
@@ -660,6 +674,25 @@ impl EditView {
         }
 
         actions
+    }
+
+    fn handle_plugin_action(&mut self, plugin_action: PluginAction) {
+        let view_id = self.view_id.clone().unwrap();
+
+        match plugin_action {
+            PluginAction::Start(plugin_id) => {
+                self.send_notification("plugin", &json!({
+                    "view_id": view_id,
+                    "plugin_name": plugin_id,
+                }));
+            },
+            PluginAction::Stop(plugin_id) => {
+                self.send_notification("plugin", &json!({
+                    "view_id": view_id,
+                    "plugin_name": plugin_id,
+                }));
+            },
+        }
     }
 
     fn handle_action(&mut self, action: Action) -> bool {
@@ -671,6 +704,7 @@ impl EditView {
             Action::SetMode(mode) => self.set_mode(mode),
             Action::SetTheme(theme) => self.set_theme(theme.as_str()),
             Action::SetLanguage(language) => self.set_language(language.as_str()),
+            Action::Plugin(plugin_action) => self.handle_plugin_action(plugin_action),
             Action::Close => self.close_view(),
             Action::ToggleLineNumbers => self.show_line_numbers(!self.show_line_numbers),
             Action::Undo => self.send_action("undo"),
@@ -790,7 +824,7 @@ impl EditView {
             EditViewCommands::ThemeChanged(theme) => self.theme_changed(theme),
             EditViewCommands::LanguageChanged(language_id) => self.language_changed(language_id),
             EditViewCommands::DefineStyle(style) => self.define_style(style),
-            EditViewCommands::PluginStarted(plugin) => self.plugin_started(plugin),
+            EditViewCommands::PluginChanged(plugin) => self.plugin_changed(plugin),
             EditViewCommands::PluginStopped(plugin_id) => self.plugin_stopped(plugin_id), 
             EditViewCommands::Queries(queries) => self.queries_changed(queries),
             EditViewCommands::Action(action) => return self.handle_action(action),

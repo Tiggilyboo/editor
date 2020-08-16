@@ -18,4 +18,3 @@ pub type EditorEventLoopProxy = EventLoopProxy<EditorEvent>;
 pub fn create_event_loop() -> EventLoop<EditorEvent> {
     EventLoop::<EditorEvent>::with_user_event()
 }
-

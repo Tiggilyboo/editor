@@ -6,6 +6,7 @@ use std::collections::HashMap;
 
 use winit::event::ModifiersState;
 use winit::event_loop::EventLoopProxy;
+use xi_core_lib::plugins::Command;
 
 use super::ui::{
     view::EditView,
@@ -14,6 +15,7 @@ use rpc::{
     Mode,
     Action,
     ActionTarget,
+    PluginId,
 };
 use super::commands::EditViewCommands;
 use crate::events::{
@@ -30,7 +32,6 @@ use crate::events::{
     },
 };
 use super::plugins::{
-    PluginId,
     PluginState,
 };
 
@@ -90,6 +91,11 @@ impl EditorState {
             Some(plugin.clone())
         } else {
             None
+        }
+    }
+    pub fn set_plugin_commands(&mut self, plugin_id: PluginId, commands: Vec<Command>) {
+        if let Some(ref mut plugin) = &mut self.plugins.get_mut(&plugin_id) {
+            plugin.commands = commands;
         }
     }
 

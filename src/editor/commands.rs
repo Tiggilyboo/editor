@@ -6,7 +6,6 @@ use serde_json::Value;
 
 use super::plugins::{
     PluginState,
-    PluginId,
 };
 use crate::events::EditorEventLoopProxy;
 use rpc::{
@@ -15,6 +14,7 @@ use rpc::{
     Theme,
     Style,
     Query,
+    PluginId,
 };
 use crate::editor::editor_rpc::Core;
 
@@ -30,7 +30,7 @@ pub enum EditViewCommands {
     ThemeChanged(Theme),
     LanguageChanged(String),
     DefineStyle(Style),
-    PluginStarted(PluginState),
+    PluginChanged(PluginState),
     PluginStopped(PluginId),
     Queries(Vec<Query>),
     Action(Action),

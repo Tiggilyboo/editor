@@ -1,10 +1,9 @@
 use xi_core_lib::plugins::Command;
-
-pub type PluginId = String;
+use rpc::PluginId;
 
 #[derive(Clone, Debug)]
 pub struct PluginState {
-    pub name: String,
+    pub name: PluginId,
     pub active: bool,
     pub commands: Vec<Command>,
 }
