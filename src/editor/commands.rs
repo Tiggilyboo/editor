@@ -2,6 +2,7 @@ use std::sync::{
     Mutex,
     Weak,
 };
+use std::collections::HashMap;
 use serde_json::Value;
 
 use super::plugins::{
@@ -29,7 +30,7 @@ pub enum EditViewCommands {
     ConfigChanged(Config),
     ThemeChanged(Theme),
     LanguageChanged(String),
-    DefineStyle(Style),
+    SetStyles(HashMap<usize, Style>),
     PluginChanged(PluginState),
     PluginStopped(PluginId),
     Queries(Vec<Query>),

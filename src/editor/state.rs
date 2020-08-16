@@ -16,6 +16,7 @@ use rpc::{
     Action,
     ActionTarget,
     PluginId,
+    Style,
 };
 use super::commands::EditViewCommands;
 use crate::events::{
@@ -42,6 +43,7 @@ pub struct EditorState {
     pub views: HashMap<ViewId, EditView>, 
     themes: Vec<String>,
     languages: Vec<String>, 
+    styles: HashMap<usize, Style>,
     plugins: HashMap<PluginId, PluginState>, 
     key_bindings: Vec<KeyBinding>,
     mouse_bindings: Vec<MouseBinding>,
@@ -54,8 +56,9 @@ impl EditorState {
             focused: Default::default(),
             views: HashMap::new(),
             plugins: HashMap::new(),
-            themes: vec![],
-            languages: vec![],
+            themes: Vec::new(),
+            languages: Vec::new(),
+            styles: HashMap::new(), 
             mouse_bindings: default_mouse_bindings(),
             key_bindings: default_key_bindings(),
             event_proxy,
@@ -85,6 +88,19 @@ impl EditorState {
             let name = plugin.name.clone();
             self.plugins.insert(name, plugin.clone());
         }
+    }
+    pub fn define_style(&mut self, style: Style) {
+        if self.styles.contains_key(&style.id) {
+            self.styles.remove(&style.id);
+        }
+        self.styles.insert(style.id, style);
+
+        for (_, view) in &mut self.views.iter_mut() {
+            view.poke(EditViewCommands::SetStyles(self.styles.clone()));
+        }
+    }
+    pub fn get_styles(&self) -> HashMap<usize, Style> {
+        self.styles.clone()
     }
     pub fn get_plugin(&self, plugin_id: PluginId) -> Option<PluginState> {
         if let Some(plugin) = self.plugins.get(&plugin_id) {

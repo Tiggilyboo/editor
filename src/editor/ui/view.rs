@@ -32,7 +32,6 @@ use rpc::{
     Config,
     Theme,
     Style,
-    theme::ToRgbaFloat32,
 };
 use crate::render::Renderer;
 use crate::editor::{
@@ -42,13 +41,19 @@ use crate::editor::{
     linecache::LineCache,
     editor_rpc::Core,
     commands::EditViewCommands,
+    view_resources::{
+        Resources,
+    },
 };
 use crate::events::{
     EditorEventLoopProxy,
     EditorEvent,
 };
 use super::{
-    colour::ColourRGBA,
+    colour::{
+        ColourRGBA,
+        BLACK,
+    },
     widget::{
         Widget,
         hash_widget,
@@ -63,40 +68,8 @@ use super::{
     find_replace::FindWidget,
 };
 
-
 type Method = String;
 type Params = Value;
-
-pub struct Resources {
-    pub fg: ColourRGBA,
-    pub bg: ColourRGBA,
-    pub sel: ColourRGBA,
-    pub cursor: ColourRGBA,
-    pub gutter_fg: ColourRGBA,
-    pub gutter_bg: ColourRGBA,
-    pub scale: f32,
-    styles: HashMap<usize, Style>,
-}
-
-impl Hash for Resources {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.fg.iter().for_each(|b| b.to_le_bytes().hash(state));
-        self.bg.iter().for_each(|b| b.to_le_bytes().hash(state));
-        self.sel.iter().for_each(|b| b.to_le_bytes().hash(state));
-        self.gutter_fg.iter().for_each(|b| b.to_le_bytes().hash(state));
-        self.gutter_bg.iter().for_each(|b| b.to_le_bytes().hash(state));
-        self.scale.to_le_bytes().hash(state);
-    }
-}
-impl Resources {
-    #[inline]
-    pub fn line_gap(&self) -> f32 {
-        self.scale * 1.06
-    }
-    pub fn pad(&self) -> f32 {
-        self.scale * 0.25
-    }
-}
 
 pub struct EditView {
     index: usize,
@@ -191,14 +164,17 @@ impl Widget for EditView {
 
         self.status_bar.set_mode_width(mode_width);
         self.status_bar.set_scale(line_gap);
-        self.status_bar.set_focused(self.focused);
         self.status_bar.queue_draw(renderer);
     
         // Selection start index, background = 0, gutter = 1, status_bar = 2, 3, 4
         let mut s_ix = 6;
         for line_num in first_line..last_line {
             if let Some(ref mut text_widget) = &mut self.get_line(line_num) {
-                let line_content = text_widget.get_section().to_borrowed().text[0].text;
+                let section = text_widget.get_section().to_borrowed();
+                if section.text.len() == 0 {
+                    println!("{} has no text!", self.view_id.clone().unwrap());
+                }
+                let line_content = section.text[0].text;
                 let line_len = line_content.len();
 
                 // Selections
@@ -274,23 +250,6 @@ fn create_offside_section(content: &str, colour: [f32; 4], scale: f32) -> OwnedS
         .to_owned()
 }
 
-const BLANK: ColourRGBA = [0.0, 0.0, 0.0, 0.0];
-const BLACK: ColourRGBA = [0.0, 0.0, 0.0, 1.0];
-impl Resources {
-    fn new(scale: f32) -> Self {
-        Self {
-            fg: BLANK,
-            bg: BLANK,
-            sel: BLANK,
-            cursor: BLANK,
-            gutter_bg: BLANK,
-            gutter_fg: BLANK,
-            scale,
-            styles: HashMap::new(),
-        }
-    }
-}
-
 impl EditView {
     pub fn new(index: usize, scale: f32, filename: Option<String>) -> Self {
         let size = [0.0, 0.0]; 
@@ -315,7 +274,7 @@ impl EditView {
             index,
             size,
             position,
-            focused: false,
+            focused: true,
             dirty: true,
             view_id: None,
             config: None,
@@ -339,10 +298,10 @@ impl EditView {
     }
 
     fn get_line(&self, line_num: usize) -> Option<TextWidget> {
+        let resources = &self.resources;
         self.line_cache
             .get_line(line_num)
             .map(|line| {
-                let resources = &self.resources;
                 TextWidget::from_line(line_num, &line, resources.scale, resources.fg, &resources.styles)
             })
     }
@@ -464,10 +423,6 @@ impl EditView {
         }
     }
 
-    fn define_style(&mut self, style: Style) {
-        self.resources.styles.insert(style.id, style);
-    }
-
     fn config_changed(&mut self, config: Config) {
         if config.font_size.is_some() {
             let old_height = self.size[1] + self.resources.line_gap();
@@ -524,27 +479,9 @@ impl EditView {
     }
 
     fn theme_changed(&mut self, theme: Theme) {
-        if let Some(col) = &theme.foreground {
-            self.resources.fg = col.to_rgba_f32array();
-        }
-        if let Some(col) = &theme.background {
-            self.resources.bg = col.to_rgba_f32array(); 
-            self.background.set_colour(self.resources.bg.clone());
-        }
-        if let Some(col) = &theme.caret {
-            self.resources.cursor = col.to_rgba_f32array();
-        }
-        if let Some(col) = &theme.selection {
-            self.resources.sel = col.to_rgba_f32array();
-        } else {
-            self.resources.sel = self.resources.cursor;
-        }
-        if let Some(col) = &theme.gutter {
-            self.resources.gutter_bg = col.to_rgba_f32array();
-        } else {
-            self.resources.gutter_bg = self.resources.bg;
-        }
+        self.resources.update_from_theme(theme.clone());
         self.gutter.set_colour(self.resources.gutter_bg);
+        self.background.set_colour(self.resources.bg.clone());
         self.status_bar.set_colours(
             self.resources.gutter_bg.clone(), 
             self.resources.fg.clone(),
@@ -552,11 +489,6 @@ impl EditView {
             BLACK);
         self.status_bar.set_scale(self.resources.scale);
 
-        if let Some(col) = &theme.gutter_foreground {
-            self.resources.gutter_fg = col.to_rgba_f32array();
-        } else {
-            self.resources.gutter_fg = self.resources.fg;
-        }
 
         self.dirty = true;
         self.theme = Some(theme);
@@ -569,6 +501,10 @@ impl EditView {
 
     fn set_language(&mut self, language: &str) {
         self.send_notification("set_language", &json!({ "language": language }));
+    }
+
+    fn set_styles(&mut self, styles: HashMap<usize, Style>) {
+        self.resources.styles = styles;
     }
 
     fn plugin_changed(&mut self, plugin: PluginState) {
@@ -823,7 +759,7 @@ impl EditView {
             EditViewCommands::ConfigChanged(config) => self.config_changed(config),
             EditViewCommands::ThemeChanged(theme) => self.theme_changed(theme),
             EditViewCommands::LanguageChanged(language_id) => self.language_changed(language_id),
-            EditViewCommands::DefineStyle(style) => self.define_style(style),
+            EditViewCommands::SetStyles(styles) => self.set_styles(styles),
             EditViewCommands::PluginChanged(plugin) => self.plugin_changed(plugin),
             EditViewCommands::PluginStopped(plugin_id) => self.plugin_stopped(plugin_id), 
             EditViewCommands::Queries(queries) => self.queries_changed(queries),

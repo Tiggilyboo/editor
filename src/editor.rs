@@ -8,6 +8,7 @@ pub mod state;
 pub mod editor_rpc;
 pub mod linecache;
 pub mod commands;
+pub mod view_resources;
 
 use std::cell::RefCell;
 use std::sync::{Arc, Mutex};
@@ -121,11 +122,13 @@ impl App {
                 state.focused = Some(view_id.clone());
                 state.views.insert(view_id.clone(), EditView::new(0, font_size, filename));
 
+                let styles = state.get_styles();
                 let proxy = state.get_event_proxy().clone();
                 let edit_view = state.get_focused_view();
                 edit_view.poke(EditViewCommands::Core(core));
                 edit_view.poke(EditViewCommands::Proxy(proxy));
                 edit_view.poke(EditViewCommands::ViewId(view_id));
+                edit_view.poke(EditViewCommands::SetStyles(styles));
 
                 state.align_views_horizontally(screen_size);
             } else {
@@ -141,7 +144,9 @@ impl App {
         if let Ok(ref mut state) = self.state.clone().try_lock() {
             state.views.remove(&view_id);
             if state.views.len() > 0 {
-                state.focused = Some(state.views.iter().nth(0).unwrap().0.clone());
+                let next_focus = state.views.iter().nth(0).unwrap().0.clone();
+                state.focused = Some(next_focus.clone());
+                state.views.get_mut(&next_focus).unwrap().set_dirty(true);
                 return false;
             } else {
                 return true;
@@ -185,10 +190,7 @@ impl App {
             "def_style" => {
                 if let Ok(style) = from_value::<Style>(params.clone()) { 
                     if let Ok(ref mut state) = self.state.clone().try_lock() {
-                        if state.focused.is_some() {
-                            let edit_view = state.get_focused_view();
-                            edit_view.poke(EditViewCommands::DefineStyle(style));
-                        }
+                        state.define_style(style);
                     }
                 }
             },

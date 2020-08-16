@@ -18,7 +18,6 @@ use super::widget::{
 };
 use super::primitive::PrimitiveWidget;
 use super::editable_text::EditableTextWidget;
-use super::view::Resources;
 use super::colour::ColourRGBA;
 
 use rpc::{
@@ -28,6 +27,7 @@ use rpc::{
     Quantity,
 };
 use crate::render::Renderer;
+use crate::editor::view_resources::Resources;
 
 // TODO: Derive from config
 const MODE_NORMAL_COLOUR: ColourRGBA = [0.3, 0.9, 0.3, 1.0];
