@@ -13,6 +13,7 @@ pub mod view_resources;
 use std::cell::RefCell;
 use std::sync::{Arc, Mutex};
 use std::str;
+use std::path::PathBuf;
 
 use super::render::Renderer;
 use super::events::{
@@ -30,11 +31,12 @@ use winit::event::{
 };
 use serde_json::{
     Value,
-    json,
     from_value,
 };
 use plugins::PluginState;
-use xi_core_lib::plugins::Command;
+use xi_core_lib::plugins::{
+    Command,
+};
 
 use ui::view::{
     EditView,
@@ -42,11 +44,14 @@ use ui::view::{
 use ui::widget::Widget;
 use state::EditorState;
 use rpc::{ 
+    ViewId,
     Config, 
     Theme,
     Style,
     Action,
     FindStatus,
+    CoreNotification,
+    CoreRequest,
 };
 use editor_rpc::{
     Core,
@@ -95,8 +100,9 @@ impl App {
         self.core.lock().unwrap()
     }
 
-    fn send_notification(&self, method: &str, params: &Value) {
-        self.get_core().send_notification(method, params);
+    #[inline]
+    fn send_notification(&self, notification: CoreNotification) {
+        self.get_core().send_notification(notification);
     }
 
     fn send_view_cmd(&self, command: EditViewCommands) {
@@ -107,25 +113,24 @@ impl App {
     }
 
     pub fn open_new_view(&self, filename: Option<String>, screen_size: [f32; 2], font_size: f32) {
-        let mut params = json!({});
-        if filename.is_some() {
-            params["file_path"] = json!(filename);
-        };
-
         let core = Arc::downgrade(&self.core);
         let state = self.state.clone();
 
-        self.get_core().send_request("new_view", &params, move |value| {
-            let view_id = value.clone().as_str().unwrap().to_string();
+        let request = CoreRequest::NewView {
+            file_path: filename.clone(),
+        };
+
+        self.get_core().send_request(request, move |value| {
+            let view_id = from_value::<ViewId>(value.clone()).unwrap();
 
             if let Ok(ref mut state) = state.try_lock() {
                 state.focused = Some(view_id.clone());
-                state.views.insert(view_id.clone(), EditView::new(0, font_size, filename));
+                state.views.insert(view_id.clone(), EditView::new(0, font_size, filename.clone()));
 
                 let styles = state.get_styles();
                 let proxy = state.get_event_proxy().clone();
                 let edit_view = state.get_focused_view();
-                edit_view.poke(EditViewCommands::Core(core));
+                edit_view.poke(EditViewCommands::Core(core.clone()));
                 edit_view.poke(EditViewCommands::Proxy(proxy));
                 edit_view.poke(EditViewCommands::ViewId(view_id));
                 edit_view.poke(EditViewCommands::SetStyles(styles));
@@ -134,13 +139,12 @@ impl App {
             } else {
                 println!("unable to lock state to set focused view_id with new EditView widget");
             }
-            
         });
         
         self.set_default_theme();
     }
 
-    pub fn close_view(&self, view_id: String) -> bool {
+    pub fn close_view(&self, view_id: ViewId) -> bool {
         if let Ok(ref mut state) = self.state.clone().try_lock() {
             state.views.remove(&view_id);
             if state.views.len() > 0 {
@@ -158,7 +162,9 @@ impl App {
 
     // TODO: Derive from config somewhere?
     fn set_default_theme(&self) {
-        self.send_notification("set_theme", &json!({ "theme_name": "Solarized (dark)" }));
+        self.send_notification(CoreNotification::SetTheme {
+            theme_name: "Solarized (dark)".to_string(),
+        });
     }
 
     // TODO: RPC this crap in structs, this is dirty
@@ -209,11 +215,11 @@ impl App {
                 }
             },
             "language_changed" => {
-                let view_id = params["view_id"].as_str().unwrap();
+                let view_id = from_value::<ViewId>(params["view_id"].clone()).unwrap();
                 let language_id = params["language_id"].as_str().unwrap().to_string();
 
                 if let Ok(ref mut state) = self.state.clone().try_lock() {
-                    if let Some(edit_view) = state.views.get_mut(view_id) {
+                    if let Some(edit_view) = state.views.get_mut(&view_id) {
                         edit_view.poke(EditViewCommands::LanguageChanged(language_id));
                     }
                 }
@@ -240,7 +246,7 @@ impl App {
                 }
             },
             "plugin_started" => {
-                let view_id = params["view_id"].as_str().unwrap().to_string();
+                let view_id = from_value::<ViewId>(params["view_id"].clone()).unwrap();
                 let plugin = params["plugin"].as_str().unwrap().to_string();
 
                 if let Ok(ref mut state) = self.state.clone().try_lock() {
@@ -255,7 +261,7 @@ impl App {
                 }
             },
             "plugin_stopped" => {
-                let view_id = params["view_id"].as_str().unwrap().to_string();
+                let view_id = from_value::<ViewId>(params["view_id"].clone()).unwrap();
                 let plugin = params["plugin"].as_str().unwrap().to_string();
 
                 if let Ok(ref mut state) = self.state.clone().try_lock() {
@@ -265,7 +271,7 @@ impl App {
                 }
             },
             "update_cmds" => {
-                let view_id = params["view_id"].as_str().unwrap().to_string();
+                let view_id = from_value::<ViewId>(params["view_id"].clone()).unwrap();
                 let plugin_id = params["plugin"].as_str().unwrap().to_string();
                 let cmds = params["cmds"].as_array().unwrap();
 
@@ -326,11 +332,11 @@ impl Handler for AppDispatcher {
     }
 }
 
-fn get_xi_dir() -> String {
+fn get_xi_dir() -> PathBuf {
     let config_dir = dirs::config_dir().unwrap();
     let mut xi_dir = config_dir.clone();
     xi_dir.push("xi");
-    xi_dir.to_str().unwrap().to_string()
+    xi_dir
 }
 
 pub fn run(title: &str, filename: Option<String>) {
@@ -346,9 +352,10 @@ pub fn run(title: &str, filename: Option<String>) {
     let app = App::new(core, event_proxy);
 
     handler.set_app(&app);
-    app.send_notification("client_started", &json!({
-        "config_dir": get_xi_dir(),
-    }));
+    app.send_notification(CoreNotification::ClientStarted {
+        config_dir: Some(get_xi_dir()),
+        client_extras_dir: None,
+    });
     app.open_new_view(filename, screen_dimensions, 20.0);
 
     events_loop.run(move |event: Event<'_, EditorEvent>, _, control_flow: &mut ControlFlow| {
@@ -415,7 +422,7 @@ pub fn run(title: &str, filename: Option<String>) {
                             let focused = state.focused.clone().unwrap();
                             let mut needs_redraw = false;
                             for (id, view) in state.views.iter_mut() {
-                                let view_id = id.as_str().clone();
+                                let view_id = id.clone();
                                 if view.dirty() {
                                     view.set_focused(view_id == focused); 
                                     view.queue_draw(&mut renderer.borrow_mut());

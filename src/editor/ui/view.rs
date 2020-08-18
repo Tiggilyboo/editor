@@ -10,7 +10,6 @@ use std::sync::{
 };
 
 use serde_json::{
-    json,
     Value,
 };
 use glyph_brush::{
@@ -21,10 +20,21 @@ use glyph_brush::{
 };
 
 use rpc::{ 
+    ViewId,
+    LanguageId,
     Action,
     ActionTarget,
     PluginAction,
     PluginId,
+    PluginNotification,
+    CoreNotification,
+    CoreRequest,
+    EditCommand,
+    EditNotification,
+    EditRequest,
+    LineRange,
+    ConfigDomainExternal,
+    Size,
     Quantity,
     Query,
     Mode,
@@ -44,6 +54,7 @@ use crate::editor::{
     view_resources::{
         Resources,
     },
+    editor_rpc::Callback,
 };
 use crate::events::{
     EditorEventLoopProxy,
@@ -51,7 +62,6 @@ use crate::events::{
 };
 use super::{
     colour::{
-        ColourRGBA,
         BLACK,
     },
     widget::{
@@ -71,20 +81,25 @@ use super::{
 type Method = String;
 type Params = Value;
 
+pub enum PendingPayload {
+    Notification(CoreNotification),
+    Request((CoreRequest, Box<dyn Callback>)),
+}
+
 pub struct EditView {
     index: usize,
     size: [f32; 2],
     position: [f32; 2],
     dirty: bool,
     focused: bool,
-    view_id: Option<String>,
+    view_id: Option<ViewId>,
     filepath: Option<String>,
     line_cache: LineCache,
     scroll_offset: f32,
     viewport: Range<usize>,
     core: Weak<Mutex<Core>>,
     event_proxy: Option<EditorEventLoopProxy>,
-    pending: Vec<(Method, Params)>,
+    pending: Vec<PendingPayload>,
     config: Option<Config>,
     theme: Option<Theme>,
     language: Option<String>,
@@ -93,8 +108,10 @@ pub struct EditView {
     background: PrimitiveWidget,
     status_bar: StatusWidget,
     find_replace: FindWidget,
+    plugins: HashMap<PluginId, PluginState>,
     current_line: usize,
     show_line_numbers: bool,
+    clipboard: Option<String>,
 }
 
 impl Hash for EditView {
@@ -171,9 +188,6 @@ impl Widget for EditView {
         for line_num in first_line..last_line {
             if let Some(ref mut text_widget) = &mut self.get_line(line_num) {
                 let section = text_widget.get_section().to_borrowed();
-                if section.text.len() == 0 {
-                    println!("{} has no text!", self.view_id.clone().unwrap());
-                }
                 let line_content = section.text[0].text;
                 let line_len = line_content.len();
 
@@ -280,6 +294,7 @@ impl EditView {
             config: None,
             theme: None,
             language: None,
+            clipboard: None,
             line_cache: LineCache::new(),
             scroll_offset: 0.0,
             viewport: 0..0,
@@ -288,6 +303,7 @@ impl EditView {
             core: Default::default(),
             pending: Default::default(),
             event_proxy: None,
+            plugins: HashMap::new(),
             filepath: filename,
             status_bar,
             find_replace,
@@ -323,7 +339,10 @@ impl EditView {
         self.dirty = true;
 
         let (w, h) = (size[0], self.drawable_text_height());
-        self.send_edit_cmd("resize", &json!({ "width": w, "height": h }));
+        self.send_edit_cmd(EditNotification::Resize(Size {
+            width: w as f64,
+            height: h as f64,
+        }));
         self.update_viewport();
     }
     fn set_position(&mut self, x: f32, y: f32) {
@@ -342,68 +361,76 @@ impl EditView {
         self.focused = focused;
     }
 
-    fn go_to_line(&mut self, line: usize) {
-        self.send_edit_cmd("insert", &json!({ "line": line }));
+    fn go_to_line(&mut self, line: u64) {
+        self.send_edit_cmd(EditNotification::GotoLine { line });
     }
 
     fn send_char(&mut self, ch: char) {
         if ch as u32 >= 0x20 {
-            let params = json!({"chars": ch.to_string()});
-            self.send_edit_cmd("insert", &params);
-        }
-    }
-
-    fn send_notification(&mut self, method: &str, params: &Value) {
-        let core = self.core.upgrade();
-        if core.is_some() && self.view_id.is_some() {
-            let core = core.unwrap();
-            if !core.lock().unwrap().send_notification(method, params) {
-                self.pending.push((method.to_owned(), params.clone()));  
-            } else {
-                println!("fe->core: {}", json!({
-                    method: params,
-                }));
-            }
-        } else {
-            println!("queueing pending method: {}", method);
-            self.pending.push((method.to_owned(), params.clone()));
-        }
-    }
-
-    fn send_edit_cmd(&mut self, method: &str, params: &Value) {
-        let core = self.core.upgrade();
-        if core.is_some() && self.view_id.is_some() {
-            let view_id = &self.view_id.clone().unwrap();
-            let edit_params = json!({
-                "method": method,
-                "params": params,
-                "view_id": view_id,
+            self.send_edit_cmd(EditNotification::Insert {
+                chars: ch.to_string(),
             });
-
-            let core = core.unwrap();
-            if !core.lock().unwrap().send_notification("edit", &edit_params) {
-                self.pending.push(("edit".to_string(), edit_params));
-            }
-
-        } else {
-            println!("queueing pending method: {}", method);
-            self.pending.push((method.to_owned(), params.clone()));
         }
     }
-    
-    fn send_action(&mut self, method: &str) {
-        self.send_edit_cmd(method, &json!([]));
+
+    fn send_request<F>(&mut self, request: CoreRequest, callback: F)
+        where F: FnOnce(&Value) + Send + Sync + 'static
+    {
+        let core = self.core.upgrade();
+        if core.is_some() && self.view_id.is_some() {
+            let core = core.unwrap();
+            let payload = (request, Box::new(callback));
+            if !core.lock().unwrap().send_request(payload.0, payload.1) {
+                unreachable!();
+            }
+        } else {
+            unreachable!();
+        }
     }
 
-    fn set_view(&mut self, view_id: String) {
-        self.view_id = Some(view_id.to_string());
+    fn send_notification(&mut self, notification: CoreNotification) {
+        let core = self.core.upgrade();
+        if core.is_some() && self.view_id.is_some() {
+            let core = core.unwrap();
+            if !core.lock().unwrap().send_notification(notification) {
+                unreachable!();
+            }
+        } else {
+            self.pending.push(PendingPayload::Notification(notification));
+        }
+    }
+
+    fn send_edit_req<F>(&mut self, cmd: EditRequest, callback: F)
+        where F: FnOnce(&Value) + Send + Sync + 'static
+    {
+        let request = CoreRequest::Edit(EditCommand {
+            view_id: self.view_id.clone().unwrap(),
+            cmd,
+        });
+        self.send_request(request, callback);
+    }
+
+    fn send_edit_cmd(&mut self, cmd: EditNotification) {
+        let notification = CoreNotification::Edit(EditCommand { 
+            view_id: self.view_id.clone().unwrap(),
+            cmd,
+        });
+        self.send_notification(notification);
+    }
+
+    fn set_view(&mut self, view_id: ViewId) {
+        self.view_id = Some(view_id);
         self.viewport = 0..0;
         self.update_viewport();
 
         let pending = std::mem::replace(&mut self.pending, Vec::new());
-        for notification in pending {
-            let (method, params) = notification;
-            self.send_edit_cmd(&method, &params);
+        for payload in pending {
+            match payload {
+                PendingPayload::Notification(notification) => self.send_notification(notification),
+                /*PendingPayload::Request((req, callback)) => 
+                    self.send_request(req, move |value| callback.call(value)),*/
+                _ => (),
+            }
         }
     }
 
@@ -414,10 +441,10 @@ impl EditView {
             self.filepath.clone()
         };
         if self.view_id.is_some() && filename.is_some() {
-            self.send_notification("save", &json!({
-                "view_id": self.view_id,
-                "file_path": filename,
-            }));
+            self.send_notification(CoreNotification::Save {
+                view_id: self.view_id.unwrap(),
+                file_path: filename.unwrap(),
+            });
         } else {
             println!("Unable to save: '{:?}'", filename);
         }
@@ -440,10 +467,18 @@ impl EditView {
         } else {
             serde_json::to_value(config).unwrap()
         };
-        self.send_notification("modify_user_config", &json!({
-            "domain": { "user_override": self.view_id },
-            "changes": Value::from(changes),
-        }));
+        let domain = if self.view_id.is_some() {
+            ConfigDomainExternal::UserOverride(self.view_id.unwrap())
+        } else {
+            ConfigDomainExternal::General
+        };
+        self.send_notification(CoreNotification::ModifyUserConfig {
+            changes: match changes {
+                Value::Object(map) => map,
+                _ => unreachable!("unable to serialize changes in config to Map"),
+            },
+            domain,
+        });
     }
 
     fn show_line_numbers(&mut self, show: bool) {
@@ -494,23 +529,38 @@ impl EditView {
         self.theme = Some(theme);
     }
 
-    fn set_theme(&mut self, theme_name: &str) {
-        self.send_notification("set_theme", &json!({ "theme_name": theme_name }));
+    fn set_theme(&mut self, theme_name: String) {
+        self.send_notification(CoreNotification::SetTheme { theme_name });
         self.update_viewport(); 
     }
 
-    fn set_language(&mut self, language: &str) {
-        self.send_notification("set_language", &json!({ "language": language }));
+    fn set_language(&mut self, language_id: LanguageId) {
+        if self.view_id.is_some() {
+            self.send_notification(CoreNotification::SetLanguage {
+                view_id: self.view_id.unwrap(),
+                language_id,
+            });
+        }
     }
 
     fn set_styles(&mut self, styles: HashMap<usize, Style>) {
         self.resources.styles = styles;
     }
 
+    fn set_plugins(&mut self, plugins: HashMap<PluginId, PluginState>) {
+        self.plugins = plugins;
+    }
+
     fn plugin_changed(&mut self, plugin: PluginState) {
         println!("Plugin started: {:?}", plugin);
+        if !self.plugins.contains_key(&plugin.name) {
+            self.plugins.insert(plugin.name.clone(), plugin);
+        }
     }
     fn plugin_stopped(&mut self, plugin_id: PluginId) {
+        if let Some(ref mut stopped_plugin) = &mut self.plugins.get_mut(&plugin_id) {
+            stopped_plugin.active = false;
+        }
         println!("Plugin stopped: {}", plugin_id);
     }
     fn queries_changed(&mut self, queries: Vec<Query>) {
@@ -519,7 +569,7 @@ impl EditView {
 
     fn close_view(&mut self) {
         if let Some(view_id) = self.view_id.clone() {
-            self.send_notification("close_view", &json!({ "view_id": view_id }));
+            self.send_notification(CoreNotification::CloseView { view_id });
             if let Some(proxy) = &self.event_proxy {
                 match proxy.send_event(EditorEvent::Action(Action::Close)) {
                     Ok(_) => (),
@@ -612,20 +662,32 @@ impl EditView {
         actions
     }
 
+    fn handle_clipboard_action(&mut self, action: Action) {
+        match action {
+            Action::Cut => self.send_edit_req(EditRequest::Cut, |value| println!("set clip: {}", value.to_string())),
+            Action::Copy => self.send_edit_req(EditRequest::Copy, |value| println!("set clip: {}", value.to_string())),
+            Action::Yank => self.send_edit_cmd(EditNotification::Yank),
+            Action::Paste => self.send_edit_cmd(EditNotification::Paste {
+                chars: self.clipboard.clone().unwrap_or("".to_string()),
+            }),
+            _ => return,
+        }
+    }
+
     fn handle_plugin_action(&mut self, plugin_action: PluginAction) {
         let view_id = self.view_id.clone().unwrap();
 
         match plugin_action {
-            PluginAction::Start(plugin_id) => {
-                self.send_notification("plugin", &json!({
-                    "view_id": view_id,
-                    "plugin_name": plugin_id,
+            PluginAction::Start(plugin_name) => {
+                self.send_notification(CoreNotification::Plugin(PluginNotification::Start {
+                    view_id,
+                    plugin_name,
                 }));
             },
-            PluginAction::Stop(plugin_id) => {
-                self.send_notification("plugin", &json!({
-                    "view_id": view_id,
-                    "plugin_name": plugin_id,
+            PluginAction::Stop(plugin_name) => {
+                self.send_notification(CoreNotification::Plugin(PluginNotification::Stop {
+                    view_id,
+                    plugin_name,
                 }));
             },
         }
@@ -638,24 +700,20 @@ impl EditView {
             Action::Save(filename) => self.save_to_file(filename),
             Action::InsertChar(ch) => self.send_char(ch),
             Action::SetMode(mode) => self.set_mode(mode),
-            Action::SetTheme(theme) => self.set_theme(theme.as_str()),
-            Action::SetLanguage(language) => self.set_language(language.as_str()),
+            Action::SetTheme(theme) => self.set_theme(theme),
+            Action::SetLanguage(language) => self.set_language(LanguageId::from(language.as_str())),
             Action::Plugin(plugin_action) => self.handle_plugin_action(plugin_action),
+            Action::Cut | Action::Copy | Action::Paste | Action::Yank => self.handle_clipboard_action(action),
             Action::Close => self.close_view(),
             Action::ToggleLineNumbers => self.show_line_numbers(!self.show_line_numbers),
-            Action::Undo => self.send_action("undo"),
-            Action::Redo => self.send_action("redo"),
-            Action::ClearSelection => self.send_action("collapse_selections"),
-            Action::SingleSelection => self.send_action("cancel_operation"),
-            Action::NewLine => self.send_action("insert_newline"),
-            Action::Cut => self.send_action("yank"),
-            Action::Copy => self.send_action("copy"),
-            Action::Yank => self.send_action("copy"), // xi-editor "yank" is like cut, we want vim behaviour...
-            Action::Paste => self.send_action("paste"),
-            Action::Indent => self.send_action("indent"),
-            Action::Outdent => self.send_action("outdent"),
-            Action::InsertTab => self.send_action("insert_tab"),
-            Action::DuplicateLine => self.send_action("duplicate_line"),
+            Action::Undo => self.send_edit_cmd(EditNotification::Undo),
+            Action::Redo => self.send_edit_cmd(EditNotification::Redo),
+            Action::ClearSelection => self.send_edit_cmd(EditNotification::CollapseSelections),
+            Action::NewLine => self.send_edit_cmd(EditNotification::InsertNewline),
+            Action::Indent => self.send_edit_cmd(EditNotification::Indent), 
+            Action::Outdent => self.send_edit_cmd(EditNotification::Outdent),
+            Action::InsertTab => self.send_edit_cmd(EditNotification::InsertTab),
+            Action::DuplicateLine => self.send_edit_cmd(EditNotification::DuplicateLine),
             Action::IncreaseFontSize => self.increase_font_size(),
             Action::DecreaseFontSize => self.decrease_font_size(),
             Action::ExecuteCommand => {
@@ -667,61 +725,72 @@ impl EditView {
             },
             Action::Motion((motion, quantity)) => match quantity.unwrap_or_default() {
                 Quantity::Number(n) => for _ in 0..n { match motion {
-                    Motion::Up => self.send_action("move_up"),
-                    Motion::Down => self.send_action("move_down"),
-                    Motion::Left => self.send_action("move_left"),
-                    Motion::Right => self.send_action("move_right"),
-                    Motion::First => self.send_action("move_to_left_end_of_line"),
-                    Motion::FirstOccupied => self.send_action("move_to_left_end_of_line"), // TODO: inaccurate
-                    Motion::Last => self.send_action("move_to_right_end_of_line"),
+                    Motion::Up => self.send_edit_cmd(EditNotification::MoveUp),
+                    Motion::Down => self.send_edit_cmd(EditNotification::MoveDown),
+                    Motion::Left => self.send_edit_cmd(EditNotification::MoveLeft),
+                    Motion::Right => self.send_edit_cmd(EditNotification::MoveRight),
+                    Motion::First => self.send_edit_cmd(EditNotification::MoveToLeftEndOfLine),
+                    Motion::FirstOccupied => self.send_edit_cmd(EditNotification::MoveToLeftEndOfLine), // TODO: inaccurate
+                    Motion::Last => self.send_edit_cmd(EditNotification::MoveToRightEndOfLine),
                     _ => return false,
                 } },
                 Quantity::Page(n) => for _ in 0..n { match motion {
-                    Motion::Up => self.send_action("scroll_page_up"),
-                    Motion::Down => self.send_action("scroll_page_down"),
+                    Motion::Up => self.send_edit_cmd(EditNotification::ScrollPageUp),
+                    Motion::Down => self.send_edit_cmd(EditNotification::ScrollPageDown),
                     _ => return false,
                 } },
                 Quantity::Word(n) => for _ in 0..n { match motion {
-                    Motion::Left => self.send_action("move_word_left"),
-                    Motion::Right => self.send_action("move_word_right"),
+                    Motion::Left => self.send_edit_cmd(EditNotification::MoveWordLeft),
+                    Motion::Right => self.send_edit_cmd(EditNotification::MoveWordRight),
                     _ => return false,
                 } },
                 _ => return false,
             },
             Action::Select((motion, quantity)) => match quantity.unwrap_or_default() {
-                Quantity::All => self.send_action("select_all"),
+                Quantity::All => self.send_edit_cmd(EditNotification::SelectAll),
                 Quantity::Line(n) => {
                     let last = if self.line_cache.height() > self.current_line + n {
                         self.current_line + n
                     } else {
                         self.line_cache.height()
                     };
-                    self.send_action("move_to_left_end_of_line");
-                    self.send_action("move_to_right_end_of_line_and_modify_selection");
+                    self.send_edit_cmd(EditNotification::MoveToLeftEndOfLine);
+                    self.send_edit_cmd(EditNotification::MoveToRightEndOfLineAndModifySelection);
                     for l in self.current_line..last {
-                        self.send_action("move_down_and_modify_selection");
+                        self.send_edit_cmd(EditNotification::MoveDownAndModifySelection);
                     }
+                    self.send_edit_cmd(EditNotification::MoveToRightEndOfLineAndModifySelection);
                 },
                 Quantity::Number(n) => for _ in 0..n { match motion {
-                    Motion::Up => self.send_action("move_up_and_modify_selection"),
-                    Motion::Down => self.send_action("move_down_and_modify_selection"),
-                    Motion::Left => self.send_action("move_left_and_modify_selection"),
-                    Motion::Right => self.send_action("move_right_and_modify_selection"),
-                    Motion::First => self.send_action("move_to_left_end_of_line_and_modify_selection"),
-                    Motion::FirstOccupied => self.send_action("move_to_left_end_of_line_and_modify_selection"),
-                    Motion::Last => self.send_action("move_to_right_end_of_line_and_modify_selection"),
+                    Motion::Up => self.send_edit_cmd(EditNotification::MoveUpAndModifySelection),
+                    Motion::Down=> self.send_edit_cmd(EditNotification::MoveDownAndModifySelection),
+                    Motion::Left => self.send_edit_cmd(EditNotification::MoveLeftAndModifySelection),
+                    Motion::Right => self.send_edit_cmd(EditNotification::MoveRightAndModifySelection),
+                    Motion::First => self.send_edit_cmd(EditNotification::MoveToLeftEndOfLineAndModifySelection),
+                    Motion::FirstOccupied => self.send_edit_cmd(EditNotification::MoveToLeftEndOfLineAndModifySelection),
+                    Motion::Last => self.send_edit_cmd(EditNotification::MoveToRightEndOfLineAndModifySelection),
                     _ => return false,
                 } },
                 Quantity::Word(n) => for _ in 0 ..n { match motion {
-                    Motion::Left => self.send_action("move_word_left_and_modify_selection"),
-                    Motion::Right => self.send_action("move_word_right_and_modify_selection"),
+                    Motion::Left => self.send_edit_cmd(EditNotification::MoveWordLeftAndModifySelection),
+                    Motion::Right => self.send_edit_cmd(EditNotification::MoveWordRightAndModifySelection),
                     _ => return false,
                 } },
                 _ => return false,
             },
             Action::Delete((motion, quantity)) => match motion {
-                Motion::Left => self.send_action("delete_backward"),
-                Motion::Right => self.send_action("delete_forward"),
+                Motion::Left => match quantity.unwrap_or_default() {
+                    Quantity::Word(n) => for _ in 0..n { 
+                        self.send_edit_cmd(EditNotification::DeleteWordBackward);
+                    },
+                    _ => self.send_edit_cmd(EditNotification::DeleteBackward),
+                },
+                Motion::Right => match quantity.unwrap_or_default() {
+                    Quantity::Word(n) => for _ in 0..n { 
+                        self.send_edit_cmd(EditNotification::DeleteWordForward);
+                    },
+                    _ => self.send_edit_cmd(EditNotification::DeleteForward),
+                },
                 Motion::Up => {
                     self.handle_action(Action::Motion((Motion::Up, None)));
                     self.handle_action(Action::Motion((Motion::First, None)));
@@ -734,11 +803,16 @@ impl EditView {
                     self.handle_action(Action::Select((Motion::Last, None)));
                     self.handle_action(Action::Delete((Motion::Left, Some(Quantity::Number(2)))));
                 },
+                Motion::First => self.send_edit_cmd(EditNotification::DeleteToBeginningOfLine),
+                Motion::Last => {
+                    self.send_edit_cmd(EditNotification::MoveToRightEndOfLine);
+                    self.send_edit_cmd(EditNotification::DeleteToBeginningOfLine);
+                },
                 _ => (),
             },
             Action::AddCursor(motion) => match motion {
-                Motion::Up => self.send_action("add_selection_above"),
-                Motion::Down => self.send_action("add_selection_below"),
+                Motion::Up => self.send_edit_cmd(EditNotification::AddSelectionAbove),
+                Motion::Down => self.send_edit_cmd(EditNotification::AddSelectionBelow),
                 _ => (),
             },
             _ => return false,
@@ -760,6 +834,7 @@ impl EditView {
             EditViewCommands::ThemeChanged(theme) => self.theme_changed(theme),
             EditViewCommands::LanguageChanged(language_id) => self.language_changed(language_id),
             EditViewCommands::SetStyles(styles) => self.set_styles(styles),
+            EditViewCommands::SetPlugins(plugins) => self.set_plugins(plugins),
             EditViewCommands::PluginChanged(plugin) => self.plugin_changed(plugin),
             EditViewCommands::PluginStopped(plugin_id) => self.plugin_stopped(plugin_id), 
             EditViewCommands::Queries(queries) => self.queries_changed(queries),
@@ -806,14 +881,17 @@ impl EditView {
     }
 
     fn update_viewport(&mut self) {
-        let first_line = self.y_to_line(self.position[1]);
-        let last_line = first_line + ((self.drawable_text_height() / self.resources.line_gap()).floor() as usize) + 1;
-        let viewport = first_line..last_line;
+        let first = self.y_to_line(self.position[1]);
+        let last = first + ((self.drawable_text_height() / self.resources.line_gap()).floor() as usize) + 1;
+        let viewport = first..last;
 
         if viewport != self.viewport {
             self.viewport = viewport;
             self.status_bar.update_line_status(self.current_line, self.line_cache.height(), self.language.clone());
-            self.send_edit_cmd("scroll", &json!([first_line, last_line]));
+            self.send_edit_cmd(EditNotification::Scroll(LineRange { 
+                first: first as i64, 
+                last: last as i64,
+            }));
         }
     }
 
@@ -835,8 +913,6 @@ impl EditView {
         self.current_line = line_num + 1;
         self.status_bar.update_line_status(self.current_line, self.line_cache.height(), self.language.clone());
     }
-
-    
 
     pub fn set_dirty(&mut self, dirty: bool) {
         self.status_bar.set_dirty(dirty);

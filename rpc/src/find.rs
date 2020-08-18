@@ -1,4 +1,5 @@
 use serde::Deserialize;
+use super::ViewId;
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct Query {
@@ -13,7 +14,7 @@ pub struct Query {
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct FindStatus {
-    pub view_id: String,
+    pub view_id: ViewId,
     pub queries: Vec<Query>,
 }
 
@@ -25,6 +26,6 @@ pub struct Status {
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct ReplaceStatus {
-    view_id: String,
+    view_id: ViewId,
     status: Status, 
 }

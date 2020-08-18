@@ -9,6 +9,7 @@ mod quantity;
 mod mode;
 mod motion;
 mod find;
+mod view;
 pub mod theme;
 
 pub use config::Config;
@@ -24,4 +25,9 @@ pub use action::*;
 pub use quantity::*;
 pub use mode::*;
 pub use motion::*;
+pub use view::*;
 
+pub use xi_core_lib::rpc::*;
+pub use xi_core_lib::config::ConfigDomainExternal;
+pub use xi_core_lib::view::Size;
+pub use xi_core_lib::LanguageId;

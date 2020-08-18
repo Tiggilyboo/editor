@@ -2,7 +2,7 @@ use serde::{
     Deserialize,
     Deserializer,
 };
-use serde_json::{self, Value};
+use serde_json::Value;
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]

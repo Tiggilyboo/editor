@@ -6,9 +6,12 @@ use std::sync::mpsc::Receiver;
 use std::thread;
 
 use serde_json::Value;
-use serde_json::json;
 
 use super::xi_thread::XiPeer;
+use rpc::{
+    CoreNotification,
+    CoreRequest,
+};
 
 #[derive(Clone)]
 pub struct Core {
@@ -21,7 +24,7 @@ struct CoreState {
     pending: BTreeMap<u64, Box<dyn Callback>>,
 }
 
-trait Callback: Send {
+pub trait Callback: Send + Sync {
     fn call(self: Box<Self>, result: &Value);
 }
 
@@ -29,7 +32,7 @@ pub trait Handler {
     fn notification(&self, method: &str, params: &Value);
 }
 
-impl<F: FnOnce(&Value) + Send> Callback for F {
+impl<F: FnOnce(&Value) + Send + Sync> Callback for F {
     fn call(self: Box<F>, result: &Value) {
         (*self)(result)
     }
@@ -70,37 +73,32 @@ impl Core {
         core
     }
 
-    pub fn send_notification(&self, method: &str, params: &Value) -> bool {
-        let cmd = json!({
-            "method": method,
-            "params": params,
-        });
-        if let Ok(ref state) = self.state.try_lock() {
-            state.xi_peer.send_json(&cmd);
-            true
+    pub fn send_notification(&self, notification: CoreNotification) -> bool {
+        if let Ok(cmd) = serde_json::to_value(notification) {
+            if let Ok(ref state) = self.state.try_lock() {
+                state.xi_peer.send_json(&cmd);
+                return true
+            }
         } else {
-            false
+            unreachable!("unable to send_notification, cannot serialize CoreNotification");
         }
+        false
     }
 
-    /// Calls the callback with the result (from a different thread).
-    pub fn send_request<F>(&mut self, method: &str, params: &Value, callback: F) -> bool
-        where F: FnOnce(&Value) + Send + 'static
+    pub fn send_request<F>(&mut self, request: CoreRequest, callback: F)-> bool
+        where F: FnOnce(&Value) + Send + Sync + 'static
     {
-        println!("core > send_request, method = {}", method);
-        if let Ok(ref mut state) = &mut self.state.try_lock() {
-            let id = state.id;
-            let cmd = json!({
-                "method": method,
-                "params": params,
-                "id": id,
-            });
-            state.xi_peer.send_json(&cmd);
-            state.pending.insert(id, Box::new(callback));
-            state.id += 1;
-            true
+        if let Ok(cmd) = serde_json::to_value(request) {
+            if let Ok(ref mut state) = &mut self.state.try_lock() {
+                let id = state.id;
+                state.xi_peer.send_json(&cmd);
+                state.pending.insert(id, Box::new(callback));
+                state.id += 1;
+                return true;
+            }
         } else {
-            false
+            unreachable!("unable to send_request, cannot serialize CoreRequest");
         }
+        false
     }
 }

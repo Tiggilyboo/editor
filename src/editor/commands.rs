@@ -10,17 +10,18 @@ use super::plugins::{
 };
 use crate::events::EditorEventLoopProxy;
 use rpc::{
+    ViewId,
+    PluginId,
     Action,
     Config,
     Theme,
     Style,
     Query,
-    PluginId,
 };
 use crate::editor::editor_rpc::Core;
 
 pub enum EditViewCommands {
-    ViewId(String),
+    ViewId(ViewId),
     ApplyUpdate(Value),
     ScrollTo(usize),
     Core(Weak<Mutex<Core>>),
@@ -31,6 +32,7 @@ pub enum EditViewCommands {
     ThemeChanged(Theme),
     LanguageChanged(String),
     SetStyles(HashMap<usize, Style>),
+    SetPlugins(HashMap<PluginId, PluginState>),
     PluginChanged(PluginState),
     PluginStopped(PluginId),
     Queries(Vec<Query>),

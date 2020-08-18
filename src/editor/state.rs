@@ -12,10 +12,11 @@ use super::ui::{
     view::EditView,
 };
 use rpc::{ 
+    ViewId,
+    PluginId,
     Mode,
     Action,
     ActionTarget,
-    PluginId,
     Style,
 };
 use super::commands::EditViewCommands;
@@ -35,8 +36,6 @@ use crate::events::{
 use super::plugins::{
     PluginState,
 };
-
-pub type ViewId = String;
 
 pub struct EditorState {
     pub focused: Option<ViewId>,
@@ -87,6 +86,9 @@ impl EditorState {
         for plugin in plugins.iter() {
             let name = plugin.name.clone();
             self.plugins.insert(name, plugin.clone());
+        }
+        for (_, view) in &mut self.views.iter_mut() {
+            view.poke(EditViewCommands::SetPlugins(self.plugins.clone()));
         }
     }
     pub fn define_style(&mut self, style: Style) {
