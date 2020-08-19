@@ -9,6 +9,7 @@ mod quantity;
 mod mode;
 mod motion;
 mod find;
+mod plugins;
 pub mod theme;
 
 pub use config::Config;
@@ -24,4 +25,5 @@ pub use action::*;
 pub use quantity::*;
 pub use mode::*;
 pub use motion::*;
+pub use plugins::*;
 

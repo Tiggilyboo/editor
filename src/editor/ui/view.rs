@@ -23,6 +23,8 @@ use glyph_brush::{
 use rpc::{ 
     Action,
     ActionTarget,
+    PluginAction,
+    PluginId,
     Quantity,
     Query,
     Mode,
@@ -30,24 +32,25 @@ use rpc::{
     Config,
     Theme,
     Style,
-    theme::ToRgbaFloat32,
 };
 use crate::render::Renderer;
 use crate::editor::{
     plugins::{
-        PluginId,
         PluginState,
     },
     linecache::LineCache,
     editor_rpc::Core,
     commands::EditViewCommands,
+    view_resources::Resources,
 };
 use crate::events::{
     EditorEventLoopProxy,
     EditorEvent,
 };
 use super::{
-    colour::ColourRGBA,
+    colour::{
+        BLACK,
+    },
     widget::{
         Widget,
         hash_widget,
@@ -65,37 +68,6 @@ use super::{
 
 type Method = String;
 type Params = Value;
-
-pub struct Resources {
-    pub fg: ColourRGBA,
-    pub bg: ColourRGBA,
-    pub sel: ColourRGBA,
-    pub cursor: ColourRGBA,
-    pub gutter_fg: ColourRGBA,
-    pub gutter_bg: ColourRGBA,
-    pub scale: f32,
-    styles: HashMap<usize, Style>,
-}
-
-impl Hash for Resources {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.fg.iter().for_each(|b| b.to_le_bytes().hash(state));
-        self.bg.iter().for_each(|b| b.to_le_bytes().hash(state));
-        self.sel.iter().for_each(|b| b.to_le_bytes().hash(state));
-        self.gutter_fg.iter().for_each(|b| b.to_le_bytes().hash(state));
-        self.gutter_bg.iter().for_each(|b| b.to_le_bytes().hash(state));
-        self.scale.to_le_bytes().hash(state);
-    }
-}
-impl Resources {
-    #[inline]
-    pub fn line_gap(&self) -> f32 {
-        self.scale * 1.06
-    }
-    pub fn pad(&self) -> f32 {
-        self.scale * 0.25
-    }
-}
 
 pub struct EditView {
     index: usize,
@@ -119,6 +91,7 @@ pub struct EditView {
     background: PrimitiveWidget,
     status_bar: StatusWidget,
     find_replace: FindWidget,
+    plugins: HashMap<PluginId, PluginState>,
     current_line: usize,
     show_line_numbers: bool,
 }
@@ -190,7 +163,6 @@ impl Widget for EditView {
 
         self.status_bar.set_mode_width(mode_width);
         self.status_bar.set_scale(line_gap);
-        self.status_bar.set_focused(self.focused);
         self.status_bar.queue_draw(renderer);
     
         // Selection start index, background = 0, gutter = 1, status_bar = 2, 3, 4
@@ -273,23 +245,6 @@ fn create_offside_section(content: &str, colour: [f32; 4], scale: f32) -> OwnedS
         .to_owned()
 }
 
-const BLANK: ColourRGBA = [0.0, 0.0, 0.0, 0.0];
-const BLACK: ColourRGBA = [0.0, 0.0, 0.0, 1.0];
-impl Resources {
-    fn new(scale: f32) -> Self {
-        Self {
-            fg: BLANK,
-            bg: BLANK,
-            sel: BLANK,
-            cursor: BLANK,
-            gutter_bg: BLANK,
-            gutter_fg: BLANK,
-            scale,
-            styles: HashMap::new(),
-        }
-    }
-}
-
 impl EditView {
     pub fn new(index: usize, scale: f32, filename: Option<String>) -> Self {
         let size = [0.0, 0.0]; 
@@ -314,7 +269,7 @@ impl EditView {
             index,
             size,
             position,
-            focused: false,
+            focused: true,
             dirty: true,
             view_id: None,
             config: None,
@@ -328,6 +283,7 @@ impl EditView {
             core: Default::default(),
             pending: Default::default(),
             event_proxy: None,
+            plugins: HashMap::new(),
             filepath: filename,
             status_bar,
             find_replace,
@@ -338,10 +294,10 @@ impl EditView {
     }
 
     fn get_line(&self, line_num: usize) -> Option<TextWidget> {
+        let resources = &self.resources;
         self.line_cache
             .get_line(line_num)
             .map(|line| {
-                let resources = &self.resources;
                 TextWidget::from_line(line_num, &line, resources.scale, resources.fg, &resources.styles)
             })
     }
@@ -463,10 +419,6 @@ impl EditView {
         }
     }
 
-    fn define_style(&mut self, style: Style) {
-        self.resources.styles.insert(style.id, style);
-    }
-
     fn config_changed(&mut self, config: Config) {
         if config.font_size.is_some() {
             let old_height = self.size[1] + self.resources.line_gap();
@@ -523,39 +475,15 @@ impl EditView {
     }
 
     fn theme_changed(&mut self, theme: Theme) {
-        if let Some(col) = &theme.foreground {
-            self.resources.fg = col.to_rgba_f32array();
-        }
-        if let Some(col) = &theme.background {
-            self.resources.bg = col.to_rgba_f32array(); 
-            self.background.set_colour(self.resources.bg.clone());
-        }
-        if let Some(col) = &theme.caret {
-            self.resources.cursor = col.to_rgba_f32array();
-        }
-        if let Some(col) = &theme.selection {
-            self.resources.sel = col.to_rgba_f32array();
-        } else {
-            self.resources.sel = self.resources.cursor;
-        }
-        if let Some(col) = &theme.gutter {
-            self.resources.gutter_bg = col.to_rgba_f32array();
-        } else {
-            self.resources.gutter_bg = self.resources.bg;
-        }
+        self.resources.update_from_theme(theme.clone());
         self.gutter.set_colour(self.resources.gutter_bg);
+        self.background.set_colour(self.resources.bg.clone());
         self.status_bar.set_colours(
             self.resources.gutter_bg.clone(), 
             self.resources.fg.clone(),
             self.resources.cursor.clone(),
             BLACK);
         self.status_bar.set_scale(self.resources.scale);
-
-        if let Some(col) = &theme.gutter_foreground {
-            self.resources.gutter_fg = col.to_rgba_f32array();
-        } else {
-            self.resources.gutter_fg = self.resources.fg;
-        }
 
         self.dirty = true;
         self.theme = Some(theme);
@@ -570,11 +498,22 @@ impl EditView {
         self.send_notification("set_language", &json!({ "language": language }));
     }
 
-    fn plugin_started(&mut self, plugin: PluginState) {
-        println!("Plugin started: {:?}", plugin);
+    fn set_styles(&mut self, styles: HashMap<usize, Style>) {
+        self.resources.styles = styles;
+    }
+    fn set_plugins(&mut self, plugins: HashMap<PluginId, PluginState>) {
+        self.plugins = plugins;
+    }
+
+    fn plugin_changed(&mut self, plugin: PluginState) {
+        if !self.plugins.contains_key(&plugin.name) {
+            self.plugins.insert(plugin.name.clone(), plugin);
+        }
     }
     fn plugin_stopped(&mut self, plugin_id: PluginId) {
-        println!("Plugin stopped: {}", plugin_id);
+        if let Some(ref mut stopped_plugin) = &mut self.plugins.get_mut(&plugin_id) {
+            stopped_plugin.active = false;
+        }
     }
     fn queries_changed(&mut self, queries: Vec<Query>) {
         self.find_replace.set_queries(queries);
@@ -638,20 +577,33 @@ impl EditView {
         self.set_mode(Mode::Normal);
 
         let mut actions: Vec<Action> = vec!(); 
-        let args: Vec<&str> = command_text.split(" ").collect();
-        let arg1 = if args.len() > 1 {
-            Some(args[1].to_string())
+        let args: Vec<String> = command_text.split(" ").map(|a| a.to_string()).collect();
+
+        let filename = if args.len() > 1 {
+            Some(args[1].clone())
         } else {
             self.filepath.clone()
         };
 
         // TODO: Abstract and make this not crap
-        match args[0] {
-            "e" => actions.push(Action::Open(arg1)),
-            "w" => actions.push(Action::Save(arg1)),
+        match args[0].as_str() {
+            "e" => actions.push(Action::Open(filename)),
+            "w" => actions.push(Action::Save(filename)),
             "q" => actions.push(Action::Close),
-            "wq" => actions.extend(vec![Action::Save(arg1), Action::Close]),
-            "sp" => actions.push(Action::Split(self.filepath.clone())),
+            "wq" => actions.extend(vec![Action::Save(filename), Action::Close]),
+            "sp" => actions.push(Action::Split(filename)),
+            "plug" => {
+                if args.len() < 3 {
+                    println!("usage: plug [start|stop] <plugin_name>");
+                } else {
+                    let plugin_id = PluginId::from(args[2].clone());
+                    match args[1].as_str() {
+                        "start" => actions.push(Action::Plugin(PluginAction::Start(plugin_id))),
+                        "stop" => actions.push(Action::Plugin(PluginAction::Stop(plugin_id))),
+                        _ => println!("args: {:?}", args),
+                    }
+                }
+            },
             _ => {},
         }
 
@@ -662,6 +614,30 @@ impl EditView {
         actions
     }
 
+    fn handle_plugin_action(&mut self, plugin_action: PluginAction) {
+        let view_id = self.view_id.clone().unwrap();
+
+        match plugin_action {
+            PluginAction::Start(plugin_name) => {
+                self.send_notification("plugin", &json!({
+                    "method": "start",
+                    "params": json!({
+                        "view_id": view_id,
+                        "plugin_name": plugin_name,
+                    }),
+                }));
+            },
+            PluginAction::Stop(plugin_name) => {
+                self.send_notification("plugin", &json!({
+                    "method": "start",
+                    "params": json!({
+                        "view_id": view_id,
+                        "plugin_name": plugin_name,
+                    }),
+                }));
+            },
+        }
+    }
     fn handle_action(&mut self, action: Action) -> bool {
         match action {
             Action::Open(filename) => self.open_file(filename),
@@ -671,6 +647,7 @@ impl EditView {
             Action::SetMode(mode) => self.set_mode(mode),
             Action::SetTheme(theme) => self.set_theme(theme.as_str()),
             Action::SetLanguage(language) => self.set_language(language.as_str()),
+            Action::Plugin(plugin_action) => self.handle_plugin_action(plugin_action),
             Action::Close => self.close_view(),
             Action::ToggleLineNumbers => self.show_line_numbers(!self.show_line_numbers),
             Action::Undo => self.send_action("undo"),
@@ -750,6 +727,18 @@ impl EditView {
                 _ => return false,
             },
             Action::Delete((motion, quantity)) => match motion {
+                Motion::Left => match quantity.unwrap_or_default() {
+                    Quantity::Word(n) => for _ in 0..n {
+                        self.send_action("delete_word_backward");
+                    },
+                    _ => self.send_action("delete_backward"),
+                },
+                Motion::Right => match quantity.unwrap_or_default() {
+                    Quantity::Word(n) => for _ in 0..n {
+                        self.send_action("delete_word_forward");
+                    },
+                    _ => self.send_action("delete_forward"),
+                },
                 Motion::Left => self.send_action("delete_backward"),
                 Motion::Right => self.send_action("delete_forward"),
                 Motion::Up => {
@@ -763,6 +752,11 @@ impl EditView {
                     self.handle_action(Action::Motion((Motion::First, None)));
                     self.handle_action(Action::Select((Motion::Last, None)));
                     self.handle_action(Action::Delete((Motion::Left, Some(Quantity::Number(2)))));
+                },
+                Motion::First => self.send_action("delete_to_beginning_of_line"),
+                Motion::Last => {
+                    self.send_action("move_to_right_end_of_line_and_modify_selection");
+                    self.send_action("delete_backward");
                 },
                 _ => (),
             },
@@ -789,9 +783,10 @@ impl EditView {
             EditViewCommands::ConfigChanged(config) => self.config_changed(config),
             EditViewCommands::ThemeChanged(theme) => self.theme_changed(theme),
             EditViewCommands::LanguageChanged(language_id) => self.language_changed(language_id),
-            EditViewCommands::DefineStyle(style) => self.define_style(style),
-            EditViewCommands::PluginStarted(plugin) => self.plugin_started(plugin),
-            EditViewCommands::PluginStopped(plugin_id) => self.plugin_stopped(plugin_id), 
+            EditViewCommands::SetStyles(styles) => self.set_styles(styles),
+            EditViewCommands::SetPlugins(plugins) => self.set_plugins(plugins),
+            EditViewCommands::PluginChanged(plugin) => self.plugin_changed(plugin),
+            EditViewCommands::PluginStopped(plugin_id) => self.plugin_stopped(plugin_id),
             EditViewCommands::Queries(queries) => self.queries_changed(queries),
             EditViewCommands::Action(action) => return self.handle_action(action),
         }

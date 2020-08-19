@@ -16,7 +16,6 @@ use super::{
         Widget,
         hash_widget,
     },
-    view::Resources,
 };
 use crate::rpc::{
     Action,
@@ -24,6 +23,7 @@ use crate::rpc::{
     Quantity,
 };
 use crate::render::Renderer;
+use crate::editor::view_resources::Resources;
 
 pub const CURSOR_TEXT: &str = "\u{2588}";
 

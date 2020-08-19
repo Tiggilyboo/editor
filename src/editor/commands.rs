@@ -2,14 +2,15 @@ use std::sync::{
     Mutex,
     Weak,
 };
+use std::collections::HashMap;
 use serde_json::Value;
 
 use super::plugins::{
     PluginState,
-    PluginId,
 };
 use crate::events::EditorEventLoopProxy;
 use rpc::{
+    PluginId,
     Action,
     Config,
     Theme,
@@ -29,8 +30,9 @@ pub enum EditViewCommands {
     ConfigChanged(Config),
     ThemeChanged(Theme),
     LanguageChanged(String),
-    DefineStyle(Style),
-    PluginStarted(PluginState),
+    SetStyles(HashMap<usize, Style>),
+    SetPlugins(HashMap<PluginId, PluginState>),
+    PluginChanged(PluginState),
     PluginStopped(PluginId),
     Queries(Vec<Query>),
     Action(Action),

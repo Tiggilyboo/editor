@@ -18,7 +18,6 @@ use super::widget::{
 };
 use super::primitive::PrimitiveWidget;
 use super::editable_text::EditableTextWidget;
-use super::view::Resources;
 use super::colour::ColourRGBA;
 
 use rpc::{
@@ -28,6 +27,7 @@ use rpc::{
     Quantity,
 };
 use crate::render::Renderer;
+use crate::editor::view_resources::Resources;
 
 // TODO: Derive from config
 const MODE_NORMAL_COLOUR: ColourRGBA = [0.3, 0.9, 0.3, 1.0];
@@ -203,8 +203,16 @@ impl StatusWidget {
     
     pub fn set_mode_width(&mut self, mode_width: f32) {
         let width = mode_width + self.scale / 4.0;
+
         self.mode_primitive.set_size([width, self.size[1]]);
         self.mode_section.bounds = (width, self.size[1]);
+        
+        let mode_width = self.mode_primitive.size()[0];
+        let after_mode_x = self.position[0] + mode_width;
+        self.command_widget.set_position(after_mode_x + (self.scale / 2.0), self.position[1]);
+        self.command_widget.set_size([self.size[0] - mode_width, self.size[1]]);
+        self.mode_section.screen_position = (self.position[0] + (self.scale / 4.0), self.position[1]);
+        self.filename_section.screen_position = (after_mode_x, self.position[1]);
         self.dirty = true;
     }
 

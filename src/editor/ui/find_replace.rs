@@ -4,18 +4,14 @@ use std::hash::{
 };
 
 use super::{
-    colour::ColourRGBA,
     widget::{
         Widget,
         hash_widget,
     },
     editable_text::EditableTextWidget,
-    view::Resources,
 };
+use crate::editor::view_resources::Resources;
 use crate::rpc::{
-    Action,
-    Motion,
-    Quantity,
     Query,
 };
 use crate::render::Renderer;

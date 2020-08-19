@@ -2,6 +2,7 @@ extern crate dirs;
 
 mod xi_thread;
 mod plugins;
+mod view_resources;
 
 pub mod ui;
 pub mod state;
@@ -45,6 +46,7 @@ use rpc::{
     Theme,
     Style,
     Action,
+    PluginAction,
     FindStatus,
 };
 use editor_rpc::{
@@ -121,11 +123,13 @@ impl App {
                 state.focused = Some(view_id.clone());
                 state.views.insert(view_id.clone(), EditView::new(0, font_size, filename));
 
+                let styles = state.get_styles();
                 let proxy = state.get_event_proxy().clone();
                 let edit_view = state.get_focused_view();
                 edit_view.poke(EditViewCommands::Core(core));
                 edit_view.poke(EditViewCommands::Proxy(proxy));
                 edit_view.poke(EditViewCommands::ViewId(view_id));
+                edit_view.poke(EditViewCommands::SetStyles(styles));
 
                 state.align_views_horizontally(screen_size);
             } else {
@@ -185,10 +189,7 @@ impl App {
             "def_style" => {
                 if let Ok(style) = from_value::<Style>(params.clone()) { 
                     if let Ok(ref mut state) = self.state.clone().try_lock() {
-                        if state.focused.is_some() {
-                            let edit_view = state.get_focused_view();
-                            edit_view.poke(EditViewCommands::DefineStyle(style));
-                        }
+                        state.define_style(style);
                     }
                 }
             },
@@ -248,7 +249,7 @@ impl App {
                         commands: vec![],
                     });
                     if let Some(edit_view) = state.views.get_mut(&view_id) {
-                        edit_view.poke(EditViewCommands::PluginStarted(plugin));
+                        edit_view.poke(EditViewCommands::PluginChanged(plugin));
                     }
                 }
             },
@@ -258,7 +259,8 @@ impl App {
 
                 if let Ok(ref mut state) = self.state.clone().try_lock() {
                     if let Some(edit_view) = state.views.get_mut(&view_id) {
-                        edit_view.poke(EditViewCommands::PluginStopped(plugin));
+                        edit_view.poke(EditViewCommands::Action(
+                                Action::Plugin(PluginAction::Stop(plugin))));
                     }
                 }
             },

@@ -6,11 +6,14 @@ use std::collections::HashMap;
 
 use winit::event::ModifiersState;
 use winit::event_loop::EventLoopProxy;
+use xi_core_lib::plugins::Command;
 
 use super::ui::{
     view::EditView,
 };
 use rpc::{ 
+    PluginId,
+    Style,
     Mode,
     Action,
     ActionTarget,
@@ -30,7 +33,6 @@ use crate::events::{
     },
 };
 use super::plugins::{
-    PluginId,
     PluginState,
 };
 
@@ -41,6 +43,7 @@ pub struct EditorState {
     pub views: HashMap<ViewId, EditView>, 
     themes: Vec<String>,
     languages: Vec<String>, 
+    styles: HashMap<usize, Style>,
     plugins: HashMap<PluginId, PluginState>, 
     key_bindings: Vec<KeyBinding>,
     mouse_bindings: Vec<MouseBinding>,
@@ -53,6 +56,7 @@ impl EditorState {
             focused: Default::default(),
             views: HashMap::new(),
             plugins: HashMap::new(),
+            styles: HashMap::new(),
             themes: vec![],
             languages: vec![],
             mouse_bindings: default_mouse_bindings(),
@@ -84,12 +88,33 @@ impl EditorState {
             let name = plugin.name.clone();
             self.plugins.insert(name, plugin.clone());
         }
+        for (_, view) in &mut self.views.iter_mut() {
+            view.poke(EditViewCommands::SetPlugins(self.plugins.clone()));
+        }
+    }
+    pub fn define_style(&mut self, style: Style) {
+        if self.styles.contains_key(&style.id) {
+            self.styles.remove(&style.id);
+        }
+        self.styles.insert(style.id, style);
+
+        for(_, view) in &mut self.views.iter_mut() {
+            view.poke(EditViewCommands::SetStyles(self.styles.clone()));
+        }
+    }
+    pub fn get_styles(&self) -> HashMap<usize, Style> {
+        self.styles.clone()
     }
     pub fn get_plugin(&self, plugin_id: PluginId) -> Option<PluginState> {
         if let Some(plugin) = self.plugins.get(&plugin_id) {
             Some(plugin.clone())
         } else {
             None
+        }
+    }
+    pub fn set_plugin_commands(&mut self, plugin_id: PluginId, commands: Vec<Command>) {
+        if let Some(ref mut plugin) = &mut self.plugins.get_mut(&plugin_id) {
+            plugin.commands = commands;
         }
     }
 
