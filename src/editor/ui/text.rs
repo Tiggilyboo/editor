@@ -54,6 +54,9 @@ impl TextWidget {
                 } else {
                     style_span.range.end
                 };
+                if start > end {
+                    continue;
+                }
                 let content = &text[start..end];
                 if let Some(style) = styles.get(&style_span.style_id) {
                     let colour = if let Some(fg) = &style.fg {
