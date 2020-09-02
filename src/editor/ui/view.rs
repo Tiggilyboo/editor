@@ -8,6 +8,7 @@ use std::sync::{
     Mutex,
     Weak,
 };
+use log::error;
 
 use serde_json::{
     json,
@@ -23,6 +24,8 @@ use glyph_brush::{
 use rpc::{ 
     Action,
     ActionTarget,
+    GestureType,
+    SelectionGranularity,
     PluginAction,
     PluginId,
     Quantity,
@@ -339,7 +342,15 @@ impl EditView {
     }
 
     fn go_to_line(&mut self, line: usize) {
-        self.send_edit_cmd("insert", &json!({ "line": line }));
+        self.send_edit_cmd("goto_line", &json!({ "line": line }));
+    }
+
+    fn gesture(&mut self, line: usize, col: usize, gesture_type: GestureType) {
+        self.send_edit_cmd("gesture", &json!({
+            "line": line,
+            "col": col,
+            "ty": gesture_type,
+        }));
     }
 
     fn send_char(&mut self, ch: char) {
@@ -415,7 +426,7 @@ impl EditView {
                 "file_path": filename,
             }));
         } else {
-            println!("Unable to save: '{:?}'", filename);
+            error!("Unable to save to file: {:?}", filename); 
         }
     }
 
@@ -559,6 +570,13 @@ impl EditView {
     pub fn mode(&self) -> Mode {
         self.status_bar.mode()
     }
+    fn mode_selection_granularity(&self) -> SelectionGranularity {
+        match self.mode() {
+            Mode::SelectBlock => SelectionGranularity::Point,
+            Mode::Select | Mode::SelectLine => SelectionGranularity::Line,
+            _ => panic!("unhandled selection granularity for mode"),
+        }
+    }
 
     pub fn poke_target(&mut self, command: EditViewCommands, target: ActionTarget) -> bool {
         match target {
@@ -569,6 +587,19 @@ impl EditView {
             },
             ActionTarget::EventLoop => return false,
         }
+    }
+
+    fn execute_motion(&mut self) -> Vec<Action> {
+        let motion_text = self.status_bar.get_command();
+        self.status_bar.set_command_text("");
+        self.set_mode(Mode::Normal);
+
+        let mut actions: Vec<Action> = vec!();
+        if let Ok(number) = motion_text.parse::<usize>() {
+            actions.push(Action::Motion((Motion::Middle, Some(Quantity::Line(number)))));
+        }
+
+        actions
     }
 
     pub fn execute_command(&mut self) -> Vec<Action> {
@@ -657,7 +688,6 @@ impl EditView {
             Action::NewLine => self.send_action("insert_newline"),
             Action::Cut => self.send_action("yank"),
             Action::Copy => self.send_action("copy"),
-            Action::Yank => self.send_action("copy"), // xi-editor "yank" is like cut, we want vim behaviour...
             Action::Paste => self.send_action("paste"),
             Action::Indent => self.send_action("indent"),
             Action::Outdent => self.send_action("outdent"),
@@ -665,12 +695,22 @@ impl EditView {
             Action::DuplicateLine => self.send_action("duplicate_line"),
             Action::IncreaseFontSize => self.increase_font_size(),
             Action::DecreaseFontSize => self.decrease_font_size(),
-            Action::ExecuteCommand => {
-                self.execute_command().iter()
-                    .filter(|a| match a { Action::ExecuteCommand => false, _ => true })
-                    .for_each(|a| { 
-                        self.poke(EditViewCommands::Action(a.clone())); 
-                    });
+            Action::Execute => match self.mode() {
+                Mode::Command => {
+                    self.execute_command().iter()
+                        .filter(|a| match a { Action::Execute => false, _ => true })
+                        .for_each(|a| { 
+                            self.poke(EditViewCommands::Action(a.clone())); 
+                        });
+                },
+                Mode::Motion => {
+                    self.execute_motion().iter()
+                        .filter(|a| match a { Action::Execute => false, _ => true })
+                        .for_each(|a| {
+                            self.poke(EditViewCommands::Action(a.clone()));
+                        });
+                },
+                _ => return false,
             },
             Action::Motion((motion, quantity)) => match quantity.unwrap_or_default() {
                 Quantity::Number(n) => for _ in 0..n { match motion {
@@ -681,6 +721,16 @@ impl EditView {
                     Motion::First => self.send_action("move_to_left_end_of_line"),
                     Motion::FirstOccupied => self.send_action("move_to_left_end_of_line"), // TODO: inaccurate
                     Motion::Last => self.send_action("move_to_right_end_of_line"),
+                    Motion::High => self.go_to_line(self.viewport.start),
+                    Motion::Low => self.go_to_line(self.viewport.end),
+                    Motion::Middle => {
+                        let mut middle = self.viewport.start 
+                            + (self.viewport.end - self.viewport.start) / 2;
+                        if middle > self.line_cache.height() {
+                            middle = self.line_cache.height();
+                        }
+                        self.go_to_line(middle);
+                    },
                     _ => return false,
                 } },
                 Quantity::Page(n) => for _ in 0..n { match motion {
@@ -693,6 +743,21 @@ impl EditView {
                     Motion::Right => self.send_action("move_word_right"),
                     _ => return false,
                 } },
+                Quantity::Line(n) => match motion {
+                    Motion::First => self.go_to_line(0),
+                    Motion::Last => self.go_to_line(self.line_cache.height()),
+                    Motion::High => self.go_to_line(self.viewport.start),
+                    Motion::Low => self.go_to_line(self.viewport.end),
+                    Motion::Middle => {
+                        let mut middle = n + self.viewport.start 
+                            + (self.viewport.end - self.viewport.start) / 2;
+                        if middle > self.line_cache.height() {
+                            middle = self.line_cache.height();
+                        }
+                        self.go_to_line(middle);
+                    },
+                    _ => return false,
+                },
                 _ => return false,
             },
             Action::Select((motion, quantity)) => match quantity.unwrap_or_default() {
@@ -705,7 +770,7 @@ impl EditView {
                     };
                     self.send_action("move_to_left_end_of_line");
                     self.send_action("move_to_right_end_of_line_and_modify_selection");
-                    for l in self.current_line..last {
+                    for _ in self.current_line..last {
                         self.send_action("move_down_and_modify_selection");
                     }
                 },
@@ -717,6 +782,17 @@ impl EditView {
                     Motion::First => self.send_action("move_to_left_end_of_line_and_modify_selection"),
                     Motion::FirstOccupied => self.send_action("move_to_left_end_of_line_and_modify_selection"),
                     Motion::Last => self.send_action("move_to_right_end_of_line_and_modify_selection"),
+                    Motion::High => self.gesture(self.viewport.start, 0, GestureType::SelectExtend {
+                        granularity: self.mode_selection_granularity(),
+                    }),
+                    Motion::Low => self.gesture(self.viewport.end, 0, GestureType::SelectExtend {
+                        granularity: self.mode_selection_granularity(),
+                    }),
+                    Motion::Middle => self.gesture(
+                        self.viewport.start + (self.viewport.end - self.viewport.start) / 2, 0, 
+                        GestureType::SelectExtend {
+                            granularity: self.mode_selection_granularity(),
+                        }),
                     _ => return false,
                 } },
                 Quantity::Word(n) => for _ in 0 ..n { match motion {
@@ -739,8 +815,6 @@ impl EditView {
                     },
                     _ => self.send_action("delete_forward"),
                 },
-                Motion::Left => self.send_action("delete_backward"),
-                Motion::Right => self.send_action("delete_forward"),
                 Motion::Up => {
                     self.handle_action(Action::Motion((Motion::Up, None)));
                     self.handle_action(Action::Motion((Motion::First, None)));
@@ -756,6 +830,29 @@ impl EditView {
                 Motion::First => self.send_action("delete_to_beginning_of_line"),
                 Motion::Last => {
                     self.send_action("move_to_right_end_of_line_and_modify_selection");
+                    self.send_action("delete_backward");
+                },
+                Motion::High => {
+                    self.gesture(self.viewport.start, 0, GestureType::Select {
+                        granularity: self.mode_selection_granularity(),
+                        multi: false,
+                    });
+                    self.send_action("delete_backward");
+                },
+                Motion::Low => {
+                    self.gesture(self.viewport.end, 0, GestureType::Select {
+                        granularity: self.mode_selection_granularity(),
+                        multi: false,
+                    });
+                    self.send_action("delete_backward");
+                },
+                Motion::Middle => {
+                    self.gesture(
+                        self.viewport.start + (self.viewport.end - self.viewport.start) / 2, 0,
+                        GestureType::Select {
+                            granularity: self.mode_selection_granularity(),
+                            multi: false,
+                    });
                     self.send_action("delete_backward");
                 },
                 _ => (),

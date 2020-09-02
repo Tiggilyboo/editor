@@ -100,8 +100,13 @@ impl Widget for StatusWidget {
         }
 
         // Command Widget
-        if self.focused && self.mode() == Mode::Command {
-            self.command_widget.queue_draw(renderer);
+        if self.focused {
+            match self.mode() {
+                Mode::Command | Mode::Normal => {
+                    self.command_widget.queue_draw(renderer);
+                },
+                _ => (),
+            }
         }
 
         if let ctx = &mut renderer.get_text_context().clone().borrow_mut() {

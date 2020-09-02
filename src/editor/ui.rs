@@ -1,3 +1,5 @@
+extern crate log;
+
 pub mod colour;
 pub mod widget;
 pub mod editable_text;

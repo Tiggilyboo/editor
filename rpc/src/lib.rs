@@ -12,6 +12,9 @@ mod find;
 mod plugins;
 pub mod theme;
 
+pub use xi_core_lib::rpc::GestureType;
+pub use xi_core_lib::rpc::SelectionGranularity;
+
 pub use config::Config;
 pub use theme::Theme;
 pub use theme::Style;

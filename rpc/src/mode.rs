@@ -13,6 +13,7 @@ pub enum Mode {
     Window,         // w
     Motion,         // g
     FindReplace,    // ?
+
     None,
 }
 
