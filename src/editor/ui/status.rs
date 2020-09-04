@@ -49,7 +49,7 @@ pub struct StatusWidget {
     mode_section: OwnedSection,
     filename_section: OwnedSection,
     status_section: OwnedSection,
-    command_widget: EditableTextWidget,
+    status_text: EditableTextWidget,
     dirty: bool,
 }
 
@@ -87,11 +87,10 @@ impl Widget for StatusWidget {
     }
 
     fn dirty(&self) -> bool {
-        self.dirty
+        self.dirty || self.status_text.dirty()
     }
 
     fn queue_draw(&mut self, renderer: &mut Renderer) {
-        let (width, height) = (self.size[0], self.size[1]);
 
         // Primitives (Background quads)
         self.background.queue_draw(renderer);
@@ -103,7 +102,8 @@ impl Widget for StatusWidget {
         if self.focused {
             match self.mode() {
                 Mode::Command | Mode::Normal => {
-                    self.command_widget.queue_draw(renderer);
+                    self.status_text.queue_draw(renderer);
+                    self.set_dirty(false);
                 },
                 _ => (),
             }
@@ -145,7 +145,7 @@ impl StatusWidget {
     pub fn new(index: usize, status: Status, resources: &Resources) -> Self {
         let background = PrimitiveWidget::new(2, [0.0, 0.0, 0.2], [0.0, 0.0], resources.bg);
         let mode_primitive = PrimitiveWidget::new(3, [0.0, 0.0, 0.2], [0.0, 0.0], MODE_NORMAL_COLOUR);
-        let command_widget = EditableTextWidget::new(4, resources); 
+        let status_text = EditableTextWidget::new(4, resources); 
         let filename_section = create_empty_section(HorizontalAlign::Left);
         let mode_section = create_empty_section(HorizontalAlign::Left);
         let status_section = create_empty_section(HorizontalAlign::Left);
@@ -165,7 +165,7 @@ impl StatusWidget {
             filename_section,
             mode_section,
             status_section,
-            command_widget,
+            status_text,
         };
 
         widget.set_position(widget.position[0], widget.position[1]);
@@ -189,8 +189,8 @@ impl StatusWidget {
         self.position = [x, y];
         self.background.set_position(x, y);
         self.mode_primitive.set_position(x, y);
-        self.command_widget.set_position(after_mode_x + (self.scale / 2.0), y);
-        self.command_widget.set_size([self.size[0] - mode_width, self.size[1]]);
+        self.status_text.set_position(after_mode_x + (self.scale / 2.0), y);
+        self.status_text.set_size([self.size[0] - mode_width, self.size[1]]);
         self.mode_section.screen_position = (x + (self.scale / 4.0), y);
         self.filename_section.screen_position = (after_mode_x, y);
         self.dirty = true;
@@ -214,15 +214,15 @@ impl StatusWidget {
         
         let mode_width = self.mode_primitive.size()[0];
         let after_mode_x = self.position[0] + mode_width;
-        self.command_widget.set_position(after_mode_x + (self.scale / 2.0), self.position[1]);
-        self.command_widget.set_size([self.size[0] - mode_width, self.size[1]]);
+        self.status_text.set_position(after_mode_x + (self.scale / 2.0), self.position[1]);
+        self.status_text.set_size([self.size[0] - mode_width, self.size[1]]);
         self.mode_section.screen_position = (self.position[0] + (self.scale / 4.0), self.position[1]);
         self.filename_section.screen_position = (after_mode_x, self.position[1]);
         self.dirty = true;
     }
 
-    pub fn set_command_text(&mut self, command: &str) {
-        self.command_widget.set_text(command);
+    pub fn set_text(&mut self, command: &str) {
+        self.status_text.set_text(command);
     }
 
     pub fn set_mode(&mut self, mode: Mode) {
@@ -231,9 +231,9 @@ impl StatusWidget {
         self.mode_primitive.set_colour(mode_colour(mode));
 
         if mode != Mode::Command {
-            self.set_command_text("");
-            self.command_widget.set_focused(false);
-            self.command_widget.poke(Action::Motion((Motion::First, Some(Quantity::default()))));
+            self.set_text("");
+            self.status_text.set_focused(false);
+            self.status_text.poke(Action::Motion((Motion::First, Some(Quantity::default()))));
         }
 
         self.status.mode = mode; 
@@ -243,7 +243,7 @@ impl StatusWidget {
     pub fn set_colours(&mut self, bg: ColourRGBA, fg: ColourRGBA, cur: ColourRGBA, mode: ColourRGBA) {
         self.mode_colour = mode;
         self.background.set_colour(bg);
-        self.command_widget.set_colours(fg, cur);
+        self.status_text.set_colours(fg, cur);
 
         self.mode_section.text[0].extra.color = mode;
         self.status_section.text[0].extra.color = fg;
@@ -255,7 +255,7 @@ impl StatusWidget {
         self.size[1] = scale;
 
         let pxs = PxScale::from(scale);
-        self.command_widget.set_scale(scale);
+        self.status_text.set_scale(scale);
         self.mode_section.text[0].scale = pxs;
         self.status_section.text[0].scale = pxs;
         self.filename_section.text[0].scale = pxs;
@@ -292,22 +292,20 @@ impl StatusWidget {
     }
 
     #[inline]
-    pub fn get_command(&self) -> String {
-        self.command_widget.text() 
+    pub fn get_text(&self) -> String {
+        self.status_text.text() 
     }
 
     #[inline]
     pub fn poke(&mut self, action: Box<Action>) -> bool {
         self.dirty = true;
-        self.command_widget.set_focused(true);
-        self.command_widget.poke(*action)
+        self.status_text.set_focused(true);
+        self.status_text.poke(*action)
     }
 }
 
 fn mode_colour(mode: Mode) -> ColourRGBA {
     match mode {
-        Mode::Normal => MODE_NORMAL_COLOUR,
-        Mode::Command => MODE_NORMAL_COLOUR,
         Mode::Insert => MODE_INSERT_COLOUR,
         Mode::Select => MODE_SELECT_COLOUR,
         Mode::SelectBlock => MODE_SELECT_COLOUR,

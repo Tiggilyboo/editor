@@ -233,7 +233,9 @@ impl Widget for EditView {
     }
 
     fn dirty(&self) -> bool {
-        self.dirty || self.status_bar.dirty()
+        self.dirty 
+            || self.status_bar.dirty()
+            || self.find_replace.dirty()
     }
 }
 
@@ -560,6 +562,8 @@ impl EditView {
                 Ok(_) => (),
                 Err(err) => panic!(err),
             }
+        } else {
+            unreachable!("event proxy has not been set for view");
         }
     }
 
@@ -574,7 +578,7 @@ impl EditView {
         match self.mode() {
             Mode::SelectBlock => SelectionGranularity::Point,
             Mode::Select | Mode::SelectLine => SelectionGranularity::Line,
-            _ => panic!("unhandled selection granularity for mode"),
+            _ => unimplemented!("unhandled selection granularity for mode"),
         }
     }
 
@@ -590,8 +594,8 @@ impl EditView {
     }
 
     fn execute_motion(&mut self) -> Vec<Action> {
-        let motion_text = self.status_bar.get_command();
-        self.status_bar.set_command_text("");
+        let motion_text = self.status_bar.get_text();
+        self.status_bar.set_text("");
         self.set_mode(Mode::Normal);
 
         let mut actions: Vec<Action> = vec!();
@@ -603,8 +607,8 @@ impl EditView {
     }
 
     pub fn execute_command(&mut self) -> Vec<Action> {
-        let command_text = self.status_bar.get_command();
-        self.status_bar.set_command_text("");
+        let command_text = self.status_bar.get_text();
+        self.status_bar.set_text("");
         self.set_mode(Mode::Normal);
 
         let mut actions: Vec<Action> = vec!(); 

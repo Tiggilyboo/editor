@@ -50,6 +50,10 @@ impl<T: Eq> Binding<T> {
         println!("actions: {:?}", self.actions.clone());
         self.actions.clone()
     }
+
+    pub fn get_trigger(&self) -> &T {
+        &self.trigger
+    }
 }
 macro_rules! motion {
     (
@@ -202,9 +206,7 @@ pub fn default_mouse_bindings() -> Vec<MouseBinding> {
     )
 }
 pub fn bind_numeric(mode: Mode, target: ActionTarget) -> Vec<KeyBinding> {
-    bindings!(
-        KeyBinding;
-
+    bindings!(KeyBinding;
         Key1, +mode, @target; Action::InsertChar('1');
         Key2, +mode, @target; Action::InsertChar('2');
         Key3, +mode, @target; Action::InsertChar('3');
@@ -217,9 +219,36 @@ pub fn bind_numeric(mode: Mode, target: ActionTarget) -> Vec<KeyBinding> {
         Key0, +mode, @target; Action::InsertChar('0');
     )
 }
+fn bind_symbols(mode: Mode, target: ActionTarget) -> Vec<KeyBinding> {
+    bindings!(KeyBinding; 
+        Grave,      shift!(), +mode, @target; Action::InsertChar('~');
+        Minus,      shift!(), +mode, @target; Action::InsertChar('_');
+        Add,        shift!(), +mode, @target; Action::InsertChar('+');
+        LBracket,   shift!(), +mode, @target; Action::InsertChar('{');
+        RBracket,   shift!(), +mode, @target; Action::InsertChar('}');
+        Backslash,  shift!(), +mode, @target; Action::InsertChar('|');
+        Colon,      shift!(), +mode, @target; Action::InsertChar(':');
+        Apostrophe, shift!(), +mode, @target; Action::InsertChar('"');
+        Comma,      shift!(), +mode, @target; Action::InsertChar('<');
+        Period,     shift!(), +mode, @target; Action::InsertChar('>');
+        Slash,      shift!(), +mode, @target; Action::InsertChar('?');
+
+        Grave,      +mode, @target; Action::InsertChar('`');
+        Minus,      +mode, @target; Action::InsertChar('-');
+        Equals,     +mode, @target; Action::InsertChar('=');
+        LBracket,   +mode, @target; Action::InsertChar('[');
+        RBracket,   +mode, @target; Action::InsertChar(']');
+        Backslash,  +mode, @target; Action::InsertChar('\\');
+        Semicolon,  +mode, @target; Action::InsertChar(';');
+        Apostrophe, +mode, @target; Action::InsertChar('\'');
+        Comma,      +mode, @target; Action::InsertChar(',');
+        Period,     +mode, @target; Action::InsertChar('.');
+        Slash,      +mode, @target; Action::InsertChar('/');
+        Space,      +mode, @target; Action::InsertChar(' ');
+    )
+}
 pub fn bind_alpha_numeric(mode: Mode, target: ActionTarget) -> Vec<KeyBinding> {
-    let mut bindings = bindings!(
-        KeyBinding;
+    let mut bindings = bindings!(KeyBinding;
         A, shift!(), +mode, @target; Action::InsertChar('A');
         B, shift!(), +mode, @target; Action::InsertChar('B');
         C, shift!(), +mode, @target; Action::InsertChar('C');
@@ -284,67 +313,64 @@ pub fn bind_alpha_numeric(mode: Mode, target: ActionTarget) -> Vec<KeyBinding> {
         Key8, shift!(), +mode, @target; Action::InsertChar('*');
         Key9, shift!(), +mode, @target; Action::InsertChar('(');
         Key0, shift!(), +mode, @target; Action::InsertChar(')');
-        
-        Grave,      shift!(), +mode, @target; Action::InsertChar('~');
-        Minus,      shift!(), +mode, @target; Action::InsertChar('_');
-        Add,        shift!(), +mode, @target; Action::InsertChar('+');
-        LBracket,   shift!(), +mode, @target; Action::InsertChar('{');
-        RBracket,   shift!(), +mode, @target; Action::InsertChar('}');
-        Backslash,  shift!(), +mode, @target; Action::InsertChar('|');
-        Colon,      shift!(), +mode, @target; Action::InsertChar(':');
-        Apostrophe, shift!(), +mode, @target; Action::InsertChar('"');
-        Comma,      shift!(), +mode, @target; Action::InsertChar('<');
-        Period,     shift!(), +mode, @target; Action::InsertChar('>');
-        Slash,      shift!(), +mode, @target; Action::InsertChar('?');
-
-        Grave,      +mode, @target; Action::InsertChar('`');
-        Minus,      +mode, @target; Action::InsertChar('-');
-        Equals,     +mode, @target; Action::InsertChar('=');
-        LBracket,   +mode, @target; Action::InsertChar('[');
-        RBracket,   +mode, @target; Action::InsertChar(']');
-        Backslash,  +mode, @target; Action::InsertChar('\\');
-        Semicolon,  +mode, @target; Action::InsertChar(';');
-        Apostrophe, +mode, @target; Action::InsertChar('\'');
-        Comma,      +mode, @target; Action::InsertChar(',');
-        Period,     +mode, @target; Action::InsertChar('.');
-        Slash,      +mode, @target; Action::InsertChar('/');
-        Space,      +mode, @target; Action::InsertChar(' ');
     );
     bindings.extend(bind_numeric(mode, target));
+    bindings.extend(bind_symbols(mode, target));
 
     bindings
 }
 
 #[inline]
-fn motion_mode_bindings() -> Vec<KeyBinding> {
-    bindings!(
-        KeyBinding;
+fn command_mode_bindings() -> Vec<KeyBinding> {
+    bindings!(KeyBinding;
+        Back,   +Mode::Command, @ActionTarget::StatusBar; motion!(Delete Left);
+        Delete, +Mode::Command, @ActionTarget::StatusBar; motion!(Delete Right);
+        Return, +Mode::Command; Action::Execute;
+    )
+}
 
+#[inline]
+fn motion_mode_bindings() -> Vec<KeyBinding> {
+    bindings!(KeyBinding;
         G, +Mode::Motion; Action::Motion((Motion::First, Some(Quantity::Line(0)))), motion!(Motion First), Action::SetMode(Mode::Normal);
         Return, +Mode::Motion; Action::Execute;
     )
 }
+#[inline]
+fn replace_mode_bindings() -> Vec<KeyBinding> {
+    let mut replace_once_bindings = bind_alpha_numeric(Mode::ReplaceOnce, ActionTarget::FocusedView);
+    for b in replace_once_bindings.iter_mut() {
+        b.actions.push(Action::Delete((Motion::Right, None)));
+        b.actions.push(Action::Motion((Motion::Left, None)));
+        b.actions.push(Action::SetMode(Mode::Normal));
+    }
+
+    let mut replace_bindings = bind_alpha_numeric(Mode::Replace, ActionTarget::FocusedView);
+    for b in replace_bindings.iter_mut() {
+        b.actions.push(Action::Delete((Motion::Right, Some(Quantity::default()))));
+    }
+
+    replace_once_bindings.extend(replace_bindings);
+    replace_once_bindings
+}
 
 pub fn default_key_bindings() -> Vec<KeyBinding> {
-    let mut bindings = bindings!(
-        KeyBinding;
-
+    let mut bindings = bindings!(KeyBinding;
         Escape, ~Mode::Normal; Action::SetMode(Mode::Normal);
         Escape, +Mode::SelectLine; Action::ClearSelection;
         Escape, +Mode::SelectBlock; Action::ClearSelection;
         Escape, +Mode::Select; Action::ClearSelection;
+
         I, +Mode::Normal; Action::SetMode(Mode::Insert);
         V, +Mode::Normal; Action::SetMode(Mode::Select);
         G, +Mode::Normal; Action::SetMode(Mode::Motion);
         G, shift!(), +Mode::Normal; Action::Motion((Motion::Last, Some(Quantity::Line(0)))), motion!(Motion First), Action::SetMode(Mode::Normal);
         V, ctrl!(), +Mode::Normal; Action::SetMode(Mode::SelectBlock);
         V, shift!(), +Mode::Normal; Action::SetMode(Mode::SelectLine);
+        R, +Mode::Normal; Action::SetMode(Mode::ReplaceOnce);
         R, shift!(), +Mode::Normal; Action::SetMode(Mode::Replace);
         Colon, shift!(), +Mode::Normal; Action::SetMode(Mode::Command);
 
-        Back,   +Mode::Command, @ActionTarget::StatusBar; motion!(Delete Left);
-        Delete, +Mode::Command, @ActionTarget::StatusBar; motion!(Delete Right);
-        Return, +Mode::Command; Action::Execute;
         A,      +Mode::Normal; motion!(Motion Right), Action::SetMode(Mode::Insert);
         A,      shift!(), +Mode::Normal; motion!(Motion Last), Action::SetMode(Mode::Insert);
         D,      +Mode::Normal; Action::SetMode(Mode::Delete);
@@ -368,18 +394,24 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
     bindings.extend(bind_extended_motions!(Delete, Delete, ActionTarget::FocusedView));
     bindings.extend(bind_alpha_numeric(Mode::Command, ActionTarget::StatusBar));
     bindings.extend(bind_alpha_numeric(Mode::Insert, ActionTarget::FocusedView));
+    bindings.extend(command_mode_bindings());
     bindings.extend(motion_mode_bindings());
+    bindings.extend(replace_mode_bindings());
 
-    bindings.extend(bindings!(
-        KeyBinding;
-
+    bindings.extend(bindings!(KeyBinding;
         F1; Action::SetTheme(String::from("Solarized (dark)"));
         F2; Action::SetTheme(String::from("Solarized (light)"));
         F3; Action::SetTheme(String::from("InspiredGitHub"));
         F5; Action::ToggleLineNumbers;
 
-        PageUp, ~Mode::Command; motion!(Motion Up by Page);
-        PageDown, ~Mode::Command; motion!(Motion Down by Page);
+        PageUp, +Mode::Normal; motion!(Motion Up by Page);
+        PageDown, +Mode::Normal; motion!(Motion Down by Page);
+        PageUp, +Mode::Select; motion!(Select Up by Page);
+        PageDown, +Mode::Select; motion!(Select Down by Page);
+        PageUp, +Mode::SelectLine; motion!(Select Up by Page);
+        PageDown, +Mode::SelectLine; motion!(Select Down by Page);
+        PageUp, +Mode::SelectBlock; motion!(Select Up by Page);
+        PageDown, +Mode::SelectBlock; motion!(Select Down by Page);
 
         Return, +Mode::Normal; motion!(Motion Down), motion!(Motion FirstOccupied);
         Return, +Mode::Insert; Action::NewLine;

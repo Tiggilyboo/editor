@@ -54,5 +54,5 @@ translate_tabs_to_spaces = true
 ## Plans (Likely to change...)
 - Implement multi-view handling
 - Implement LSP plugin
-- Mouse interaction
+- Mouse interaction?
 - In-built LISP-like language to define keymapping to actions. Useful for complex key-bindings like VIM, still in the ideation phase...

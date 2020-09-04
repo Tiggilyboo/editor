@@ -4,7 +4,10 @@ use std::sync::{
 };
 use std::collections::HashMap;
 
-use winit::event::ModifiersState;
+use winit::event::{
+    ModifiersState,
+    VirtualKeyCode,
+};
 use winit::event_loop::EventLoopProxy;
 use xi_core_lib::plugins::Command;
 
@@ -37,6 +40,25 @@ use super::plugins::{
 };
 
 pub type ViewId = String;
+pub type BindingMap = HashMap<VirtualKeyCode, Vec<KeyBinding>>;
+
+fn construct_bindingmap(bindings: Vec<KeyBinding>) -> BindingMap {
+    let mut map = BindingMap::new();
+
+    for b in bindings.iter() {
+        let vc = match b.get_trigger() {
+            Key::KeyCode(vkc) => vkc.clone(),
+            _ => unimplemented!(),
+        };
+        if let Some(ref mut stored_bindings) = map.get_mut(&vc) {
+            stored_bindings.push(b.clone());
+        } else {
+            map.insert(vc, vec![b.clone()]);
+        }
+    }
+
+    map
+}
 
 pub struct EditorState {
     pub focused: Option<ViewId>,
@@ -45,7 +67,7 @@ pub struct EditorState {
     languages: Vec<String>, 
     styles: HashMap<usize, Style>,
     plugins: HashMap<PluginId, PluginState>, 
-    key_bindings: Vec<KeyBinding>,
+    key_bindings: HashMap<VirtualKeyCode, Vec<KeyBinding>>,
     mouse_bindings: Vec<MouseBinding>,
     event_proxy: EditorEventLoopProxy,
 }
@@ -60,10 +82,11 @@ impl EditorState {
             themes: vec![],
             languages: vec![],
             mouse_bindings: default_mouse_bindings(),
-            key_bindings: default_key_bindings(),
+            key_bindings: construct_bindingmap(default_key_bindings()),
             event_proxy,
         }
     }
+
 
     pub fn get_event_proxy(&self) -> EditorEventLoopProxy {
         self.event_proxy.clone()
@@ -149,12 +172,14 @@ impl EditorState {
             return None;
         }
 
-        for binding in self.key_bindings.iter() {
-            if binding.is_triggered_by(mode, modifiers, &Key::KeyCode(kc.unwrap())) {
-                return Some((
-                    binding.get_actions(),
-                    binding.get_target(),
-                ));
+        if let Some(keycode_options) = self.key_bindings.get(&kc.unwrap()) {
+            for binding in keycode_options.iter() {
+                if binding.is_triggered_by(mode, modifiers, &Key::KeyCode(kc.unwrap())) {
+                    return Some((
+                        binding.get_actions(),
+                        binding.get_target(),
+                    ));
+                }
             }
         }
 
