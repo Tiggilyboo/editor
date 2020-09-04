@@ -99,32 +99,35 @@ impl Widget for StatusWidget {
         }
 
         // Command Widget
+        let draw_status_text = match self.mode() {
+            Mode::Command | Mode::Motion | Mode::FindReplace  => true,
+            _ => false,
+        };
         if self.focused {
-            match self.mode() {
-                Mode::Command | Mode::Normal => {
-                    self.status_text.queue_draw(renderer);
-                    self.set_dirty(false);
-                },
-                _ => (),
+            if draw_status_text {
+                self.status_text.queue_draw(renderer);
+                self.set_dirty(false);
             }
         }
 
         if let ctx = &mut renderer.get_text_context().clone().borrow_mut() {
-            // Mode
-            if self.focused {
-                ctx.queue_text(&self.mode_section.to_borrowed());
-                if self.mode() != Mode::Command {
-                    ctx.queue_text(&self.filename_section.to_borrowed());
-                }
-            } else {
+            if !self.focused {
                 ctx.queue_text(&self.filename_section.to_borrowed());
+            } else {
+                ctx.queue_text(&self.mode_section.to_borrowed());
+                    
+                if !draw_status_text {
+                   ctx.queue_text(&self.filename_section.to_borrowed());
+                    
+                    let status_width = ctx.get_text_width(
+                        &self.status_section.text[0].text.to_string());
+                    self.status_section.bounds = (status_width + self.scale, self.size[1]);
+                    self.status_section.screen_position = 
+                        (self.size[0] - status_width - self.scale, self.position[1]);
+                    ctx.queue_text(&self.status_section.to_borrowed());    
+                }
+
             }
-        
-            // Status
-            let status_width = ctx.get_text_width(&self.status_section.text[0].text.to_string());
-            self.status_section.bounds = (status_width + self.scale, self.size[1]);
-            self.status_section.screen_position = (self.size[0] - status_width - self.scale, self.position[1]);
-            ctx.queue_text(&self.status_section.to_borrowed());    
         }
     }
 }
@@ -300,7 +303,13 @@ impl StatusWidget {
     pub fn poke(&mut self, action: Box<Action>) -> bool {
         self.dirty = true;
         self.status_text.set_focused(true);
-        self.status_text.poke(*action)
+        match *action {
+            Action::SetMode(mode) => {
+                self.set_mode(mode);
+                true
+            },
+            _ => self.status_text.poke(*action)
+        }
     }
 }
 

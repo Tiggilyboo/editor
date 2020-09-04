@@ -21,7 +21,7 @@ use rpc::{
     Action,
     ActionTarget,
 };
-use super::commands::EditViewCommands;
+use super::view_commands::EditViewCommands;
 use crate::events::{
     EditorEvent,
     EditorEventLoopProxy,

@@ -331,10 +331,19 @@ fn command_mode_bindings() -> Vec<KeyBinding> {
 
 #[inline]
 fn motion_mode_bindings() -> Vec<KeyBinding> {
-    bindings!(KeyBinding;
+    let mut bindings = bind_numeric(Mode::Normal, ActionTarget::StatusBar);
+    for b in bindings.iter_mut() {
+        b.actions.insert(0, Action::SetMode(Mode::Motion));
+    }
+    bindings.extend(bind_numeric(Mode::Motion, ActionTarget::StatusBar));
+
+    bindings.extend(bindings!(KeyBinding;
         G, +Mode::Motion; Action::Motion((Motion::First, Some(Quantity::Line(0)))), motion!(Motion First), Action::SetMode(Mode::Normal);
-        Return, +Mode::Motion; Action::Execute;
-    )
+        G, shift!(), +Mode::Motion, @ActionTarget::FocusedView; Action::InsertChar('G'), Action::Execute;
+        Return, +Mode::Normal; Action::Execute;
+    ));
+
+    bindings
 }
 #[inline]
 fn replace_mode_bindings() -> Vec<KeyBinding> {
@@ -356,10 +365,7 @@ fn replace_mode_bindings() -> Vec<KeyBinding> {
 
 pub fn default_key_bindings() -> Vec<KeyBinding> {
     let mut bindings = bindings!(KeyBinding;
-        Escape, ~Mode::Normal; Action::SetMode(Mode::Normal);
-        Escape, +Mode::SelectLine; Action::ClearSelection;
-        Escape, +Mode::SelectBlock; Action::ClearSelection;
-        Escape, +Mode::Select; Action::ClearSelection;
+        Escape, ~Mode::Normal; Action::ClearSelection, Action::SetMode(Mode::Normal);
 
         I, +Mode::Normal; Action::SetMode(Mode::Insert);
         V, +Mode::Normal; Action::SetMode(Mode::Select);
@@ -379,7 +385,6 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
         X,      +Mode::Normal; motion!(Select Right), Action::Cut;
         X,      shift!(), +Mode::Normal; motion!(Select Left), Action::Cut;
     );
-    bindings.extend(bind_numeric(Mode::Normal, ActionTarget::StatusBar));
     bindings.extend(bind_motions!(Normal, Motion, ActionTarget::FocusedView));
     bindings.extend(bind_motions!(Insert, Motion, ActionTarget::FocusedView));
     bindings.extend(bind_motions!(Select, Select, ActionTarget::FocusedView));

@@ -43,7 +43,8 @@ use crate::editor::{
     },
     linecache::LineCache,
     editor_rpc::Core,
-    commands::EditViewCommands,
+    commands::command_to_actions,
+    view_commands::EditViewCommands,
     view_resources::Resources,
 };
 use crate::events::{
@@ -571,9 +572,14 @@ impl EditView {
         self.status_bar.set_mode(mode);
         self.dirty = true;
     }
+
     pub fn mode(&self) -> Mode {
         self.status_bar.mode()
     }
+    pub fn get_filepath(&self) -> Option<String> {
+        self.filepath.clone()
+    }
+
     fn mode_selection_granularity(&self) -> SelectionGranularity {
         match self.mode() {
             Mode::SelectBlock => SelectionGranularity::Point,
@@ -586,10 +592,11 @@ impl EditView {
         match target {
             ActionTarget::FocusedView => self.poke(command),
             ActionTarget::StatusBar => match command {
-                EditViewCommands::Action(action) => self.status_bar.poke(Box::new(action)),
-                _ => return false,
+                EditViewCommands::Action(action) => 
+                    self.status_bar.poke(Box::new(action)),                
+                _ => false,
             },
-            ActionTarget::EventLoop => return false,
+            ActionTarget::EventLoop => false,
         }
     }
 
@@ -611,42 +618,7 @@ impl EditView {
         self.status_bar.set_text("");
         self.set_mode(Mode::Normal);
 
-        let mut actions: Vec<Action> = vec!(); 
-        let args: Vec<String> = command_text.split(" ").map(|a| a.to_string()).collect();
-
-        let filename = if args.len() > 1 {
-            Some(args[1].clone())
-        } else {
-            self.filepath.clone()
-        };
-
-        // TODO: Abstract and make this not crap
-        match args[0].as_str() {
-            "e" => actions.push(Action::Open(filename)),
-            "w" => actions.push(Action::Save(filename)),
-            "q" => actions.push(Action::Close),
-            "wq" => actions.extend(vec![Action::Save(filename), Action::Close]),
-            "sp" => actions.push(Action::Split(filename)),
-            "plug" => {
-                if args.len() < 3 {
-                    println!("usage: plug [start|stop] <plugin_name>");
-                } else {
-                    let plugin_id = PluginId::from(args[2].clone());
-                    match args[1].as_str() {
-                        "start" => actions.push(Action::Plugin(PluginAction::Start(plugin_id))),
-                        "stop" => actions.push(Action::Plugin(PluginAction::Stop(plugin_id))),
-                        _ => println!("args: {:?}", args),
-                    }
-                }
-            },
-            _ => {},
-        }
-
-        if actions.len() == 0 {
-            println!("No command found: '{}'", command_text.clone());
-        }
-
-        actions
+        command_to_actions(self, command_text)
     }
 
     fn handle_plugin_action(&mut self, plugin_action: PluginAction) {
@@ -673,7 +645,21 @@ impl EditView {
             },
         }
     }
+
+    fn determine_action_quantity(&self, quantity: Option<Quantity>) -> Quantity {
+        if quantity.is_some() {
+            quantity.unwrap()
+        } else {
+            if let Ok(status_quantity) = self.status_bar.get_text().parse::<usize>() {
+                Quantity::Number(status_quantity)
+            } else {
+                Quantity::default()
+            }
+        }
+    }
+     
     fn handle_action(&mut self, action: Action) -> bool {
+
         match action {
             Action::Open(filename) => self.open_file(filename),
             Action::Split(filename) => self.split_view(filename),
@@ -716,7 +702,7 @@ impl EditView {
                 },
                 _ => return false,
             },
-            Action::Motion((motion, quantity)) => match quantity.unwrap_or_default() {
+            Action::Motion((motion, quantity)) => match self.determine_action_quantity(quantity) {
                 Quantity::Number(n) => for _ in 0..n { match motion {
                     Motion::Up => self.send_action("move_up"),
                     Motion::Down => self.send_action("move_down"),
@@ -764,7 +750,7 @@ impl EditView {
                 },
                 _ => return false,
             },
-            Action::Select((motion, quantity)) => match quantity.unwrap_or_default() {
+            Action::Select((motion, quantity)) => match self.determine_action_quantity(quantity) {
                 Quantity::All => self.send_action("select_all"),
                 Quantity::Line(n) => {
                     let last = if self.line_cache.height() > self.current_line + n {
@@ -807,13 +793,13 @@ impl EditView {
                 _ => return false,
             },
             Action::Delete((motion, quantity)) => match motion {
-                Motion::Left => match quantity.unwrap_or_default() {
+                Motion::Left => match self.determine_action_quantity(quantity) {
                     Quantity::Word(n) => for _ in 0..n {
                         self.send_action("delete_word_backward");
                     },
                     _ => self.send_action("delete_backward"),
                 },
-                Motion::Right => match quantity.unwrap_or_default() {
+                Motion::Right => match self.determine_action_quantity(quantity) {
                     Quantity::Word(n) => for _ in 0..n {
                         self.send_action("delete_word_forward");
                     },
@@ -961,8 +947,6 @@ impl EditView {
         self.current_line = line_num + 1;
         self.status_bar.update_line_status(self.current_line, self.line_cache.height(), self.language.clone());
     }
-
-    
 
     pub fn set_dirty(&mut self, dirty: bool) {
         self.status_bar.set_dirty(dirty);

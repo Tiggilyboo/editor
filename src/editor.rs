@@ -3,12 +3,13 @@ extern crate dirs;
 mod xi_thread;
 mod plugins;
 mod view_resources;
+mod commands;
 
 pub mod ui;
 pub mod state;
 pub mod editor_rpc;
 pub mod linecache;
-pub mod commands;
+pub mod view_commands;
 
 use std::cell::RefCell;
 use std::sync::{Arc, Mutex};
@@ -53,7 +54,7 @@ use editor_rpc::{
     Core,
     Handler,
 };
-use commands::EditViewCommands;
+use view_commands::EditViewCommands;
 use super::events::{
     state::InputState,
 };
