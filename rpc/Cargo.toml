@@ -6,7 +6,7 @@ authors = ["Simon Willshire"]
 [lib]
 
 [dependencies]
-serde = "1.0.114"
+serde = "1.0.116"
 serde_json = "1.0.57"
 
 [dependencies.xi-core-lib]
