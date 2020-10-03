@@ -245,6 +245,7 @@ fn bind_symbols(mode: Mode, target: ActionTarget) -> Vec<KeyBinding> {
         Period,     +mode, @target; Action::InsertChar('.');
         Slash,      +mode, @target; Action::InsertChar('/');
         Space,      +mode, @target; Action::InsertChar(' ');
+        Space,      shift!(), +mode, @target; Action::InsertChar(' ');
     )
 }
 pub fn bind_alpha_numeric(mode: Mode, target: ActionTarget) -> Vec<KeyBinding> {
@@ -425,6 +426,7 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
         Back, ~Mode::Insert; motion!(Motion Left); 
         Delete, ~Mode::Insert; motion!(Motion Right); 
         Space, ~Mode::Insert; motion!(Motion Right); 
+        Space, shift!(), ~Mode::Insert; motion!(Motion Right); 
         
         Y, +Mode::Select; Action::Cut;
         Y, +Mode::SelectLine; Action::Cut;
