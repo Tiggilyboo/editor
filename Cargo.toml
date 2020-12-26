@@ -10,7 +10,7 @@ rpc = { path = "./rpc" }
 serde = "1.0.116"
 serde_json = "1.0.57"
 dirs = "3.0.1"
-winit = "0.22.2"
+winit = "0.24"
 log = "0.4.11"
 
 [dependencies.glyph_brush]

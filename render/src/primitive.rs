@@ -27,6 +27,7 @@ use vulkano::{
     command_buffer::{
         AutoCommandBufferBuilder,
         DynamicState,
+        SubpassContents,
     },
     framebuffer::{
         RenderPassAbstract,
@@ -226,7 +227,7 @@ impl PrimitiveContext {
         builder
             .begin_render_pass(
                 self.framebuffers[image_num].clone(),
-                false,
+                SubpassContents::Inline,
                 vec![[0.0, 0.0, 0.0, 1.0].into()],
             ).expect("unable to begin primitive render pass");
 

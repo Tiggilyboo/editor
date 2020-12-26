@@ -47,6 +47,7 @@ use vulkano::image::{
     SwapchainImage,
     ImmutableImage,
     Dimensions,
+    MipmapsCount,
 };
 use vulkano::framebuffer::{
     FramebufferAbstract, 
@@ -63,6 +64,7 @@ use vulkano::sampler::{
 use vulkano::command_buffer::{
     AutoCommandBufferBuilder,
     DynamicState,
+    SubpassContents,
 };  
 use glyph_brush::{
     Section,
@@ -372,6 +374,7 @@ impl TextContext {
         let (cache_tex, _future) = ImmutableImage::from_buffer(
             buffer,
             dimensions,
+            MipmapsCount::One,
             R8Unorm,
             self.queue.clone(),
         ).expect("Unable to create unintialised immutable image");
@@ -490,7 +493,7 @@ impl TextContext {
         builder 
             .begin_render_pass(
                 self.framebuffers[image_num].clone(), 
-                false, 
+                SubpassContents::Inline,
                 vec![ClearValue::None],
             ).expect("unable to begin text render pass")
 

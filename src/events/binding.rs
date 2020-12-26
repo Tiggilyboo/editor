@@ -223,7 +223,7 @@ fn bind_symbols(mode: Mode, target: ActionTarget) -> Vec<KeyBinding> {
     bindings!(KeyBinding; 
         Grave,      shift!(), +mode, @target; Action::InsertChar('~');
         Minus,      shift!(), +mode, @target; Action::InsertChar('_');
-        Add,        shift!(), +mode, @target; Action::InsertChar('+');
+        Equals,     shift!(), +mode, @target; Action::InsertChar('+');
         LBracket,   shift!(), +mode, @target; Action::InsertChar('{');
         RBracket,   shift!(), +mode, @target; Action::InsertChar('}');
         Backslash,  shift!(), +mode, @target; Action::InsertChar('|');
@@ -444,9 +444,8 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
         Tab, shift!(), +Mode::Insert; Action::Outdent;
 
         Minus, ctrl!(); Action::DecreaseFontSize;
-        Subtract, ctrl!(); Action::DecreaseFontSize;
+        NumpadSubtract, ctrl!(); Action::DecreaseFontSize;
         Equals, ctrl!(); Action::IncreaseFontSize;
-        Add, ctrl!(); Action::IncreaseFontSize;
 
         Up, shift!() | ctrl!(), +Mode::Insert; Action::AddCursor(Motion::Up);
         Down, shift!() | ctrl!(), +Mode::Insert; Action::AddCursor(Motion::Down);
