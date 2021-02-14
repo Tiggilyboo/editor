@@ -14,6 +14,7 @@ pub struct LineCache {
     selections: Vec<Selection>,
 }
 
+#[derive(Debug)]
 pub struct Line {
     text: String,
     cursor: Vec<usize>,
@@ -35,13 +36,17 @@ pub struct Selection {
 
 impl Line {
     pub fn from_json(v: &Value) -> Line {
-        let text = v["text"].as_str().unwrap().to_owned();
+        let text = v["text"].as_str().to_owned();
         let line_num = v["ln"].as_u64();
         let mut cursor = Vec::new();
         if let Some(arr) = v["cursor"].as_array() {
             for c in arr {
                 let offset_utf8 = c.as_u64().unwrap() as usize;
-                cursor.push(count_utf16(&text[..offset_utf8]));
+                if let Some(text) = text {
+                    cursor.push(count_utf16(&text[..offset_utf8]));
+                } else {
+                    cursor.push(offset_utf8);
+                }
             }
         }
 
@@ -52,8 +57,16 @@ impl Line {
                 let start = ix + triple[0].as_i64().unwrap();
                 let end = start + triple[1].as_i64().unwrap();
                 // TODO: count utf from last end, if <=
-                let start_utf16 = count_utf16(&text[..start as usize]);
-                let end_utf16 = start_utf16 + count_utf16(&text[start as usize .. end as usize]);
+                let start_utf16 = if let Some(text) = text {
+                    count_utf16(&text[..start as usize])
+                } else {
+                    start as usize
+                };
+                let end_utf16 = start_utf16 + if let Some(text) = text {
+                    count_utf16(&text[start as usize .. end as usize])
+                } else {
+                    end as usize
+                };
                 let style_id = triple[2].as_u64().unwrap() as usize;
                 let style_span = StyleSpan {
                     style_id,
@@ -65,7 +78,7 @@ impl Line {
         }
 
         Line { 
-            text, 
+            text: text.unwrap_or_default().to_string(), 
             line_num,
             cursor, 
             styles,
@@ -133,6 +146,18 @@ impl LineCache {
                             self.push_opt_line(None);
                         }
                     },
+                    "update" => {
+                        for line in op["lines"].as_array().unwrap() {
+                            let line = Line::from_json(line);
+                            if let Some(mut new_line) = old_iter.next().unwrap_or_default() {
+                                new_line.cursor = line.cursor;
+                                self.push_opt_line(Some(new_line));
+                            } else {
+                                self.push_opt_line(None);
+                            }
+                        }
+                        println!("update received: {}", update);
+                    }
                     _ => println!("unhandled update operation: {:?}", op_type)
                 }
             }
@@ -146,27 +171,29 @@ impl LineCache {
                 AnnotationType::Selection => {
                     for range in anno.ranges.iter_mut() {
                         for line_num in range.start_line..range.end_line+1 {
-                            if let Some(line) = self.lines.get(line_num).unwrap() {
-                                let len = line.text.len();
-                                let (start_col, end_col) = if range.start_col > range.end_col { 
-                                    (range.end_col, range.start_col)
-                                } else { 
-                                    (range.start_col, range.end_col)
-                                };
-                                let start_col = if start_col >= len { len } else { start_col };
-                                let end_col = if end_col >= len { len } else { end_col };
+                            if let Some(line) = &self.lines.get(line_num) {
+                                if let Some(line) = line {
+                                    let len = line.text.len();
+                                    let (start_col, end_col) = if range.start_col > range.end_col { 
+                                        (range.end_col, range.start_col)
+                                    } else { 
+                                        (range.start_col, range.end_col)
+                                    };
+                                    let start_col = if start_col >= len { len } else { start_col };
+                                    let end_col = if end_col >= len { len } else { end_col };
 
-                                let left_utf16 = count_utf16(&line.text[..start_col]);
-                                let width_utf16 = count_utf16(&line.text[start_col..end_col]);
+                                    let left_utf16 = count_utf16(&line.text[..start_col]);
+                                    let width_utf16 = count_utf16(&line.text[start_col..end_col]);
 
-                                range.start_col = left_utf16;
-                                range.end_col = left_utf16 + width_utf16;
+                                    range.start_col = left_utf16;
+                                    range.end_col = left_utf16 + width_utf16;
 
-                                self.selections.push(Selection {
-                                    line_num,
-                                    start_col,
-                                    end_col,
-                                });
+                                    self.selections.push(Selection {
+                                        line_num,
+                                        start_col,
+                                        end_col,
+                                    });
+                                }
                             }
                         }
                     }

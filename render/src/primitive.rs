@@ -237,7 +237,8 @@ impl PrimitiveContext {
             self.vertex_buffer.clone().unwrap(),
             self.index_buffer.clone().unwrap(),
             self.descriptor_set.clone().unwrap(),
-            ()
+            (),
+            vec![],
         ).expect("unable to draw to command buffer for primitive");
 
         builder
