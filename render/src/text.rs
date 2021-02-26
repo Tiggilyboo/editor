@@ -504,7 +504,6 @@ impl TextContext {
                 self.index_buffer.clone().unwrap(),
                 self.descriptor_set.clone().unwrap(), 
                 (),
-                vec![],
             ).expect("unable to draw to command buffer for glyph")
 
             .end_render_pass()

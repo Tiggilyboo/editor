@@ -6,26 +6,16 @@ edition = "2018"
 
 [dependencies]
 render = { path = "./render" }
-rpc = { path = "./rpc" }
-serde = "1.0.116"
-serde_json = "1.0.57"
-dirs = "3.0.1"
+dirs = "3.0"
 winit = "0.24"
-log = "0.4.11"
 
 [dependencies.glyph_brush]
 version = "0.7"
 default-features = false
 
-[dependencies.xi-core-lib]
-path = "xi-editor/rust/core-lib"
-default-features = false
-
-[dependencies.xi-rpc]
-path = "xi-editor/rust/rpc"
+[dependencies.scribe]
+version = "0.7.2"
 default-features = false
 
 [workspace]
-members = ["rpc", "render"]
-exclude = ["xi-editor"]
-
+members = ["render"]

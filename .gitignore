@@ -1,4 +1,4 @@
 /target
-/rpc/target
+/render/target
 *.log
 
