@@ -24,7 +24,7 @@ fn main() {
     let el = EventLoop::<EditorEvent>::with_user_event();
     let renderer = RefCell::new(Renderer::new(&el, "Editor"));
     let mut screen_dimensions: [f32; 2] = renderer.borrow().get_screen_dimensions();
-    let input = Arc::downgrade(&Arc::new(Mutex::new(InputState::new())));
+    let input = Arc::new(Mutex::new(InputState::new()));
 
     el.run(move |event: Event<'_, EditorEvent>, _, control_flow: &mut ControlFlow| {
         *control_flow = ControlFlow::Wait;
@@ -52,14 +52,10 @@ fn main() {
                 | WindowEvent::CursorMoved { .. }
                 | WindowEvent::ModifiersChanged(_)
                 | WindowEvent::Focused(_) => {
-                    if let Some(input) = input.upgrade() {
-                        if let Ok(mut input) = input.try_lock() {
-                            input.update(event, screen_dimensions);
-                        } else {
-                            panic!("Unable to lock input")
-                        }
+                    if let Ok(mut input) = input.try_lock() {
+                        input.update(event, screen_dimensions);
                     } else {
-                        panic!("Unable to upgrade input reference")
+                        panic!("Unable to lock input")
                     }
                 },
                 _ => {
