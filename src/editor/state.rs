@@ -11,9 +11,7 @@ use winit::event::{
 use winit::event_loop::EventLoopProxy;
 use xi_core_lib::plugins::Command;
 
-use super::ui::{
-    view::EditView,
-};
+use super::ui::view::EditView;
 use rpc::{ 
     PluginId,
     Style,
@@ -35,9 +33,7 @@ use crate::events::{
         default_key_bindings,
     },
 };
-use super::plugins::{
-    PluginState,
-};
+use super::plugins::PluginState;
 
 pub type ViewId = String;
 pub type BindingMap = HashMap<VirtualKeyCode, Vec<KeyBinding>>;

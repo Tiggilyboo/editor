@@ -38,9 +38,7 @@ use rpc::{
 };
 use crate::render::Renderer;
 use crate::editor::{
-    plugins::{
-        PluginState,
-    },
+    plugins::PluginState,
     linecache::LineCache,
     editor_rpc::Core,
     commands::command_to_actions,
@@ -52,9 +50,7 @@ use crate::events::{
     EditorEvent,
 };
 use super::{
-    colour::{
-        BLACK,
-    },
+    colour::BLACK,
     widget::{
         Widget,
         hash_widget,
@@ -68,7 +64,6 @@ use super::{
     },
     find_replace::FindWidget,
 };
-
 
 type Method = String;
 type Params = Value;
@@ -201,7 +196,7 @@ impl Widget for EditView {
                 text_widget.queue_draw(renderer);
 
                 // Cursors
-                if self.focused {
+                if self.focused && line_num == self.current_line - 1 {
                     let cursors = text_widget.get_cursor();
                     for offset in cursors {
                         let section = &text_widget.get_section().to_borrowed();
@@ -370,12 +365,12 @@ impl EditView {
             if !core.lock().unwrap().send_notification(method, params) {
                 self.pending.push((method.to_owned(), params.clone()));  
             } else {
-                println!("fe->core: {}", json!({
+                /*println!("fe->core: {}", json!({
                     method: params,
-                }));
+                }));*/
             }
         } else {
-            println!("queueing pending method: {}", method);
+            //println!("queueing pending method: {}", method);
             self.pending.push((method.to_owned(), params.clone()));
         }
     }
@@ -396,7 +391,7 @@ impl EditView {
             }
 
         } else {
-            println!("queueing pending method: {}", method);
+            //println!("queueing pending method: {}", method);
             self.pending.push((method.to_owned(), params.clone()));
         }
     }

@@ -17,7 +17,7 @@ struct ChanWriter {
 
 impl XiPeer {
     pub fn send(&self, s: String) {
-        println!("xi sending: {}", s.clone());
+        //println!("xi sending: {}", s.clone());
         let _ = self.tx.send(s);
     }
     pub fn send_json(&self, v: &Value) {

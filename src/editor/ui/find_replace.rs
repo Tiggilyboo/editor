@@ -11,9 +11,7 @@ use super::{
     editable_text::EditableTextWidget,
 };
 use crate::editor::view_resources::Resources;
-use crate::rpc::{
-    Query,
-};
+use crate::rpc::Query;
 use crate::render::Renderer;
 
 pub struct FindWidget {

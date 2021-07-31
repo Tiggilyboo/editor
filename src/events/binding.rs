@@ -47,7 +47,7 @@ impl<T: Eq> Binding<T> {
     }
 
     pub fn get_actions(&self) -> Vec<Action> {
-        println!("actions: {:?}", self.actions.clone());
+        //println!("actions: {:?}", self.actions.clone());
         self.actions.clone()
     }
 

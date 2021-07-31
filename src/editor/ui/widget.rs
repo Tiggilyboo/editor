@@ -5,17 +5,6 @@ use std::hash::{
 use std::collections::hash_map::DefaultHasher;
 
 use crate::render::Renderer;
-use super::text::TextWidget;
-use super::primitive::PrimitiveWidget;
-use super::status::StatusWidget;
-use super::view::EditView;
-
-pub enum WidgetKind {
-    Text(TextWidget),
-    Primitive(PrimitiveWidget),
-    View(EditView),
-    Status(StatusWidget),
-}
 
 pub trait Widget: Hash {
     fn index(&self) -> usize;

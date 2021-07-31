@@ -17,9 +17,7 @@ use glyph_brush::{
     Text,
     Layout,
 };
-use crate::editor::linecache::{
-    Line,
-};
+use crate::editor::linecache::Line;
 use rpc::{
     Style,
     theme::ToRgbaFloat32,

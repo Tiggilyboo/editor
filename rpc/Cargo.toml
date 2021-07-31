@@ -6,8 +6,8 @@ authors = ["Simon Willshire"]
 [lib]
 
 [dependencies]
-serde = "1.0.118"
-serde_json = "1.0.60"
+serde = "1.0"
+serde_json = "1.0"
 
 [dependencies.xi-core-lib]
 path = "../xi-editor/rust/core-lib"

@@ -6,9 +6,9 @@ authors = ["Simon Willshire"]
 [lib]
 
 [dependencies]
-vulkano = { git = "https://github.com/vulkano-rs/vulkano" }
-vulkano-win = { git = "https://github.com/vulkano-rs/vulkano" }
-vulkano-shaders = { git = "https://github.com/vulkano-rs/vulkano" }
+vulkano = "0.20"
+vulkano-win = "0.20"
+vulkano-shaders = "0.20"
 
 [dependencies.winit]
 version = "0.24"
@@ -16,5 +16,5 @@ default-features = false
 features=["wayland"]
 
 [dependencies.glyph_brush]
-version = "0.7.1"
+version = "0.7"
 default-features = false

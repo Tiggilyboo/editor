@@ -156,7 +156,7 @@ impl LineCache {
                                 self.push_opt_line(None);
                             }
                         }
-                        println!("update received: {}", update);
+                        //println!("update received: {}", update);
                     }
                     _ => println!("unhandled update operation: {:?}", op_type)
                 }

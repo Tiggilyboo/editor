@@ -5,9 +5,7 @@ use std::sync::{
 use std::collections::HashMap;
 use serde_json::Value;
 
-use super::plugins::{
-    PluginState,
-};
+use super::plugins::PluginState;
 use crate::events::EditorEventLoopProxy;
 use rpc::{
     PluginId,

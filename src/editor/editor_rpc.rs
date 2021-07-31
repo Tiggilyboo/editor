@@ -63,7 +63,7 @@ impl Core {
                         println!("unexpected result")
                     }
                 } else {
-                    println!("got {:?} at rpc level", msg);
+                    //println!("got {:?} at rpc level", msg);
                 }
             }
         });
@@ -87,7 +87,7 @@ impl Core {
     pub fn send_request<F>(&mut self, method: &str, params: &Value, callback: F) -> bool
         where F: FnOnce(&Value) + Send + 'static
     {
-        println!("core > send_request, method = {}", method);
+        //println!("core > send_request, method = {}", method);
         if let Ok(ref mut state) = &mut self.state.try_lock() {
             let id = state.id;
             let cmd = json!({
