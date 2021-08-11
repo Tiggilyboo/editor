@@ -8,35 +8,39 @@ use vulkano::{
         Device,
         Queue,
     },
-    pipeline::{
-        GraphicsPipeline,
-        viewport::Viewport,
-        vertex::SingleBufferDefinition,
-    },
-    descriptor::descriptor_set::{
+    pipeline::viewport::Viewport,
+    descriptor_set::{
         PersistentDescriptorSet,
         DescriptorSet,
     },
-    descriptor::pipeline_layout::PipelineLayoutAbstract,
     buffer::{
         BufferUsage,
         ImmutableBuffer,
         CpuBufferPool,
         TypedBufferAccess,
+        BufferAccess,
     },
     command_buffer::{
+        pool::standard::StandardCommandPoolBuilder,
+        PrimaryAutoCommandBuffer,
         AutoCommandBufferBuilder,
         DynamicState,
         SubpassContents,
     },
-    framebuffer::{
-        RenderPassAbstract,
+    pipeline::{
+        GraphicsPipeline,
+        GraphicsPipelineAbstract,
+    },
+    render_pass::{
         Framebuffer,
         FramebufferAbstract,
         Subpass,
     },
     swapchain::Swapchain,
-    image::SwapchainImage,
+    image::{
+        SwapchainImage,
+        view::ImageView,
+    },
 };
 
 use self::shaders::{
@@ -58,11 +62,9 @@ pub struct Primitive {
 }
 
 pub struct PrimitiveContext {
-    device: Arc<Device>,
+    _device: Arc<Device>,
     queue: Arc<Queue>,
-    pipeline: Arc<GraphicsPipeline<SingleBufferDefinition<Vertex>, 
-        Box<dyn PipelineLayoutAbstract + Send + Sync>, 
-        Arc<dyn RenderPassAbstract + Send + Sync>>>,
+    pipeline: Arc<dyn GraphicsPipelineAbstract + Send + Sync>,
     framebuffers: Vec<Arc<dyn FramebufferAbstract + Send + Sync>>,
     
     uniform_buffer_pool: CpuBufferPool<UniformTransform>,
@@ -105,12 +107,13 @@ impl PrimitiveContext {
                     color: [color],
                     depth_stencil: {}
                 }
-            ).unwrap()) as Arc<dyn RenderPassAbstract + Send + Sync>;
+            ).unwrap());
 
         let framebuffers = images.iter().map(|image| {
+            let view = ImageView::new(image.clone()).unwrap();
             Arc::new(
                 Framebuffer::start(render_pass.clone())
-                .add(image.clone()).unwrap()
+                .add(view).unwrap()
                 .build().unwrap()
             ) as Arc<dyn FramebufferAbstract + Send + Sync>
         }).collect::<Vec<_>>();
@@ -137,7 +140,7 @@ impl PrimitiveContext {
         let uniform_buffer_pool = CpuBufferPool::new(device.clone(), BufferUsage::uniform_buffer());
  
         PrimitiveContext {
-            device: device.clone(),
+            _device: device.clone(),
             queue,
             pipeline,
             framebuffers,
@@ -172,19 +175,19 @@ impl PrimitiveContext {
         ([
             Vertex {
                 position: [top_left[0], top_left[1], depth],
-                colour: colour,
+                colour,
             },
             Vertex {
                 position: [bottom_right[0], top_left[1], depth],
-                colour: colour,
+                colour,
             },
             Vertex {
                 position: [bottom_right[0], bottom_right[1], depth],
-                colour: colour,
+                colour,
             },
             Vertex {
                 position: [top_left[0], bottom_right[1], depth],
-                colour: colour,
+                colour,
             },
         ],
             [
@@ -213,7 +216,7 @@ impl PrimitiveContext {
     }
 
     fn draw_internal<'a>(&'a mut self,
-        builder: &'a mut AutoCommandBufferBuilder,
+        builder: &'a mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer, StandardCommandPoolBuilder>,
         image_num: usize,
     ) {
         self.check_recreate_descriptor_set(image_num);
@@ -231,10 +234,12 @@ impl PrimitiveContext {
                 vec![[0.0, 0.0, 0.0, 1.0].into()],
             ).expect("unable to begin primitive render pass");
 
+        let vbuf: Arc<dyn BufferAccess + Send + Sync> = Arc::new(self.vertex_buffer.clone().unwrap());
+
         builder.draw_indexed(
             self.pipeline.clone(),
             &DynamicState::none(),
-            self.vertex_buffer.clone().unwrap(),
+            vec![vbuf],
             self.index_buffer.clone().unwrap(),
             self.descriptor_set.clone().unwrap(),
             (),
@@ -258,9 +263,12 @@ impl PrimitiveContext {
         let uniform_buffer = {
             self.uniform_buffer_pool.next(transform).unwrap()
         };
+        let layout = self.pipeline.layout().descriptor_set_layouts().get(0)
+            .expect("could not retrieve pipeline descriptor set layout 0");
+
         self.descriptor_set = Some(
             Arc::new(
-                PersistentDescriptorSet::start(self.pipeline.descriptor_set_layout(0).unwrap().clone())
+                PersistentDescriptorSet::start(layout.clone())
                 .add_buffer(uniform_buffer)
                 .expect("could not add uniform buffer to PersistentDescriptorSet binding 0")
                 .build()
@@ -271,7 +279,7 @@ impl PrimitiveContext {
     }
 
     pub fn draw_primitives<'a>(&'a mut self, 
-        builder: &'a mut AutoCommandBufferBuilder,
+        builder: &'a mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer, StandardCommandPoolBuilder>,
         image_num: usize,
     ) -> bool {
         if self.pristine {

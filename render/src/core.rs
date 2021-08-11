@@ -6,13 +6,13 @@ use std::collections::HashSet;
 use vulkano::instance::{
     Instance,
     InstanceExtensions,
-    PhysicalDevice,
     layers_list,
     debug::DebugCallback,
     debug::MessageType,
     debug::MessageSeverity,
 };
 use vulkano::device::{
+    physical::PhysicalDevice,
     Device,
     DeviceExtensions,
     Queue,
@@ -30,16 +30,16 @@ use vulkano::swapchain::{
     SwapchainAcquireFuture,
     acquire_next_image,
     AcquireError,
-
 };
 use vulkano::format::Format;
-use vulkano::framebuffer::{
-    RenderPassAbstract,
+use vulkano::render_pass::{
+    RenderPass,
     FramebufferAbstract,
     Framebuffer,
 };
 use vulkano::image::{
     ImageUsage,
+    view::ImageView,
     swapchain::SwapchainImage,
 };
 use vulkano::sync::{
@@ -48,6 +48,7 @@ use vulkano::sync::{
 };
 use vulkano::command_buffer::DynamicState;
 use vulkano::pipeline::viewport::Viewport;
+use vulkano::Version;
 
 use vulkano_win::VkSurfaceBuild;
 
@@ -73,7 +74,7 @@ fn device_extensions() -> DeviceExtensions {
 }
 
 pub struct RenderCore {
-    instance: Arc<Instance>,
+    _instance: Arc<Instance>,
     device: Arc<Device>,
     surface: Arc<Surface<Window>>,
 
@@ -103,7 +104,7 @@ impl RenderCore {
             &device, &graphics_queue, &present_queue, None);
     
         Self {
-            instance,
+            _instance: instance,
             debug_callback,
             surface,
             device,
@@ -138,19 +139,14 @@ impl RenderCore {
             println!("Validation layers enabled, but not supported");
         }
 
-        let supported_exts = InstanceExtensions::supported_by_core()
-            .expect("unable to retrieve supported extensions");
-
-        println!("Supported Extensions: {:?}", supported_exts);
-
         let app_info = vulkano::app_info_from_cargo_toml!();
         let req_extensions = Self::get_required_extensions();
 
         if ENABLE_VALIDATION_LAYERS && Self::check_validation_layer_support() {
-            Instance::new(Some(&app_info), &req_extensions, VALIDATION_LAYERS.iter().cloned())
+            Instance::new(Some(&app_info), Version::V1_1, &req_extensions, VALIDATION_LAYERS.iter().cloned())
                 .expect("unable to create new vulkan instance")
         } else {
-           Instance::new(Some(&app_info), &req_extensions, None) 
+           Instance::new(Some(&app_info), Version::V1_1, &req_extensions, None) 
                 .expect("unable to create new vulkan instance")
         }
     }
@@ -184,13 +180,13 @@ impl RenderCore {
             false
         };
 
-        println!("{:?}: complete: {:?}, supported: {:?}, adequate: {:?}", device.name(), indices.is_complete(), extensions_supported, swap_chain_adequate);
+        println!("{:?}: complete: {:?}, supported: {:?}, adequate: {:?}", device.properties().device_name, indices.is_complete(), extensions_supported, swap_chain_adequate);
 
         indices.is_complete() && extensions_supported && swap_chain_adequate
     }
 
     fn check_device_extensions_supported(device: &PhysicalDevice) -> bool {
-        let avail_ext = DeviceExtensions::supported_by_device(*device);
+        let avail_ext = device.supported_extensions();
     
         avail_ext.khr_swapchain
     }
@@ -304,46 +300,30 @@ impl RenderCore {
             graphics_queue.into()
         };
 
-        if old_swapchain.is_some() {
-            return Swapchain::with_old_swapchain(
-                device.clone(),
-                surface.clone(),
-                image_count,
-                surface_format.0,
-                extent,
-                1, // Layers
-                image_usage,
-                sharing,
-                caps.current_transform,
-                CompositeAlpha::Opaque,
-                present_mode,
-                FullscreenExclusive::Allowed,
-                true, // Clipped
-                surface_format.1,
-                old_swapchain.unwrap(),
-            ).expect("failed to create swap chain");
-
+        if let Some(swapchain) = old_swapchain {
+            return swapchain
+                .recreate()
+                .dimensions(extent)
+                .build().unwrap();
         }
         
-        return Swapchain::new(
-            device.clone(),
-            surface.clone(),
-            image_count,
-            surface_format.0,
-            extent,
-            1,
-            image_usage,
-            sharing,
-            caps.current_transform,
-            CompositeAlpha::Opaque,
-            present_mode,
-            FullscreenExclusive::Allowed,
-            true,
-            surface_format.1
-        ).expect("failed to create swap chain");
+        return Swapchain::start(device.clone(), surface.clone())
+            .num_images(image_count)
+            .format(surface_format.0)
+            .color_space(surface_format.1)
+            .usage(image_usage)
+            .sharing_mode(sharing)
+            .transform(caps.current_transform)
+            .composite_alpha(CompositeAlpha::Opaque)
+            .present_mode(present_mode)
+            .fullscreen_exclusive(FullscreenExclusive::Allowed)
+            .dimensions(extent)
+            .clipped(true)
+            .build()
+        .expect("failed to create swap chain");
     }
 
-    pub fn create_render_pass(&self, color_fmt: Option<Format>) -> Arc<dyn RenderPassAbstract + Send + Sync> {
+    pub fn create_render_pass(&self, color_fmt: Option<Format>) -> Arc<RenderPass> {
         Arc::new(vulkano::single_pass_renderpass!(self.device.clone(),
             attachments: {
                 color: {
@@ -362,7 +342,7 @@ impl RenderCore {
 
     pub fn create_framebuffers(
         &self,
-        render_pass: &Arc<dyn RenderPassAbstract + Send + Sync>,
+        render_pass: &Arc<RenderPass>,
         dynamic_state: &mut DynamicState,
     ) -> Vec<Arc<dyn FramebufferAbstract + Send + Sync>> {
         let dimensions = self.swap_chain_images[0].dimensions();
@@ -375,8 +355,9 @@ impl RenderCore {
 
         self.swap_chain_images.iter()
             .map(|image| {
+                let view = ImageView::new(image.clone()).unwrap();
                 Arc::new(Framebuffer::start(render_pass.clone())
-                    .add(image.clone()).unwrap()
+                    .add(view).unwrap()
                     .build().unwrap()
                 ) as Arc<dyn FramebufferAbstract + Send + Sync>
             }).collect::<Vec<_>>()

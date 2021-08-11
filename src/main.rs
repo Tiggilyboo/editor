@@ -1,11 +1,8 @@
-extern crate scribe;
-
 mod events;
-
 
 use std::cell::RefCell;
 use std::sync::Mutex;
-use std::sync::{Arc};
+use std::sync::Arc;
 use render::Renderer;
 use events::state::InputState;
 

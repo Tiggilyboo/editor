@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use vulkano::instance::PhysicalDevice;
+use vulkano::device::physical::PhysicalDevice;
 use winit::window::Window;
 use vulkano::swapchain::Surface;
 

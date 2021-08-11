@@ -7,15 +7,7 @@ edition = "2018"
 [dependencies]
 render = { path = "./render" }
 dirs = "3.0"
-winit = "0.24"
-
-[dependencies.glyph_brush]
-version = "0.7"
-default-features = false
-
-[dependencies.scribe]
-version = "0.7.2"
-default-features = false
+winit = "0.25"
 
 [workspace]
 members = ["render"]

@@ -6,12 +6,12 @@ authors = ["Simon Willshire"]
 [lib]
 
 [dependencies]
-vulkano = "0.20"
-vulkano-win = "0.20"
-vulkano-shaders = "0.20"
+vulkano = "0.25"
+vulkano-win = "0.25"
+vulkano-shaders = "0.25"
 
 [dependencies.winit]
-version = "0.24"
+version = "0.25"
 features=["wayland"]
 default-features = false
 

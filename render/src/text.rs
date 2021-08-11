@@ -20,22 +20,20 @@ use vulkano::device::{
     Queue,
 }; 
 use vulkano::format::{
-    R8Unorm,
+    Format,
     ClearValue,
 };
 use vulkano::pipeline::{
     GraphicsPipeline,
+    GraphicsPipelineAbstract,
     viewport::Viewport,
-    vertex::SingleBufferDefinition,
 };
-use vulkano::descriptor::descriptor_set::{
+use vulkano::descriptor_set::{
     PersistentDescriptorSet,  
     DescriptorSet,
 };
-use vulkano::descriptor::pipeline_layout::{
-    PipelineLayoutAbstract,
-};
 use vulkano::buffer::{
+    BufferAccess,
     BufferUsage,
     CpuAccessibleBuffer,
     ImmutableBuffer,
@@ -46,13 +44,14 @@ use vulkano::swapchain::Swapchain;
 use vulkano::image::{
     SwapchainImage,
     ImmutableImage,
-    Dimensions,
+    ImageDimensions,
     MipmapsCount,
+    view::ImageView,
 };
-use vulkano::framebuffer::{
+use vulkano::render_pass::{
     FramebufferAbstract, 
     Framebuffer,
-    RenderPassAbstract,
+    RenderPass,
     Subpass,
 };
 use vulkano::sampler::{
@@ -63,8 +62,10 @@ use vulkano::sampler::{
 };
 use vulkano::command_buffer::{
     AutoCommandBufferBuilder,
+    PrimaryAutoCommandBuffer,
     DynamicState,
     SubpassContents,
+    pool::standard::StandardCommandPoolBuilder,
 };  
 use glyph_brush::{
     Section,
@@ -85,9 +86,7 @@ use self::font::FontBounds;
 pub struct TextContext {
     device: Arc<Device>,
     queue: Arc<Queue>,
-    pipeline: Arc<GraphicsPipeline<SingleBufferDefinition<Vertex>, 
-        Box<dyn PipelineLayoutAbstract + Send + Sync>, 
-        Arc<dyn RenderPassAbstract + Send + Sync>>>,
+    pipeline: Arc<dyn GraphicsPipelineAbstract + Send + Sync>, 
     framebuffers: Vec<Arc<dyn FramebufferAbstract + Send + Sync>>,
     uniform_buffer_pool: CpuBufferPool<UniformTransform>,
     vertex_buffer: Option<Arc<ImmutableBuffer<[Vertex]>>>,
@@ -114,7 +113,7 @@ pub struct TextVertex {
 struct TextureCache {
     pub cache_pixel_buffer: Vec<u8>,
     pub cache_dimensions: (usize, usize),
-    image: Option<Arc<ImmutableImage<R8Unorm>>>,
+    image: Option<Arc<ImageView<Arc<ImmutableImage>>>>,
     sampler: Arc<Sampler>,
     dirty: bool,
 }
@@ -226,13 +225,16 @@ impl TextContext {
                 color: [color],
                 depth_stencil: {}
             }
-        ).unwrap()) as Arc<dyn RenderPassAbstract + Send + Sync>;
+        ).unwrap()) as Arc<RenderPass>;
 
         let framebuffers = images.iter().map(|image| {
+            let view = ImageView::new(image.clone()).unwrap();
             Arc::new(
                 Framebuffer::start(render_pass.clone())
-                .add(image.clone()).unwrap()
-                .build().unwrap()
+                .add(view)
+                .unwrap()
+                .build()
+                .unwrap()
             ) as Arc<dyn FramebufferAbstract + Send + Sync>
         }).collect::<Vec<_>>();
 
@@ -358,7 +360,7 @@ impl TextContext {
         }
     }
 
-    fn upload_texture(&self) -> Arc<ImmutableImage<R8Unorm>> {
+    fn upload_texture(&self) -> Arc<ImageView<Arc<ImmutableImage>>> {
         let buffer = CpuAccessibleBuffer::<[u8]>::from_iter( 
             self.device.clone(),
             BufferUsage::transfer_source(),
@@ -366,28 +368,30 @@ impl TextContext {
             self.texture.cache_pixel_buffer.iter().cloned(),
         ).expect("unable to upload cache pixel buffer to buffer pool");
 
-        let dimensions = Dimensions::Dim2d { 
+        let dimensions = ImageDimensions::Dim2d { 
             width: self.texture.cache_dimensions.0 as u32, 
             height: self.texture.cache_dimensions.1 as u32,
+            array_layers: 1,
         };
         // when _future is dropped, it will block the function until completed
         let (cache_tex, _future) = ImmutableImage::from_buffer(
             buffer,
             dimensions,
             MipmapsCount::One,
-            R8Unorm,
+            Format::R8Unorm,
             self.queue.clone(),
         ).expect("Unable to create unintialised immutable image");
 
         drop(_future);
-        cache_tex
+        
+        ImageView::new(cache_tex).unwrap()
     }
 
     fn get_max_image_dimension(device: Arc<Device>) -> usize {
         let phys_dev = device.physical_device();
-        let limits = phys_dev.limits();
+        let props = phys_dev.properties();
         
-        limits.max_image_dimension_2d() as usize
+        props.max_image_dimension2_d as usize
     }
 
     fn resize_cache(&mut self, width: usize, height: usize) {
@@ -463,10 +467,12 @@ impl TextContext {
             self.uniform_buffer_pool.next(transform).unwrap()
         };
         let cache_tex = self.texture.image.clone().unwrap();
+        let layout = self.pipeline.layout().descriptor_set_layouts().get(0)
+            .expect("could not retrieve pipeline descriptor set layout 0");
     
         self.dimensions = dimensions;
         self.descriptor_set = Some(Arc::new(
-            PersistentDescriptorSet::start(self.pipeline.descriptor_set_layout(0).unwrap().clone())
+            PersistentDescriptorSet::start(layout.clone())
                 .add_sampled_image(cache_tex, self.texture.sampler.clone())
                 .expect("could not add sampled image to PersistentDescriptorSet binding 0")
                 .add_buffer(uniform_buffer)
@@ -479,7 +485,7 @@ impl TextContext {
 
     #[inline]
     fn draw_internal<'a>(&'a mut self, 
-        builder: &'a mut AutoCommandBufferBuilder, 
+        builder: &'a mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer, StandardCommandPoolBuilder>, 
         image_num: usize,
     ) -> bool {
         self.check_recreate_descriptor_set(image_num);
@@ -489,6 +495,8 @@ impl TextContext {
         || self.texture.image.is_none() {
             return false;
         }
+    
+        let vbuf: Arc<dyn BufferAccess + Send + Sync> = Arc::new(self.vertex_buffer.clone().unwrap());
 
         builder 
             .begin_render_pass(
@@ -500,7 +508,7 @@ impl TextContext {
             .draw_indexed(
                 self.pipeline.clone(),
                 &DynamicState::none(),
-                self.vertex_buffer.clone().unwrap(),
+                vec![vbuf],
                 self.index_buffer.clone().unwrap(),
                 self.descriptor_set.clone().unwrap(), 
                 (),
@@ -513,7 +521,7 @@ impl TextContext {
     }
 
     pub fn draw_text<'a>(&'a mut self, 
-        builder: &'a mut AutoCommandBufferBuilder, 
+        builder: &'a mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer, StandardCommandPoolBuilder>,
         image_num: usize,
     ) -> bool {
         let cache_dimensions = self.texture.cache_dimensions;

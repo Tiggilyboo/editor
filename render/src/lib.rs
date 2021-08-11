@@ -1,5 +1,6 @@
 extern crate vulkano;
 extern crate vulkano_win;
+extern crate vulkano_shaders;
 extern crate winit;
 extern crate glyph_brush;
 
@@ -13,13 +14,14 @@ use std::sync::Arc;
 use std::cell::RefCell;
 
 use vulkano::command_buffer::{
-    AutoCommandBuffer,
+    PrimaryAutoCommandBuffer,
     AutoCommandBufferBuilder,
     DynamicState,
+    CommandBufferUsage,
 };
 use vulkano::device::Device;
-use vulkano::framebuffer::{
-    RenderPassAbstract,
+use vulkano::render_pass::{
+    RenderPass,
     FramebufferAbstract,
 };
 use vulkano::swapchain::{
@@ -38,7 +40,7 @@ use self::primitive::PrimitiveContext;
 
 pub struct Renderer {
     core: RenderCore,
-    render_pass: Arc<dyn RenderPassAbstract + Send + Sync>,
+    render_pass: Arc<RenderPass>,
     swap_chain_frame_buffers: Vec<Arc<dyn FramebufferAbstract + Send + Sync>>,
     dynamic_state: DynamicState,
     previous_frame_end: Option<Box<dyn GpuFuture>>,
@@ -170,7 +172,10 @@ impl Renderer {
 
     fn recreate_swap_chain(&mut self) {
         let dimensions: [u32; 2] = self.core.get_window().inner_size().into();
-        let (new_swapchain, new_images) = match self.core.swap_chain.recreate_with_dimensions(dimensions) {
+        let (new_swapchain, new_images) = match self.core.swap_chain
+            .recreate()
+            .dimensions(dimensions)
+            .build() {
             Ok(r) => r,
             Err(SwapchainCreationError::UnsupportedDimensions) => return,
             Err(err) => panic!("Failed to recreate swapchain: {:?}", err)
@@ -201,10 +206,11 @@ impl Renderer {
     }
 
     #[inline]
-    fn create_command_buffer(&mut self, image_index: usize) -> Option<Arc<AutoCommandBuffer>> {
-        let mut builder = AutoCommandBufferBuilder::primary_one_time_submit(
+    fn create_command_buffer(&mut self, image_index: usize) -> Option<Arc<PrimaryAutoCommandBuffer>> {
+        let mut builder = AutoCommandBufferBuilder::primary(
                 self.core.get_device().clone(),
-                self.core.get_graphics_queue().family()
+                self.core.get_graphics_queue().family(),
+                CommandBufferUsage::OneTimeSubmit,
         ).expect("unable to create AutoCommandBufferBuilder");
 
         self.primitive_context
