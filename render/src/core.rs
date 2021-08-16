@@ -7,9 +7,6 @@ use vulkano::instance::{
     Instance,
     InstanceExtensions,
     layers_list,
-    debug::DebugCallback,
-    debug::MessageType,
-    debug::MessageSeverity,
 };
 use vulkano::device::{
     physical::PhysicalDevice,
@@ -46,7 +43,12 @@ use vulkano::sync::{
     NowFuture,
     SharingMode,
 };
-use vulkano::command_buffer::DynamicState;
+use vulkano::command_buffer::{
+    DynamicState,
+    PrimaryAutoCommandBuffer,
+    AutoCommandBufferBuilder,
+    pool::standard::StandardCommandPoolBuilder,
+};
 use vulkano::pipeline::viewport::Viewport;
 use vulkano::Version;
 
@@ -85,14 +87,12 @@ pub struct RenderCore {
     
     pub swap_chain: Arc<Swapchain<Window>>,
     pub swap_chain_images: Vec<Arc<SwapchainImage<Window>>>,
-    
-    debug_callback: Option<DebugCallback>,
 }
+
 
 impl RenderCore {
     pub fn new<L>(events_loop: &EventLoop<L>, title: &str) -> Self {
         let instance = Self::create_instance(); 
-        let debug_callback = Self::create_debug_callback(&instance);
         let surface = Self::create_surface(title, events_loop, &instance);
 
         let _physical_device_id = Self::find_physical_device(&instance, &surface);
@@ -105,7 +105,6 @@ impl RenderCore {
     
         Self {
             _instance: instance,
-            debug_callback,
             surface,
             device,
             graphics_queue,
@@ -149,19 +148,6 @@ impl RenderCore {
            Instance::new(Some(&app_info), Version::V1_1, &req_extensions, None) 
                 .expect("unable to create new vulkan instance")
         }
-    }
-
-    fn create_debug_callback(instance: &Arc<Instance>) -> Option<DebugCallback> {
-        if !ENABLE_VALIDATION_LAYERS {
-            return None;
-        }
-        
-        let msg_types = MessageType::general();
-        let msg_severity = MessageSeverity::errors();
-        
-        DebugCallback::new(&instance, msg_severity, msg_types, |msg| {
-            println!("validation layers: {:?}", msg.description);
-        }).ok() 
     }
 
     fn is_device_suitable(surface: &Arc<Surface<Window>>, device: &PhysicalDevice) -> bool {

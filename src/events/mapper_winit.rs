@@ -32,3 +32,48 @@ pub fn map_scancode(scancode: ScanCode) -> Option<VirtualKeyCode> {
         }
     }
 }
+
+pub fn map_char(ch: char) -> Option<VirtualKeyCode> {
+    // This is crap
+    let ch: &str = &String::from(ch).to_uppercase();
+
+    match ch {
+        "A" => Some(VirtualKeyCode::A),
+        "B" => Some(VirtualKeyCode::B),
+        "C" => Some(VirtualKeyCode::C),
+        "D" => Some(VirtualKeyCode::D),
+        "E" => Some(VirtualKeyCode::E),
+        "F" => Some(VirtualKeyCode::F),
+        "G" => Some(VirtualKeyCode::G),
+        "H" => Some(VirtualKeyCode::H),
+        "I" => Some(VirtualKeyCode::I),
+        "J" => Some(VirtualKeyCode::J),
+        "K" => Some(VirtualKeyCode::K),
+        "L" => Some(VirtualKeyCode::L),
+        "M" => Some(VirtualKeyCode::M),
+        "N" => Some(VirtualKeyCode::N),
+        "O" => Some(VirtualKeyCode::O),
+        "P" => Some(VirtualKeyCode::P),
+        "Q" => Some(VirtualKeyCode::Q),
+        "R" => Some(VirtualKeyCode::R),
+        "S" => Some(VirtualKeyCode::S),
+        "T" => Some(VirtualKeyCode::T),
+        "U" => Some(VirtualKeyCode::U),
+        "V" => Some(VirtualKeyCode::V),
+        "W" => Some(VirtualKeyCode::W),
+        "X" => Some(VirtualKeyCode::X),
+        "Y" => Some(VirtualKeyCode::Y),
+        "Z" => Some(VirtualKeyCode::Z),
+        "0" => Some(VirtualKeyCode::Key0),
+        "1" => Some(VirtualKeyCode::Key1),
+        "2" => Some(VirtualKeyCode::Key2),
+        "3" => Some(VirtualKeyCode::Key3),
+        "4" => Some(VirtualKeyCode::Key4),
+        "5" => Some(VirtualKeyCode::Key5),
+        "6" => Some(VirtualKeyCode::Key6),
+        "7" => Some(VirtualKeyCode::Key7),
+        "8" => Some(VirtualKeyCode::Key8),
+        "9" => Some(VirtualKeyCode::Key9),
+        _ => None,
+    }
+}

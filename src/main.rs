@@ -1,9 +1,11 @@
 mod events;
+mod editor;
 
 use std::cell::RefCell;
 use std::sync::Mutex;
 use std::sync::Arc;
 use render::Renderer;
+use editor::EditorState;
 use events::state::InputState;
 
 use winit::event_loop::{
@@ -20,8 +22,10 @@ enum EditorEvent {}
 fn main() {
     let el = EventLoop::<EditorEvent>::with_user_event();
     let renderer = RefCell::new(Renderer::new(&el, "Editor"));
-    let mut screen_dimensions: [f32; 2] = renderer.borrow().get_screen_dimensions();
+    let editor = Arc::new(Mutex::new(EditorState::new()));
     let input = Arc::new(Mutex::new(InputState::new()));
+    
+    let mut screen_dimensions: [f32; 2] = renderer.borrow().get_screen_dimensions();
 
     el.run(move |event: Event<'_, EditorEvent>, _, control_flow: &mut ControlFlow| {
         *control_flow = ControlFlow::Wait;
@@ -51,6 +55,15 @@ fn main() {
                 | WindowEvent::Focused(_) => {
                     if let Ok(mut input) = input.try_lock() {
                         input.update(event, screen_dimensions);
+
+                        if let Ok(editor) = editor.try_lock() {
+                            let input_actions = editor.acquire_input_actions(&input);   
+                            if input_actions.len() > 0 {
+                                println!("Got actions to process: {:?}", input_actions);
+                            }
+                        } else {
+                            panic!("Unable to lock editor state");
+                        }
                     } else {
                         panic!("Unable to lock input")
                     }
