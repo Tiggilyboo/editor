@@ -6,8 +6,9 @@ edition = "2018"
 
 [dependencies]
 render = { path = "./render" }
+eddy = { path = "./eddy" }
 dirs = "3.0"
 winit = "0.25"
 
 [workspace]
-members = ["render"]
+members = ["render", "eddy"]

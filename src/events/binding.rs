@@ -1,4 +1,4 @@
-use crate::editor::{
+use eddy::{
     Mode,
     Action,
     Motion,
@@ -148,7 +148,7 @@ macro_rules! bindings_key_range {
             $(,$mods:expr)?
             $(,+$mode:expr)?
             $(,~$notmode:expr)?
-            ;$($action:expr),*
+            ;$($action:ident),*
         );*
         $(;)*
     ) => {{
@@ -169,10 +169,12 @@ macro_rules! bindings_key_range {
             $(_mode = $mode;)?
             let mut _notmode = Mode::None;
             $(_notmode = $notmode;)?
-            let mut _actions: Vec<Action> = vec!();
-            $(_actions.push($action);)*
 
             key_range.chars().for_each(|k| {
+                let mut _actions: Vec<Action> = vec!();
+                $(
+                    _actions.push(Action::$action(k.to_string()));
+                )*
                 if let Some(keycode) = map_char(k) {
                     v.push(KeyBinding {
                         trigger: Key::KeyCode(keycode),
@@ -197,8 +199,8 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
         Escape, ~Mode::Normal; Action::SetMode(Mode::Normal);
         I, +Mode::Normal; Action::SetMode(Mode::Insert);
         V, +Mode::Normal; Action::SetMode(Mode::Visual);
-        V, shift!(), +Mode::Normal; Action::SelectBegin(Motion::Begin, Quantity::Line), Action::SelectEnd(Motion::Last, Quantity::Line), Action::SetMode(Mode::Visual);
-        V, ctrl!(), +Mode::Normal; Action::SelectBegin(Motion::None, Quantity::Character), Action::SetMode(Mode::Visual);
+        V, shift!(), +Mode::Normal; Action::Move(Motion::First, Quantity::Character), Action::MoveSelection(Motion::Last, Quantity::Character), Action::SetMode(Mode::Visual);
+        V, ctrl!(), +Mode::Normal; Action::SetMode(Mode::Visual);
         A, +Mode::Normal; motion!(Forward), Action::SetMode(Mode::Insert);
         S, +Mode::Normal; Action::Delete(Motion::Forward, Quantity::Character), Action::SetMode(Mode::Insert);
         Colon, +Mode::Normal; Action::SetMode(Mode::Command);       
@@ -206,7 +208,7 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
 
     let mut insert_bindings = bindings_key_range!(
         KeyBinding; 
-        ['A'-'Z'], +Mode::Insert; Action::InsertChar;
+        ['A'-'Z'], +Mode::Insert; InsertChars;
     );
 
     bindings.append(&mut insert_bindings);

@@ -1,0 +1,14 @@
+[package]
+name = "eddy"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+rope = { path = "./rope" }
+unicode-segmentation = "1.3.0"
+
+[dependencies.syntect]
+version = "3.2"
+default-features = false
+features = ["assets","dump-load-rs","dump-create"]
+
