@@ -151,11 +151,11 @@ impl Annotations {
 /// A region of an `Annotation`.
 #[derive(Debug, Clone)]
 pub struct AnnotationSlice {
-    annotation_type: AnnotationType,
+    pub annotation_type: AnnotationType,
     /// Annotation occurrences, guaranteed non-descending start order.
-    ranges: Vec<AnnotationRange>,
+    pub ranges: Vec<AnnotationRange>,
     /// If present, one payload per range.
-    payloads: Option<Vec<String>>,
+    pub payloads: Option<Vec<String>>,
 }
 
 impl AnnotationSlice {

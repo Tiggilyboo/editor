@@ -8,7 +8,10 @@ edition = "2018"
 render = { path = "./render" }
 eddy = { path = "./eddy" }
 dirs = "3.0"
-winit = "0.25"
+
+[dependencies.winit]
+version = "0.25"
+features = ["wayland"]
 
 [workspace]
 members = ["render", "eddy"]

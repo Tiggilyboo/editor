@@ -15,6 +15,7 @@
 //! A container for the state relevant to a single event.
 
 use std::cell::RefCell;
+use std::sync::Arc;
 use std::iter;
 use std::ops::Range;
 use std::path::Path;
@@ -34,7 +35,7 @@ use crate::editor::{
 };
 use crate::view::View;
 use crate::width_cache::WidthCache;
-use crate::actions::{GestureType, Position};
+use crate::actions::Position;
 
 // Maximum returned result from plugin get_data RPC.
 pub const MAX_SIZE_LIMIT: usize = 1024 * 1024;
@@ -74,7 +75,7 @@ pub struct EventContext<'a> {
     pub info: Option<&'a FileInfo>,
     pub view: &'a RefCell<View>,
     pub siblings: Vec<&'a RefCell<View>>,
-    pub client: &'a Client,
+    pub client: &'a Arc<Client>,
     pub style_map: &'a RefCell<ThemeStyleMap>,
     pub width_cache: &'a RefCell<WidthCache>,
     pub kill_ring: &'a RefCell<Rope>,
@@ -221,6 +222,7 @@ impl<'a> EventContext<'a> {
     fn update_views(&self, ed: &Editor, delta: &RopeDelta, last_text: &Rope, drift: InsertDrift) {
         let mut width_cache = self.width_cache.borrow_mut();
         let iter_views = iter::once(&self.view).chain(self.siblings.iter());
+
         iter_views.for_each(|view| {
             view.borrow_mut().after_edit(
                 ed.get_buffer(),
@@ -235,7 +237,6 @@ impl<'a> EventContext<'a> {
 
     fn update_plugins(&self, ed: &mut Editor, delta: RopeDelta, author: &str) {
         //TODO
-        ed.dec_revs_in_flight();
         ed.update_edit_type();
     }
 
@@ -255,6 +256,7 @@ impl<'a> EventContext<'a> {
     /// Flushes any changes in the views out to the frontend.
     fn render(&mut self) {
         let ed = self.editor.borrow();
+
         //TODO: render other views
         self.view.borrow_mut().render_if_dirty(
             ed.get_buffer(),

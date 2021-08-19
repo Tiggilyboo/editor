@@ -1,7 +1,5 @@
 mod actions;
-mod annotations;
 mod backspace;
-mod client;
 mod editor;
 mod edit_ops;
 mod errors;
@@ -16,9 +14,11 @@ mod selection;
 mod movement;
 mod unicode;
 mod unicode_tables;
-mod view;
 mod words;
+mod view;
 
+pub mod annotations;
+pub mod client;
 pub mod width_cache;
 pub mod styles;
 

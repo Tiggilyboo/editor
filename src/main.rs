@@ -1,5 +1,6 @@
 mod events;
 mod editor;
+mod linecache;
 
 use std::cell::RefCell;
 use std::sync::Mutex;

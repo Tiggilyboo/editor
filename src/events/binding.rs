@@ -41,9 +41,6 @@ impl<T: Eq> Binding<T> {
             && (self.mode == Mode::None || self.mode == mode)
             && (self.notmode == Mode::None || self.notmode != mode)
     }
-    fn eq(&self, other: &Self) -> bool {
-       self.is_triggered_by(other.mode, other.mods, &other.trigger) 
-    }
 }
 
 
@@ -204,6 +201,12 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
         A, +Mode::Normal; motion!(Forward), Action::SetMode(Mode::Insert);
         S, +Mode::Normal; Action::Delete(Motion::Forward, Quantity::Character), Action::SetMode(Mode::Insert);
         Colon, +Mode::Normal; Action::SetMode(Mode::Command);       
+
+        // Insert
+        A, +Mode::Insert; Action::InsertChars("A".into());
+        B, +Mode::Insert; Action::InsertChars("B".into());
+        Back, +Mode::Insert; Action::Delete(Motion::Backward, Quantity::Character);
+        Space, +Mode::Insert; Action::InsertChars(" ".into());
     );
 
     let mut insert_bindings = bindings_key_range!(

@@ -37,6 +37,7 @@ use super::{
         Client,
         Update,
         UpdateOp,
+        LineUpdate,
     },
 };
 use rope::{
@@ -52,7 +53,6 @@ const FLAG_SELECT: u64 = 2;
 
 /// Size of batches as number of bytes used during incremental find.
 const FIND_BATCH_SIZE: usize = 500000;
-
 
 /// A view to a buffer. It is the buffer plus additional information
 /// like line breaks and selection state.
@@ -145,6 +145,7 @@ struct DragState {
     quantity: Quantity,
 }
 
+
 impl View {
     pub fn new(view_id: ViewId, buffer_id: BufferId) -> View {
         View {
@@ -229,7 +230,7 @@ impl View {
             Gesture { line, col, ty } => self.do_gesture(text, line, col, ty),
             GoToLine(line) => self.goto_line(text, line),
             CollapseSelections => self.collapse_selections(text),
-            _ => (),
+            _ => unimplemented!(),
         }
     }
 
@@ -573,10 +574,67 @@ impl View {
         ix
     }
 
-    fn encode_line(&self, client: &Client, styles: &StyleMap, line: &VisualLine, text: Option<&Rope>, spans: Option<&Spans<Style>>, len: usize) -> String {
-       unimplemented!() 
-    }
+    // Encode a single line with its styles and cursors.
+    // If "text" is not specified, don't add "text" to the output.
+    // If "style_spans" are not specified, don't add "styles" to the output.
+    fn encode_line(
+        &self,
+        client: &Client,
+        styles: &StyleMap,
+        line: VisualLine,
+        text: Option<&Rope>,
+        style_spans: Option<&Spans<Style>>,
+        last_pos: usize,
+    ) -> LineUpdate {
+        let start_pos = line.interval.start;
+        let pos = line.interval.end;
+        let mut cursors = Vec::new();
+        let mut selections = Vec::new();
+        for region in self.selection.regions_in_range(start_pos, pos) {
+            // cursor
+            let c = region.end;
 
+            if (c > start_pos && c < pos)
+                || (!region.is_upstream() && c == start_pos)
+                || (region.is_upstream() && c == pos)
+                || (c == pos && c == last_pos)
+            {
+                cursors.push(c - start_pos);
+            }
+
+            // selection with interior
+            let sel_start_ix = clamp(region.min(), start_pos, pos) - start_pos;
+            let sel_end_ix = clamp(region.max(), start_pos, pos) - start_pos;
+            if sel_end_ix > sel_start_ix {
+                selections.push((sel_start_ix, sel_end_ix));
+            }
+        }
+        
+        // TODO find highlighting
+        let hls = Vec::new();
+
+        let mut result = LineUpdate::default();
+
+        if let Some(text) = text {
+            result.text = Some(text.slice_to_cow(start_pos..pos).to_string());
+        }
+        if let Some(style_spans) = style_spans {
+            result.styles = self.encode_styles(
+                client,
+                styles,
+                start_pos,
+                pos,
+                &selections,
+                &hls,
+                style_spans
+            );
+        }
+        
+        result.cursors = cursors;
+        result.ln = line.line_num;
+
+        result
+    }
 
     fn send_update_for_plan(
         &mut self,
@@ -653,7 +711,7 @@ impl View {
                                     self.encode_line(
                                         client,
                                         styles,
-                                        &l,
+                                        l,
                                         None,
                                         None,
                                         text.len(),
@@ -680,7 +738,7 @@ impl View {
                                 self.encode_line(
                                     client,
                                     styles,
-                                    &l,
+                                    l,
                                     Some(text),
                                     Some(style_spans),
                                     text.len(),

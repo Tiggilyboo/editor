@@ -515,6 +515,7 @@ impl Editor {
         cmd: Action,
     ) {
         match cmd {
+            Action::SetMode(mode) => view.set_mode(mode),
             Action::Delete(motion, quantity) => {
                 match motion {
                     Motion::Backward => self.do_delete_backward(view),

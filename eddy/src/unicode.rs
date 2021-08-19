@@ -13,8 +13,6 @@
 // limitations under the License.
 
 //! Unicode utilities useful for text editing, including a line breaking iterator.
-#![no_std]
-
 extern crate alloc;
 
 use core::cmp::Ordering;
