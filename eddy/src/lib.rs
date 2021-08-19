@@ -21,11 +21,12 @@ pub mod annotations;
 pub mod client;
 pub mod width_cache;
 pub mod styles;
+pub mod line_cache;
 
 pub use actions::Action;
 pub use editor::*;
 pub use view::*;
-pub use editor::{ViewId, BufferId};
+pub use editor::*;
 pub use event_context::*;
 pub use file::FileManager;
 pub use linewrap::Lines;

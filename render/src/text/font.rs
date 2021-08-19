@@ -1,4 +1,3 @@
-use std::sync::Arc;
 use std::collections::HashMap;
 use glyph_brush::ab_glyph::{ 
     Rect, 

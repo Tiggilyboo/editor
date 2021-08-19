@@ -1,0 +1,10 @@
+[package]
+name = "ui"
+version = "0.1.0"
+edition = "2018"
+
+[lib]
+
+[dependencies]
+render = { path = "../render" }
+eddy = { path = "../eddy" }

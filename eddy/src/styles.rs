@@ -431,3 +431,20 @@ impl fmt::Debug for Style {
         write!(f, " )")
     }
 }
+
+pub trait ToRgbaFloat32 {
+    fn to_rgba_f32array(&self) -> [f32; 4];
+}
+
+impl ToRgbaFloat32 for u32 {
+    #[inline]
+    fn to_rgba_f32array(&self) -> [f32; 4] {
+        let bytes = self.to_be_bytes();
+        [
+            bytes[0] as f32 / 255.0,
+            bytes[1] as f32 / 255.0,
+            bytes[2] as f32 / 255.0,
+            bytes[3] as f32 / 255.0,
+        ]
+    }
+}

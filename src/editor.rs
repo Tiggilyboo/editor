@@ -23,13 +23,17 @@ use eddy::{
     ViewId,
     Client,
     client::{
-        Command, Message, Payload, Update,
+        Command, Payload,
     },
     width_cache::WidthCache,
     styles::ThemeStyleMap,
+    line_cache::LineCache,
     Rope,
 };
-use super::linecache::LineCache;
+use ui::{
+    view::ViewWidget,
+    tree::WidgetTree,
+};
 
 pub struct EditorState {
     key_bindings: Vec<KeyBinding>,
@@ -42,12 +46,15 @@ pub struct EditorState {
     kill_ring: RefCell<Rope>,
     file_manager: FileManager,
     focused_view_id: Option<ViewId>,
+    widgets: Arc<Mutex<WidgetTree>>,
+    line_cache: Arc<Mutex<LineCache>>,
     id_counter: usize,
 }
 
-fn create_frontend_thread(client: Arc<Client>, line_cache: Arc<Mutex<LineCache>>) {
+fn create_frontend_thread(client: Arc<Client>, line_cache: Arc<Mutex<LineCache>>, widgets: Arc<Mutex<WidgetTree>>) {
     let thread_client = client.clone();
     let cache = line_cache.clone();
+    let widgets = widgets.clone();
 
     std::thread::spawn(move || {
         println!("frontend_thread started...");
@@ -58,13 +65,15 @@ fn create_frontend_thread(client: Arc<Client>, line_cache: Arc<Mutex<LineCache>>
                     cache.lock().unwrap()
                         .apply_update(update);
                 },
-                Payload::ViewCommand(Command::Scroll { line, col }) => {
+                Payload::Command(Command::Scroll { line, col }) => {
+                },
+                Payload::Command(Command::Idle { token }) => {
 
                 },
-                Payload::ViewCommand(Command::Idle { token }) => {
+                Payload::Command(Command::ShowHover { req_id, content }) => {
 
                 },
-                Payload::ViewCommand(Command::ShowHover { req_id, content }) => {
+                Payload::Command(Command::DefineStyle { style }) => {
 
                 },
             }
@@ -77,8 +86,9 @@ impl EditorState {
     pub fn new() -> Self {
         let client = Arc::new(Client::new());
         let line_cache = Arc::new(Mutex::new(LineCache::new()));
+        let widgets = Arc::new(Mutex::new(WidgetTree::new()));
 
-        create_frontend_thread(client.clone(), line_cache.clone());
+        create_frontend_thread(client.clone(), line_cache.clone(), widgets.clone());
 
         Self {
             key_bindings: default_key_bindings(),
@@ -92,6 +102,8 @@ impl EditorState {
             kill_ring: RefCell::new(Rope::from("")),
             id_counter: 0,
             focused_view_id: None,
+            line_cache,
+            widgets,
         }
     }
 
@@ -194,6 +206,18 @@ impl EditorState {
         self.views.insert(view_id, RefCell::new(View::new(view_id, buffer_id)));
         self.editors.insert(buffer_id, RefCell::new(Editor::new()));
         self.focused_view_id = Some(view_id);
+    
+        let path_str: Option<String> = if let Some(path) = path {
+            if let Ok(path) = path.into_os_string().into_string() {
+                Some(path)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        self.widgets.lock().unwrap().push(Box::new(ViewWidget::new(view_id, path_str)));
     }
 }
 

@@ -7,6 +7,7 @@ edition = "2018"
 [dependencies]
 render = { path = "./render" }
 eddy = { path = "./eddy" }
+ui = { path = "./ui" }
 dirs = "3.0"
 
 [dependencies.winit]
@@ -14,4 +15,4 @@ version = "0.25"
 features = ["wayland"]
 
 [workspace]
-members = ["render", "eddy"]
+members = ["render", "eddy", "ui"]

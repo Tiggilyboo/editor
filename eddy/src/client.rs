@@ -1,9 +1,14 @@
 use std::sync::Mutex;
-use super::ViewId;
-use super::annotations::AnnotationSlice;
+
 use flume::{
     Sender,
     Receiver,
+};
+use super::{
+    ViewId,
+    styles::Style,
+    annotations::AnnotationSlice,
+    line_cache::Line,
 };
 
 pub struct Client {
@@ -24,12 +29,15 @@ pub enum Command {
         req_id: usize,
         content: String,
     },
+    DefineStyle {
+        style: Style,
+    },
 }
 
 #[derive(Debug)]
 pub enum Payload {
     BufferUpdate(Update),
-    ViewCommand(Command),
+    Command(Command),
 }
 
 #[derive(Debug)]
@@ -49,7 +57,7 @@ impl Client {
         } 
     }
     pub fn scroll_to(&self, view_id: ViewId, line: usize, col: usize) {
-        let payload = Payload::ViewCommand(Command::Scroll { line, col });
+        let payload = Payload::Command(Command::Scroll { line, col });
         self.tx.send(Message { view_id: Some(view_id), payload }).unwrap();
     }
     pub fn update_view(&self, view_id: ViewId, update: &Update) {
@@ -57,12 +65,16 @@ impl Client {
         self.tx.send(Message { view_id: Some(view_id), payload }).unwrap();
     }
     pub fn schedule_idle(&self, token: usize) {
-        let payload = Payload::ViewCommand(Command::Idle { token });
+        let payload = Payload::Command(Command::Idle { token });
         self.tx.send(Message { view_id: None, payload }).unwrap();
     }
     pub fn show_hover(&self, view_id: ViewId, req_id: usize, content: String) {
-        let payload = Payload::ViewCommand(Command::ShowHover{ req_id, content });
+        let payload = Payload::Command(Command::ShowHover{ req_id, content });
         self.tx.send(Message { view_id: Some(view_id), payload }).unwrap();
+    }
+    pub fn define_style(&self, style: Style) {
+        let payload = Payload::Command(Command::DefineStyle { style });
+        self.tx.send(Message { view_id: None, payload }).unwrap();
     }
 
     pub fn get_message_stream(&self) -> &Mutex<Receiver<Message>> {
@@ -77,19 +89,12 @@ pub struct Update {
     pub annotations: Vec<AnnotationSlice>,
 }
 
-#[derive(Debug, Clone, Default)]
-pub struct LineUpdate {
-    pub text: Option<String>,
-    pub styles: Vec<isize>,
-    pub cursors: Vec<usize>,
-    pub ln: Option<usize>,
-}
 
 #[derive(Debug, Clone)]
 pub struct UpdateOp {
     pub op: OpType,
     pub n: usize,
-    pub lines: Option<Vec<LineUpdate>>,
+    pub lines: Option<Vec<Line>>,
     pub first_line_number: Option<usize>,
 }
 
@@ -106,11 +111,11 @@ impl UpdateOp {
         UpdateOp { op: OpType::Copy, n, lines: None, first_line_number: Some(line) }
     }
 
-    pub(crate) fn insert(lines: Vec<LineUpdate>) -> Self {
+    pub(crate) fn insert(lines: Vec<Line>) -> Self {
         UpdateOp { op: OpType::Insert, n: lines.len(), lines: Some(lines), first_line_number: None }
     }
 
-    pub(crate) fn update(lines: Vec<LineUpdate>, line_opt: Option<usize>) -> Self {
+    pub(crate) fn update(lines: Vec<Line>, line_opt: Option<usize>) -> Self {
         UpdateOp {
             op: OpType::Update,
             n: lines.len(),

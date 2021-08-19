@@ -262,6 +262,7 @@ pub fn is_keycap_base(c: char) -> bool {
 #[cfg(test)]
 mod tests {
     use super::linebreak_property_str;
+    use super::linebreak_property;
     use super::LineBreakIterator;
 
     #[test]

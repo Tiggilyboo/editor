@@ -43,12 +43,7 @@ use vulkano::sync::{
     NowFuture,
     SharingMode,
 };
-use vulkano::command_buffer::{
-    DynamicState,
-    PrimaryAutoCommandBuffer,
-    AutoCommandBufferBuilder,
-    pool::standard::StandardCommandPoolBuilder,
-};
+use vulkano::command_buffer::DynamicState;
 use vulkano::pipeline::viewport::Viewport;
 use vulkano::Version;
 

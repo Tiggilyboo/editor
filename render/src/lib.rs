@@ -9,6 +9,7 @@ mod core;
 pub mod text;
 pub mod primitive;
 pub mod uniform;
+pub mod colour;
 
 use std::sync::Arc;
 use std::cell::RefCell;

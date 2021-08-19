@@ -68,7 +68,9 @@ use vulkano::command_buffer::{
     pool::standard::StandardCommandPoolBuilder,
 };  
 use glyph_brush::{
-    Section,
+    OwnedSection,
+    OwnedText,
+    Layout,
     GlyphBrush,
     GlyphBrushBuilder,
     BrushAction,
@@ -81,7 +83,13 @@ use glyph_brush::ab_glyph::{
     Rect,
     point,
 };
+use super::colour::ColourRGBA;
 use self::font::FontBounds;
+
+pub struct TextGroup {
+    section: OwnedSection,
+    members: Vec<OwnedText>,
+}
 
 pub struct TextContext {
     device: Arc<Device>,
@@ -181,6 +189,58 @@ pub fn to_verts(text_vertex: &TextVertex) -> [Vertex; 4] {
         Vertex::new([text_vertex.right_bottom[0], text_vertex.left_top[1]], [text_vertex.tex_right_bottom[0], text_vertex.tex_left_top[1]], text_vertex.colour),
         Vertex::new([text_vertex.right_bottom[0], text_vertex.right_bottom[1]], text_vertex.tex_right_bottom, text_vertex.colour),
     ]
+}
+
+impl TextGroup {
+    pub fn new() -> Self {
+       let section = OwnedSection::default()
+           .with_layout(Layout::default_single_line());
+
+       Self {
+           section,
+           members: vec![],
+       }
+    }
+
+    fn get_section(&self) -> &OwnedSection {
+        &self.section
+    }
+
+    pub fn push(&mut self, text: String, scale: f32, colour: ColourRGBA) {
+        self.members.push(OwnedText::new(&text)
+          .with_color(colour)
+          .with_scale(scale));
+
+        let members = self.members.clone();
+        self.section.text = members;
+    }
+
+    pub fn clear(&mut self) {
+        self.members.clear();
+        self.section.text = vec![];
+    }
+
+    pub fn screen_position(&self) -> (f32, f32) {
+        self.section.screen_position
+    }
+
+    pub fn set_screen_position(&mut self, x: f32, y: f32) {
+        self.section.screen_position = (x, y);
+    }
+
+    pub fn bounds(&self) -> (f32, f32) {
+        self.section.bounds
+    }
+
+    fn line_string(&self) -> String {
+        // TODO: NOT IDEAL, but need a way to simplify two iter loops char_indices with index
+        // offset being summed properly...
+        let line_string = self.section.text.iter()
+            .flat_map(|t| t.text.chars())
+            .collect();
+
+        line_string
+    }
 }
 
 impl TextContext {
@@ -293,8 +353,8 @@ impl TextContext {
         }
     }
 
-    pub fn queue_text(&mut self, section: &Section) {
-        self.glyph_brush.borrow_mut().queue(section);
+    pub fn queue_text(&mut self, text: &TextGroup) {
+        self.glyph_brush.borrow_mut().queue(text.get_section());
     }
 
     pub fn get_text_width(&self, text: &str) -> f32 {
@@ -315,15 +375,13 @@ impl TextContext {
         self.font_bounds.set_scale(font_size);
     }
 
-    pub fn get_cursor_position(&mut self, section: &Section, offset: usize) -> (f32, f32) {
-        let mut pos: (f32, f32) = section.screen_position;
+    pub fn get_cursor_position(&mut self, text: &TextGroup, offset: usize) -> (f32, f32) {
+        let mut pos: (f32, f32) = text.screen_position();
         if offset == 0 {
             return pos;
         }
       
-        // TODO: NOT IDEAL, but need a way to simplify two iter loops char_indices with index
-        // offset being summed properly...
-        let line_string: String = section.text.iter().flat_map(|t| t.text.chars()).collect();
+        let line_string = text.line_string();
         for (i, ch) in line_string.char_indices(){
             if offset <= i {
                 break;

@@ -151,17 +151,19 @@ macro_rules! bindings_key_range {
     ) => {{
         let mut v = Vec::new();
         $(
+            let mut _mods = ModifiersState::empty();
+            $(_mods = $mods;)?
             let key_range = if $key_start >= 'A' && $key_end <= 'Z' {
-                ALPHA
-            } else if ($key_start >= 'a' && $key_end <= '9') {
-                ALPHA_LOWER
+                if _mods.contains(ModifiersState::SHIFT) {
+                    ALPHA
+                } else {
+                    ALPHA_LOWER
+                }
             } else if ($key_start >= '0' && $key_end <= '9') {
                 NUMERIC
             } else {
                 ""
             };
-            let mut _mods = ModifiersState::empty();
-            $(_mods = $mods;)?
             let mut _mode = Mode::None;
             $(_mode = $mode;)?
             let mut _notmode = Mode::None;
@@ -170,7 +172,11 @@ macro_rules! bindings_key_range {
             key_range.chars().for_each(|k| {
                 let mut _actions: Vec<Action> = vec!();
                 $(
-                    _actions.push(Action::$action(k.to_string()));
+                    if _mods.contains(ModifiersState::SHIFT) {
+                        _actions.push(Action::$action(k.to_string()));
+                    } else {
+                        _actions.push(Action::$action(k.to_string()));
+                    }
                 )*
                 if let Some(keycode) = map_char(k) {
                     v.push(KeyBinding {
@@ -201,20 +207,20 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
         A, +Mode::Normal; motion!(Forward), Action::SetMode(Mode::Insert);
         S, +Mode::Normal; Action::Delete(Motion::Forward, Quantity::Character), Action::SetMode(Mode::Insert);
         Colon, +Mode::Normal; Action::SetMode(Mode::Command);       
-
+        
         // Insert
-        A, +Mode::Insert; Action::InsertChars("A".into());
-        B, +Mode::Insert; Action::InsertChars("B".into());
         Back, +Mode::Insert; Action::Delete(Motion::Backward, Quantity::Character);
         Space, +Mode::Insert; Action::InsertChars(" ".into());
     );
 
-    let mut insert_bindings = bindings_key_range!(
+    let mut insert_bindings_ranges = bindings_key_range!(
         KeyBinding; 
+        ['0'-'9'], +Mode::Insert; InsertChars;
         ['A'-'Z'], +Mode::Insert; InsertChars;
+        ['A'-'Z'], shift!(), +Mode::Insert; InsertChars;
     );
 
-    bindings.append(&mut insert_bindings);
+    bindings.append(&mut insert_bindings_ranges);
 
     bindings
 }

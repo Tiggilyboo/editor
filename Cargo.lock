@@ -474,6 +474,7 @@ dependencies = [
  "dirs",
  "eddy",
  "render",
+ "ui",
  "winit",
 ]
 
@@ -1642,6 +1643,14 @@ dependencies = [
  "cfg-if 1.0.0",
  "rand",
  "static_assertions",
+]
+
+[[package]]
+name = "ui"
+version = "0.1.0"
+dependencies = [
+ "eddy",
+ "render",
 ]
 
 [[package]]

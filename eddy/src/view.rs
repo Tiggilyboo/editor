@@ -37,8 +37,8 @@ use super::{
         Client,
         Update,
         UpdateOp,
-        LineUpdate,
     },
+    line_cache::Line as LineUpdate,
 };
 use rope::{
     spans::Spans,
@@ -571,6 +571,9 @@ impl View {
         }
         let ix = style_map.add(style);
         let style = style_map.merge_with_default(style);
+
+        client.define_style(style);
+
         ix
     }
 

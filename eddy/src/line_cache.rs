@@ -1,10 +1,21 @@
 use std::mem;
 use std::ops::Range;
-use eddy::annotations::{
+
+use super::annotations::{
     AnnotationSlice,
     AnnotationType,
 };
-use eddy::client::{Update, UpdateOp, OpType, LineUpdate};
+use super::client::{
+    Update, UpdateOp, OpType
+};
+
+#[derive(Debug, Clone, Default)]
+pub struct Line {
+    pub text: Option<String>,
+    pub styles: Vec<isize>,
+    pub cursors: Vec<usize>,
+    pub ln: Option<usize>,
+}
 
 #[derive(Debug)]
 pub struct Selection {
@@ -15,7 +26,7 @@ pub struct Selection {
 
 #[derive(Debug)]
 pub struct LineCache {
-    lines: Vec<Option<LineUpdate>>,
+    lines: Vec<Option<Line>>,
     annotations: Vec<AnnotationSlice>,
     selections: Vec<Selection>,
 }
@@ -23,13 +34,13 @@ pub struct LineCache {
 impl LineCache {
     pub fn new() -> Self {
         Self {
-            lines: Vec::<Option<LineUpdate>>::new(),
+            lines: Vec::<Option<Line>>::new(),
             annotations: Vec::new(),
             selections: Vec::new(),
         }
     }
 
-    fn push_opt_line(&mut self, line: Option<LineUpdate>) {
+    fn push_opt_line(&mut self, line: Option<Line>) {
         self.lines.push(line);
     }
 
@@ -63,15 +74,17 @@ impl LineCache {
                     }
                 },
                 OpType::Update => {
-                    for line in o.lines {
-                        if let Some(mut new_line) = old_iter.next().unwrap_or_default() {
-                            self.push_opt_line(Some(new_line));
-                        } else {
-                            self.push_opt_line(None);
+                    for lines in o.lines {
+                        for line in lines {
+                            if let Some(mut new_line) = old_iter.next().unwrap_or_default() {
+                                new_line.cursors = line.cursors;
+                                self.push_opt_line(Some(new_line));
+                            } else {
+                                self.push_opt_line(None);
+                            }
                         }
                     }
                 }
-                _ => println!("unhandled update operation: {:?}", o.op)
             }
         }
 
@@ -121,7 +134,7 @@ impl LineCache {
         self.lines.len()
     }
 
-    pub fn get_line(&self, ix: usize) -> Option<&LineUpdate> {
+    pub fn get_line(&self, ix: usize) -> Option<&Line> {
         if ix < self.lines.len() {
             self.lines[ix].as_ref()
         } else {
@@ -149,3 +162,4 @@ pub fn count_utf16(s: &str) -> usize {
     }
     utf16_count
 }
+
