@@ -1,4 +1,8 @@
 use std::collections::HashMap;
+use std::sync::{
+    Arc,
+    Mutex,
+};
 
 use render::{
     Renderer,
@@ -18,12 +22,12 @@ use super::tree::WidgetTree;
 use super::text::TextWidget;
 
 pub struct ViewWidget {
+    view_id: ViewId,
     size: Size,
     position: Position,
-    dirty: bool,
-    view_id: ViewId,
     filepath: Option<String>,
     widgets: WidgetTree,
+    dirty: bool,
 }
 
 impl Widget for ViewWidget {
@@ -57,12 +61,16 @@ impl ViewWidget {
         }
     }
 
-    pub fn populate(&mut self, line_cache: &LineCache, styles: &HashMap<isize, Style>) {
-        for ix in 0..line_cache.height() {
-            if let Some(line) = line_cache.get_line(ix) {
-                let line_widget = TextWidget::from_line(&line, 1.0, BLACK, styles);
+    pub fn populate(&mut self, line_cache: &LineCache, styles: Arc<Mutex<HashMap<isize, Style>>>) {
+        let styles = styles.clone();
 
-                self.widgets.push(Box::new(line_widget));
+        if let Ok(styles) = styles.try_lock() {
+            for ix in 0..line_cache.height() {
+                if let Some(line) = line_cache.get_line(ix) {
+                    let line_widget = TextWidget::from_line(&line, 1.0, BLACK, &styles);
+
+                    self.widgets.push(Box::new(line_widget));
+                }
             }
         }
 

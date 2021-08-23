@@ -3,7 +3,7 @@ use render::Renderer;
 use super::widget::Widget;
 
 pub struct WidgetTree {
-    widgets: BTreeMap<usize, Box<dyn Widget>>,
+    widgets: BTreeMap<usize, Box<dyn Widget + Send + Sync>>,
 }
 
 impl WidgetTree {
@@ -13,11 +13,11 @@ impl WidgetTree {
         }
     }
     
-    pub fn get(&self, widget_id: usize) -> Option<&Box<dyn Widget>> {
+    pub fn get(&self, widget_id: usize) -> Option<&Box<dyn Widget + Send + Sync>> {
         self.widgets.get(&widget_id)
     }
 
-    pub fn push(&mut self, widget: Box<dyn Widget>) {
+    pub fn push(&mut self, widget: Box<dyn Widget + Send + Sync>) {
         let id = self.widgets.len() + 1;
         self.widgets.insert(id, widget);
     }

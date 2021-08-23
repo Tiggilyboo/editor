@@ -30,6 +30,7 @@ pub enum Command {
         content: String,
     },
     DefineStyle {
+        style_id: usize,
         style: Style,
     },
 }
@@ -72,8 +73,8 @@ impl Client {
         let payload = Payload::Command(Command::ShowHover{ req_id, content });
         self.tx.send(Message { view_id: Some(view_id), payload }).unwrap();
     }
-    pub fn define_style(&self, style: Style) {
-        let payload = Payload::Command(Command::DefineStyle { style });
+    pub fn define_style(&self, style_id: usize, style: Style) {
+        let payload = Payload::Command(Command::DefineStyle { style_id, style });
         self.tx.send(Message { view_id: None, payload }).unwrap();
     }
 

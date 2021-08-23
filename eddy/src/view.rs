@@ -572,7 +572,7 @@ impl View {
         let ix = style_map.add(style);
         let style = style_map.merge_with_default(style);
 
-        client.define_style(style);
+        client.define_style(ix, style);
 
         ix
     }
