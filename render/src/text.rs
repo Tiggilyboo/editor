@@ -475,6 +475,7 @@ impl TextContext {
         let mut indices = vec!();
         let mut quadrupled_verts = vec!();
         let mut i = 0;
+        println!("upload_vertices: {:?}", vertices);
 
         for v in vertices.iter() {
             let glyph_verts = to_verts(v);
@@ -505,6 +506,7 @@ impl TextContext {
             BufferUsage::index_buffer(),
             self.queue.clone(),
         ).expect("TextContext: unable to create index buffer");
+
          
         self.vertex_buffer = Some(vertex_buffer);
         self.index_buffer = Some(index_buffer);
@@ -551,6 +553,7 @@ impl TextContext {
         if self.vertex_buffer.is_none()
         || self.index_buffer.is_none()
         || self.texture.image.is_none() {
+            println!("text draw_internal vertex_buffer, index_buffer or texture image is none");
             return false;
         }
     
@@ -582,11 +585,14 @@ impl TextContext {
         builder: &'a mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer, StandardCommandPoolBuilder>,
         image_num: usize,
     ) -> bool {
+        println!("Drawing text...");
         let cache_dimensions = self.texture.cache_dimensions;
         let cache_pixel_buffer = &mut self.texture.cache_pixel_buffer;
         let mut updated_texture = false;
-        let glyph_action = self.glyph_brush.borrow_mut()
+        let glyph_action = self.glyph_brush
+            .borrow_mut()
             .process_queued(|rect, tex_data| {
+                println!("updating texture...");
                 Self::update_texture(
                     cache_dimensions,
                     cache_pixel_buffer,
@@ -598,16 +604,20 @@ impl TextContext {
 
         match glyph_action {
             Ok(BrushAction::Draw(vertices)) => {
+                println!("Uploading vertices...");
                 self.upload_vertices(vertices);
             },
             Ok(BrushAction::ReDraw) => (),
             Err(BrushError::TextureTooSmall { suggested, .. }) => {
+                println!("Resizing text cache to suggested: {:?}", suggested);
                 self.resize_cache(suggested.0 as usize, suggested.1 as usize);
             },
         };
         if updated_texture {
+            println!("updated texture. Uploading texture");
             self.texture.image = Some(self.upload_texture());
             self.texture.dirty = true;
+            println!("updated texture. Uploaded");
         }
 
         self.draw_internal(builder, image_num)

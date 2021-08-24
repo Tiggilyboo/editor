@@ -1,3 +1,4 @@
+use std::iter::Iterator;
 use std::collections::{
     BTreeMap,
     HashMap,
@@ -36,7 +37,10 @@ use eddy::{
     line_cache::LineCache,
     Rope,
 };
-use ui::view::ViewWidget;
+use ui::{
+    widget::Widget,
+    view::ViewWidget,
+};
 
 pub type Threaded<T> = Arc<Mutex<T>>;
 
@@ -75,14 +79,11 @@ fn create_frontend_thread(
                     if let Some(msg_view_id) = msg.view_id { 
                         if msg_view_id == view_id {
                             if let Ok(mut line_cache) = cache.try_lock() {
-                                println!("Locked line_cache: {:?}", line_cache);
                                 line_cache.apply_update(update);
 
                                 view_widget.lock().unwrap()
                                     .populate(&line_cache, styles.clone());
-                                println!("Populated line_cache: {:?}", line_cache);
                             }
-                            println!("BufferUpdate complete")
                         }
                     }
                 },
@@ -99,7 +100,6 @@ fn create_frontend_thread(
                 },
             }
         }
-        println!("frontend_thread finished.");
     });
 }
 
@@ -216,9 +216,23 @@ impl EditorState {
         }
     }
 
-    pub fn do_new_view(&mut self, path: Option<PathBuf>) {
-        println!("Doing a new view...");
+    pub fn get_dirty_views(&self) -> Vec<&Arc<Mutex<ViewWidget>>> {
+        self.view_widgets
+            .iter()
+            .filter_map(|(_,vw)| {
+                if vw.lock().unwrap().dirty() {
+                    Some(vw)
+                } else {
+                    None
+                }
+            }).collect()
+    }
 
+    pub fn requires_redraw(&self) -> bool {
+        self.view_widgets.iter().any(|(_, vw)| vw.lock().unwrap().dirty())
+    }
+
+    pub fn do_new_view(&mut self, path: Option<PathBuf>) {
         let path_str: Option<String> = if let Some(path) = path {
             if let Ok(path) = path.into_os_string().into_string() {
                 Some(path)

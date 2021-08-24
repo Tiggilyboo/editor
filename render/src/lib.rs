@@ -112,6 +112,7 @@ impl Renderer {
     }
 
     pub fn draw_frame(&mut self) { 
+        println!("Drawing frame...");
         self.previous_frame_end.as_mut().unwrap().cleanup_finished();
 
         if self.recreate_swap_chain {
@@ -137,6 +138,7 @@ impl Renderer {
        
         let command_buffer = self.create_command_buffer(image_index); 
         if command_buffer.is_none() {
+            println!("Command buffer was empty for image_index: {:?}", image_index);
             return
         }
 

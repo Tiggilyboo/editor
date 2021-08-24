@@ -17,13 +17,19 @@ impl WidgetTree {
         self.widgets.get(&widget_id)
     }
 
-    pub fn push(&mut self, widget: Box<dyn Widget + Send + Sync>) {
-        let id = self.widgets.len() + 1;
-        self.widgets.insert(id, widget);
+    pub fn insert(&mut self, widget_id: usize, widget: Box<dyn Widget + Send + Sync>) {
+        self.widgets.insert(widget_id, widget);
     }
 
-    pub fn queue_draw(&self, renderer: &mut Renderer) {
-        self.widgets.iter()
-            .for_each(|(_, w)| w.queue_draw(renderer));
+    pub fn queue_draw(&mut self, renderer: &mut Renderer) {
+        self.widgets.iter_mut()
+            .for_each(|(_, w)| {
+                w.queue_draw(renderer);
+                w.set_dirty(false);
+            });
+    }
+
+    pub fn len(&self) -> usize {
+        self.widgets.len()
     }
 }

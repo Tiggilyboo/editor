@@ -7,6 +7,7 @@ use std::sync::Arc;
 use render::Renderer;
 use editor::EditorState;
 use events::state::InputState;
+use ui::widget::Widget;
 
 use winit::event_loop::{
     EventLoop,
@@ -36,8 +37,6 @@ fn main() {
             Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => {
                 *control_flow = ControlFlow::Exit;
             },
-            Event::MainEventsCleared => {
-            },
             Event::WindowEvent { event: WindowEvent::Resized(size), .. } => {
                 renderer.borrow_mut().recreate_swap_chain_next_frame();
                 screen_dimensions[0] = size.width as f32;
@@ -46,7 +45,16 @@ fn main() {
                 renderer.borrow().request_redraw();
             },
             Event::RedrawRequested(_window_id) => {
-                renderer.borrow_mut().draw_frame();
+                if let Ok(editor) = editor.try_lock() {
+                    for view_widget in editor.get_dirty_views() {
+                        if let Ok(mut view_widget) = view_widget.try_lock() {
+                            view_widget.queue_draw(&mut renderer.borrow_mut());
+                            view_widget.set_dirty(false);
+                        }
+                        
+                    }
+                    renderer.borrow_mut().draw_frame();
+                }
             },
             Event::WindowEvent { event, .. } => match event {
                 WindowEvent::KeyboardInput { .. }
@@ -60,6 +68,9 @@ fn main() {
 
                         if let Ok(mut editor) = editor.try_lock() {
                             editor.process_input_actions(&input);   
+                            if editor.requires_redraw() {
+                                renderer.borrow().request_redraw();
+                            }
                         } else {
                             panic!("Unable to lock editor state");
                         }
@@ -68,6 +79,11 @@ fn main() {
                     }
                 },
                 _ => {
+                    if let Ok(editor) = editor.try_lock() {
+                        if editor.requires_redraw() {
+                            renderer.borrow().request_redraw();
+                        }
+                    }
                     //println!("Unhandled window event: {:?}", event);
                 },
             }

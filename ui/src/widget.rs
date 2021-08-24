@@ -12,6 +12,7 @@ pub trait Widget {
     fn position(&self) -> Position;
     fn queue_draw(&self, renderer: &mut Renderer);
     fn dirty(&self) -> bool;
+    fn set_dirty(&mut self, dirty: bool);
 }
 
 impl From<(f32, f32)> for Size {

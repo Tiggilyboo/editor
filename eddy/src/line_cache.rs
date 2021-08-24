@@ -33,7 +33,6 @@ pub struct LineCache {
 
 impl LineCache {
     pub fn new() -> Self {
-        println!("LineCache created!");
         Self {
             lines: Vec::<Option<Line>>::new(),
             annotations: Vec::new(),
@@ -127,8 +126,6 @@ impl LineCache {
                 _ => self.annotations.push(anno.clone()),
             }
         }
-
-        println!("apply_update: {:?}", self);
     }
 
     pub fn height(&self) -> usize {

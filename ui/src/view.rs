@@ -3,11 +3,9 @@ use std::sync::{
     Arc,
     Mutex,
 };
+use std::cell::RefCell;
 
-use render::{
-    Renderer,
-    colour::BLACK,
-};
+use render::Renderer;
 use eddy::{
     ViewId,
     line_cache::LineCache,
@@ -26,7 +24,7 @@ pub struct ViewWidget {
     size: Size,
     position: Position,
     filepath: Option<String>,
-    widgets: WidgetTree,
+    widgets: RefCell<WidgetTree>,
     dirty: bool,
 }
 
@@ -42,14 +40,18 @@ impl Widget for ViewWidget {
         self.dirty
     }
 
+    fn set_dirty(&mut self, dirty: bool) {
+        self.dirty = dirty;
+    }
+
     fn queue_draw(&self, renderer: &mut Renderer) {
-        self.widgets.queue_draw(renderer);
+        self.widgets.borrow_mut().queue_draw(renderer);
     }
 }
 
 impl ViewWidget {
     pub fn new(view_id: ViewId, filepath: Option<String>) -> Self {
-        let widgets = WidgetTree::new();
+        let widgets = RefCell::new(WidgetTree::new());
 
         Self {
             view_id,
@@ -61,15 +63,18 @@ impl ViewWidget {
         }
     }
 
+    pub fn view_id(&self) -> ViewId {
+        self.view_id
+    }
+
     pub fn populate(&mut self, line_cache: &LineCache, styles: Arc<Mutex<HashMap<isize, Style>>>) {
         let styles = styles.clone();
 
         if let Ok(styles) = styles.try_lock() {
             for ix in 0..line_cache.height() {
                 if let Some(line) = line_cache.get_line(ix) {
-                    let line_widget = TextWidget::from_line(&line, 1.0, BLACK, &styles);
-
-                    self.widgets.push(Box::new(line_widget));
+                    let line_widget = TextWidget::from_line(&line, 15.0, [1.0, 1.0, 1.0, 1.0], &styles);
+                    self.widgets.borrow_mut().insert(ix, Box::new(line_widget));
                 }
             }
         }

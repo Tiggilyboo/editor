@@ -39,31 +39,34 @@ impl TextWidget {
     pub fn set_position(&mut self, x: f32, y: f32) {
         self.text_group.set_screen_position(x, y);
     }
-    
-    // TODO: Do this when recieving UpdateOp
+
     pub fn from_line(line: &Line, scale: f32, colour: ColourRGBA, styles: &HashMap<isize, Style>) -> Self {
         let mut text_group = TextGroup::new();
 
         if let Some(text) = &line.text {
             let text = text.trim_end_matches(|c| c == '\r' || c == '\n');
 
-            let mut ix = 0;
-            for triple in line.styles.chunks(3) {
-                let start = ix + triple[0];
-                let end = start + triple[1];
-                let style_id = triple[2];
+            if line.styles.len() > 2 {
+                let mut ix = 0;
+                for triple in line.styles.chunks(3) {
+                    let start = ix + triple[0];
+                    let end = start + triple[1];
+                    let style_id = triple[2];
 
-                let content = &text[start as usize .. end as usize];
+                    let content = &text[start as usize .. end as usize];
 
-                if let Some(style) = styles.get(&style_id) {
-                    if let Some(fg) = style.fg_color {
-                        text_group.push(content.into(), scale, fg.to_rgba_f32array());
+                    if let Some(style) = styles.get(&style_id) {
+                        if let Some(fg) = style.fg_color {
+                            text_group.push(content.into(), scale, fg.to_rgba_f32array());
+                        }
+                    } else {
+                        text_group.push(content.into(), scale, colour);
                     }
-                } else {
-                    text_group.push(content.into(), scale, colour);
-                }
 
-                ix = end;
+                    ix = end;
+                }
+            } else {
+                text_group.push(text.into(), scale, colour);
             }
         }
 
@@ -86,6 +89,10 @@ impl Widget for TextWidget {
     
     fn dirty(&self) -> bool {
         self.dirty
+    }
+
+    fn set_dirty(&mut self, dirty: bool) {
+        self.dirty = dirty
     }
 
     fn queue_draw(&self, renderer: &mut Renderer) {
