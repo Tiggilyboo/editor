@@ -615,7 +615,6 @@ impl View {
         
         // TODO find highlighting
         let hls = Vec::new();
-
         let mut result = LineUpdate::default();
 
         if let Some(text) = text {

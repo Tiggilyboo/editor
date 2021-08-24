@@ -33,6 +33,7 @@ pub struct LineCache {
 
 impl LineCache {
     pub fn new() -> Self {
+        println!("LineCache created!");
         Self {
             lines: Vec::<Option<Line>>::new(),
             annotations: Vec::new(),

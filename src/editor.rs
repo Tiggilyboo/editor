@@ -38,6 +38,8 @@ use eddy::{
 };
 use ui::view::ViewWidget;
 
+pub type Threaded<T> = Arc<Mutex<T>>;
+
 pub struct EditorState {
     key_bindings: Vec<KeyBinding>,
     mouse_bindings: Vec<MouseBinding>,
@@ -47,25 +49,21 @@ pub struct EditorState {
     width_cache: RefCell<WidthCache>,
     kill_ring: RefCell<Rope>,
     file_manager: FileManager,
-    editors: BTreeMap<BufferId, Arc<Mutex<RefCell<Editor>>>>,
-    views: BTreeMap<ViewId, Arc<Mutex<RefCell<View>>>>,
-    view_widgets: BTreeMap<ViewId, Arc<Mutex<RefCell<ViewWidget>>>>,
-    line_caches: BTreeMap<ViewId, Arc<Mutex<RefCell<LineCache>>>>,
+    editors: BTreeMap<BufferId, RefCell<Editor>>,
+    views: BTreeMap<ViewId, RefCell<View>>,
+    view_widgets: BTreeMap<ViewId, Threaded<ViewWidget>>,
+    line_cache: Threaded<LineCache>,
     focused_view_id: Option<ViewId>,
     id_counter: usize,
 }
 
 fn create_frontend_thread(
+    view_id: ViewId,
     client: Arc<Client>,
-    views: Arc<BTreeMap<ViewId, Arc<Mutex<RefCell<View>>>>>,
-    view_widgets: Arc<BTreeMap<ViewId, Arc<Mutex<RefCell<ViewWidget>>>>>, 
-    cache: Arc<Mutex<LineCache>>, 
+    view_widget: Threaded<ViewWidget>,
+    cache: Threaded<LineCache>,
     styles: Arc<Mutex<HashMap<isize, Style>>>,
 ) {
-    let client = client.clone();
-    let styles = styles.clone();
-    let line_cache = cache.clone();
-    let view_widgets = view_widgets.clone();
 
     std::thread::spawn(move || {
         println!("frontend_thread started...");
@@ -74,12 +72,17 @@ fn create_frontend_thread(
             println!("Got message: {:?}", msg);
             match msg.payload {
                 Payload::BufferUpdate(update) => {
-                    if let Some(view_id) = msg.view_id { 
-                        if let Ok(mut line_cache) = line_cache.try_lock() {
-                            line_cache.apply_update(update);
-                            if let Some(view_widget) = view_widgets.get(&view_id) {
-                                view_widget.lock().unwrap().borrow_mut().populate(&line_cache, styles.clone());
+                    if let Some(msg_view_id) = msg.view_id { 
+                        if msg_view_id == view_id {
+                            if let Ok(mut line_cache) = cache.try_lock() {
+                                println!("Locked line_cache: {:?}", line_cache);
+                                line_cache.apply_update(update);
+
+                                view_widget.lock().unwrap()
+                                    .populate(&line_cache, styles.clone());
+                                println!("Populated line_cache: {:?}", line_cache);
                             }
+                            println!("BufferUpdate complete")
                         }
                     }
                 },
@@ -104,16 +107,16 @@ impl EditorState {
     pub fn new() -> Self {
         let client = Arc::new(Client::new());
         let styles = Arc::new(Mutex::new(HashMap::new()));
-        let editors = BTreeMap::<BufferId, Arc<Mutex<RefCell<Editor>>>>::new();
-        let views = BTreeMap::<ViewId, Arc<Mutex<RefCell<View>>>>::new();
-        let view_widgets = BTreeMap::<ViewId, Arc<Mutex<RefCell<ViewWidget>>>>::new();
-        let line_caches = BTreeMap::<ViewId, Arc<Mutex<RefCell<LineCache>>>>::new();
-
+        let editors = BTreeMap::<BufferId, RefCell<Editor>>::new();
+        let views = BTreeMap::<ViewId, RefCell<View>>::new();
+        let view_widgets = BTreeMap::<ViewId, Threaded<ViewWidget>>::new();
+        let line_cache = Arc::new(Mutex::new(LineCache::new()));
+        
         Self {
             client,
             styles,
             editors,
-            line_caches,
+            line_cache,
             views,
             view_widgets,
             key_bindings: default_key_bindings(),
@@ -132,26 +135,24 @@ impl EditorState {
     /// as well as to sibling views, plugins, and other state necessary
     /// for handling most events.
     pub(crate) fn make_context(&self, view_id: ViewId) -> Option<EventContext> {
-        if let Some(view) = self.views.get(&view_id) {
-            let buffer_id = view.lock().unwrap().borrow().get_buffer_id();
+        self.views.get(&view_id).map(|view| {
+            let buffer_id = view.borrow().get_buffer_id();
             let info = self.file_manager.get_info(buffer_id);
-            let editor = self.editors.get(&buffer_id).unwrap();
+            let editor = &self.editors[&buffer_id];
 
-            Some(EventContext {
+            EventContext {
                 view_id,
-                view: &view,
                 buffer_id,
-                editor: &editor,
                 info,
+                view,
+                editor,
                 siblings: Vec::new(),
                 client: &self.client,
                 style_map: &self.style_map,
                 width_cache: &self.width_cache,
                 kill_ring: &self.kill_ring,
-            })
-        } else {
-            None
-        }
+            }
+        })
     }
 
     fn next_view_id(&self) -> ViewId {
@@ -188,7 +189,7 @@ impl EditorState {
     }
 
     #[inline]
-    fn process_action(&mut self, action: Action) {
+    fn process_action(&self, action: Action) {
         println!("Action: {:?}", action);
 
         if let Some(view_id) = self.focused_view_id {
@@ -202,22 +203,22 @@ impl EditorState {
 
     pub fn process_input_actions(&mut self, state: &InputState) {
         if let Some(focused_view_id) = self.focused_view_id {
-            if let Some(focused_view) = self.views.get(&focused_view_id) {
-                let mode = focused_view.lock().unwrap().borrow().get_mode();
-                let input_actions = self.acquire_input_actions(mode, state);
+            let mode = self.views.get(&focused_view_id)
+                .unwrap().borrow()
+                .get_mode();
+            let input_actions = self.acquire_input_actions(mode, state);
 
-                for action in input_actions {
-                    self.process_action(action);
-                }
-            } else {
-                println!("No focused view set to process input state!");
+            for action in input_actions {
+                self.process_action(action);
             }
+        } else {
+            println!("No focused view set to process input state!");
         }
     }
 
     pub fn do_new_view(&mut self, path: Option<PathBuf>) {
-        let view_id = self.next_view_id();
-        let buffer_id = self.next_buffer_id();
+        println!("Doing a new view...");
+
         let path_str: Option<String> = if let Some(path) = path {
             if let Ok(path) = path.into_os_string().into_string() {
                 Some(path)
@@ -228,12 +229,28 @@ impl EditorState {
             None
         };
 
-        self.editors.insert(buffer_id, Arc::new(Mutex::new(RefCell::new(Editor::new()))));
-        self.views.insert(view_id, Arc::new(Mutex::new(RefCell::new(View::new(view_id, buffer_id)))));
-        self.line_caches.insert(view_id, Arc::new(Mutex::new(RefCell::new(LineCache::new()))));
-        self.view_widgets.insert(view_id, Arc::new(Mutex::new(RefCell::new(ViewWidget::new(view_id, path_str)))));
+        let view_id = self.next_view_id();
+        let buffer_id = self.next_buffer_id();
 
+        // TODO: Less pukey
+        let editor = RefCell::new(Editor::new());
+        let view = RefCell::new(View::new(view_id, buffer_id));
+        let line_cache = Arc::new(Mutex::new(LineCache::new()));
+        let view_widget = Arc::new(Mutex::new(ViewWidget::new(view_id, path_str)));
+
+        self.editors.insert(buffer_id, editor);
+        self.views.insert(view_id, view);
+        self.line_cache = line_cache;
+        self.view_widgets.insert(view_id, view_widget);
         self.focused_view_id = Some(view_id);
+
+        create_frontend_thread(
+            view_id,
+            self.client.clone(),
+            self.view_widgets.get(&view_id).unwrap().clone(),
+            self.line_cache.clone(),
+            self.styles.clone(),
+        );
     }
 }
 
