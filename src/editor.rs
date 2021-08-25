@@ -109,6 +109,10 @@ fn create_frontend_thread(
                     }
                 },
                 Payload::Command(Command::Scroll { line, col }) => {
+                    if let Ok(mut view_widget) = view_widget.try_lock() {
+                        view_widget.scroll(line, col);
+                        view_widget.set_dirty(true);
+                    }
                 },
                 Payload::Command(Command::Idle { token }) => {
                 },
@@ -133,6 +137,8 @@ fn create_frontend_thread(
                         }
                     }
 
+                    // Push results directly, will be picked up by accompanying request sender
+                    // TODO: Probably a good idea to timeout if no sender picks this up?
                     client.push_results(Response::MeasureText {
                         response: resp,
                     });

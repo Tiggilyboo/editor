@@ -103,6 +103,7 @@ impl Client {
     pub fn get_message_stream(&self) -> &Mutex<Receiver<Message>> {
         &self.rx
     }
+
     pub fn push_results(&self, response: Response) {
         self.holding.lock().unwrap().push(response);
     }
@@ -117,8 +118,8 @@ impl Client {
             std::thread::sleep(std::time::Duration::from_millis(1));
         }
 
+        // TODO: This will break when other communication patterns arise
         let response = self.holding.lock().unwrap().pop().unwrap();
-
         match response {
             Response::MeasureText { response } => {
                 Ok(response)
