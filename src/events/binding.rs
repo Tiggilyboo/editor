@@ -211,6 +211,13 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
         // Insert
         Back, +Mode::Insert; Action::Delete(Motion::Backward, Quantity::Character);
         Space, +Mode::Insert; Action::InsertChars(" ".into());
+        Return, +Mode::Insert; Action::InsertNewline;
+        Tab, +Mode::Insert; Action::InsertTab;
+
+        Up, +Mode::Normal; Action::Move(Motion::Above, Quantity::Character);
+        Down, +Mode::Normal; Action::Move(Motion::Below, Quantity::Character);
+        Left, +Mode::Normal; Action::Move(Motion::Backward, Quantity::Character);
+        Right, +Mode::Normal; Action::Move(Motion::Forward, Quantity::Character);
     );
 
     let mut insert_bindings_ranges = bindings_key_range!(

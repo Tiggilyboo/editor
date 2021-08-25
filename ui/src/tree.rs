@@ -21,12 +21,14 @@ impl WidgetTree {
         self.widgets.insert(widget_id, widget);
     }
 
-    pub fn queue_draw(&mut self, renderer: &mut Renderer) {
+    pub fn queue_draw(&self, renderer: &mut Renderer) {
+        self.widgets.iter()
+            .for_each(|(_, w)| w.queue_draw(renderer));
+    }
+
+    pub fn set_dirty(&mut self, dirty: bool) {
         self.widgets.iter_mut()
-            .for_each(|(_, w)| {
-                w.queue_draw(renderer);
-                w.set_dirty(false);
-            });
+            .for_each(|(_, w)| w.set_dirty(dirty));
     }
 
     pub fn len(&self) -> usize {

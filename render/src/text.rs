@@ -13,7 +13,7 @@ use uniform::{
 };
 
 use std::cell::RefCell;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::iter;
 use vulkano::device::{
     Device,
@@ -84,11 +84,10 @@ use glyph_brush::ab_glyph::{
     point,
 };
 use super::colour::ColourRGBA;
-use self::font::FontBounds;
+pub use self::font::FontBounds;
 
 pub struct TextGroup {
     section: OwnedSection,
-    members: Vec<OwnedText>,
 }
 
 pub struct TextContext {
@@ -101,7 +100,7 @@ pub struct TextContext {
     index_buffer: Option<Arc<dyn TypedBufferAccess<Content=[u16]> + Send + Sync>>,
     
     glyph_brush: RefCell<GlyphBrush<TextVertex>>,
-    font_bounds: FontBounds,
+    font_bounds: Arc<Mutex<FontBounds>>,
 
     descriptor_set: Option<Arc<dyn DescriptorSet + Send + Sync>>,
     texture: TextureCache,
@@ -198,7 +197,6 @@ impl TextGroup {
 
        Self {
            section,
-           members: vec![],
        }
     }
 
@@ -207,16 +205,14 @@ impl TextGroup {
     }
 
     pub fn push(&mut self, text: String, scale: f32, colour: ColourRGBA) {
-        self.members.push(OwnedText::new(&text)
+        let new_text = OwnedText::new(&text)
           .with_color(colour)
-          .with_scale(scale));
+          .with_scale(scale);
 
-        let members = self.members.clone();
-        self.section.text = members;
+        self.section.text.push(new_text);
     }
 
     pub fn clear(&mut self) {
-        self.members.clear();
         self.section.text = vec![];
     }
 
@@ -235,7 +231,8 @@ impl TextGroup {
     fn line_string(&self) -> String {
         // TODO: NOT IDEAL, but need a way to simplify two iter loops char_indices with index
         // offset being summed properly...
-        let line_string = self.section.text.iter()
+        let line_string = self.section
+            .text.iter()
             .flat_map(|t| t.text.chars())
             .collect();
 
@@ -260,7 +257,7 @@ impl TextContext {
         let font = FontArc::try_from_slice(include_bytes!("../../fonts/Hack-Regular.ttf"))
             .expect("unable to load font");
 
-        let font_bounds = FontBounds::new(font.clone(), 20.0);
+        let font_bounds = Arc::new(Mutex::new(FontBounds::new(font.clone(), 20.0)));
         
         let glyph_brush = RefCell::from(
             GlyphBrushBuilder::using_font(font)
@@ -353,48 +350,12 @@ impl TextContext {
         }
     }
 
-    pub fn queue_text(&mut self, text: &TextGroup) {
+    pub fn queue_text(&self, text: &TextGroup) {
         self.glyph_brush.borrow_mut().queue(text.get_section());
     }
 
-    pub fn get_text_width(&self, text: &str) -> f32 {
-        let mut w: f32 = 0.0;
-        for (_, ch) in text.char_indices() {
-            let bounds = self.font_bounds.get_char_bounds(ch);
-            w += bounds.max.x;
-        }
-
-        w
-    }
-
-    pub fn get_font_size(&self) -> f32 {
-        self.font_bounds.get_scale()
-    }
-
-    pub fn set_font_size(&mut self, font_size: f32) {
-        self.font_bounds.set_scale(font_size);
-    }
-
-    pub fn get_cursor_position(&mut self, text: &TextGroup, offset: usize) -> (f32, f32) {
-        let mut pos: (f32, f32) = text.screen_position();
-        if offset == 0 {
-            return pos;
-        }
-      
-        let line_string = text.line_string();
-        for (i, ch) in line_string.char_indices(){
-            if offset <= i {
-                break;
-            }
-            let bounds = self.font_bounds.get_char_bounds(ch);
-
-            pos.0 += bounds.max.x;
-            if bounds.max.y > pos.1 {
-                pos.1 = bounds.max.y;
-            }
-        }
-
-        pos 
+    pub fn get_font_bounds(&self) -> Arc<Mutex<FontBounds>> {
+        self.font_bounds.clone()
     }
 
     fn update_texture(
@@ -475,7 +436,6 @@ impl TextContext {
         let mut indices = vec!();
         let mut quadrupled_verts = vec!();
         let mut i = 0;
-        println!("upload_vertices: {:?}", vertices);
 
         for v in vertices.iter() {
             let glyph_verts = to_verts(v);
@@ -585,14 +545,12 @@ impl TextContext {
         builder: &'a mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer, StandardCommandPoolBuilder>,
         image_num: usize,
     ) -> bool {
-        println!("Drawing text...");
         let cache_dimensions = self.texture.cache_dimensions;
         let cache_pixel_buffer = &mut self.texture.cache_pixel_buffer;
         let mut updated_texture = false;
         let glyph_action = self.glyph_brush
             .borrow_mut()
             .process_queued(|rect, tex_data| {
-                println!("updating texture...");
                 Self::update_texture(
                     cache_dimensions,
                     cache_pixel_buffer,
@@ -604,20 +562,16 @@ impl TextContext {
 
         match glyph_action {
             Ok(BrushAction::Draw(vertices)) => {
-                println!("Uploading vertices...");
                 self.upload_vertices(vertices);
             },
             Ok(BrushAction::ReDraw) => (),
             Err(BrushError::TextureTooSmall { suggested, .. }) => {
-                println!("Resizing text cache to suggested: {:?}", suggested);
                 self.resize_cache(suggested.0 as usize, suggested.1 as usize);
             },
         };
         if updated_texture {
-            println!("updated texture. Uploading texture");
             self.texture.image = Some(self.upload_texture());
             self.texture.dirty = true;
-            println!("updated texture. Uploaded");
         }
 
         self.draw_internal(builder, image_num)

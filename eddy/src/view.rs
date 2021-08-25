@@ -14,7 +14,6 @@
 
 use std::cell::RefCell;
 use std::cmp::max;
-use std::ops::Range;
 
 use super::{
     annotations::{AnnotationStore, Annotations, ToAnnotation},
@@ -87,32 +86,6 @@ pub struct View {
     annotations: AnnotationStore,
 
     mode: Mode,
-}
-
-/// Indicates what changed in the find state.
-#[derive(PartialEq, Debug)]
-enum FindStatusChange {
-    /// None of the find parameters or number of matches changed.
-    None,
-
-    /// Find parameters and number of matches changed.
-    All,
-
-    /// Only number of matches changed
-    Matches,
-}
-
-/// Indicates what changed in the find state.
-#[derive(PartialEq, Debug, Clone)]
-enum FindProgress {
-    /// Incremental find is done/not running.
-    Ready,
-
-    /// The find process just started.
-    Started,
-
-    /// Incremental find is in progress. Keeps tracked of already searched range.
-    InProgress(Range<usize>),
 }
 
 /// Contains replacement string and replace options.
@@ -531,7 +504,7 @@ impl View {
         sel: &[(usize, usize)],
         hls: &Vec<Vec<(usize, usize)>>,
         style_spans: &Spans<Style>,
-    ) -> Vec<isize> {
+    ) -> Vec<usize> {
         let mut encoded_styles = Vec::new();
         assert!(start <= end, "{} {}", start, end);
         let style_spans = style_spans.subseq(Interval::new(start, end));
@@ -542,24 +515,24 @@ impl View {
         // same span exists in both sets (as when there is an active selection)
         for (index, cur_find_hls) in hls.iter().enumerate() {
             for &(sel_start, sel_end) in cur_find_hls {
-                encoded_styles.push((sel_start as isize) - ix);
-                encoded_styles.push(sel_end as isize - sel_start as isize);
-                encoded_styles.push(index as isize + 1);
-                ix = sel_end as isize;
+                encoded_styles.push((sel_start) - ix);
+                encoded_styles.push(sel_end - sel_start);
+                encoded_styles.push(index + 1);
+                ix = sel_end;
             }
         }
         for &(sel_start, sel_end) in sel {
-            encoded_styles.push((sel_start as isize) - ix);
-            encoded_styles.push(sel_end as isize - sel_start as isize);
+            encoded_styles.push((sel_start) - ix);
+            encoded_styles.push(sel_end - sel_start);
             encoded_styles.push(0);
-            ix = sel_end as isize;
+            ix = sel_end;
         }
         for (iv, style) in style_spans.iter() {
             let style_id = self.get_or_def_style_id(client, styles, &style);
-            encoded_styles.push((iv.start() as isize) - ix);
-            encoded_styles.push(iv.end() as isize - iv.start() as isize);
-            encoded_styles.push(style_id as isize);
-            ix = iv.end() as isize;
+            encoded_styles.push(iv.start() - ix);
+            encoded_styles.push(iv.end() - iv.start());
+            encoded_styles.push(style_id);
+            ix = iv.end();
         }
         encoded_styles
     }

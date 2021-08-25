@@ -5,7 +5,10 @@ use std::cell::RefCell;
 use std::sync::Mutex;
 use std::sync::Arc;
 use render::Renderer;
-use editor::EditorState;
+use editor::{
+    EditorState,
+    EditorEvent,
+};
 use events::state::InputState;
 use ui::widget::Widget;
 
@@ -18,12 +21,14 @@ use winit::event::{
     Event,
 };
 
-enum EditorEvent {}
 
 fn main() {
     let el = EventLoop::<EditorEvent>::with_user_event();
+    let proxy = el.create_proxy();
+
     let renderer = RefCell::new(Renderer::new(&el, "Editor"));
-    let editor = Arc::new(Mutex::new(EditorState::new()));
+    let font_bounds = renderer.borrow_mut().get_text_context().borrow().get_font_bounds();
+    let editor = Arc::new(Mutex::new(EditorState::new(proxy, font_bounds)));
     let input = Arc::new(Mutex::new(InputState::new()));
     
     let mut screen_dimensions: [f32; 2] = renderer.borrow().get_screen_dimensions();
@@ -41,6 +46,11 @@ fn main() {
                 renderer.borrow_mut().recreate_swap_chain_next_frame();
                 screen_dimensions[0] = size.width as f32;
                 screen_dimensions[1] = size.height as f32;
+
+                if let Ok(mut editor) = editor.try_lock() {
+                    // TODO: input is processed at f32, other event handling is 64...
+                    editor.resize(size.width as f64, size.height as f64);
+                }
 
                 renderer.borrow().request_redraw();
             },
@@ -79,12 +89,7 @@ fn main() {
                     }
                 },
                 _ => {
-                    if let Ok(editor) = editor.try_lock() {
-                        if editor.requires_redraw() {
-                            renderer.borrow().request_redraw();
-                        }
-                    }
-                    //println!("Unhandled window event: {:?}", event);
+                    // println!("Unhandled window event: {:?}", event);
                 },
             }
             _ => (),

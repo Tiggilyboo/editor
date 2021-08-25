@@ -6,6 +6,9 @@ use std::collections::{
 use std::sync::{Arc, Mutex};
 use std::path::PathBuf;
 use std::cell::RefCell;
+use std::thread::JoinHandle;
+
+use winit::event_loop::EventLoopProxy;
 
 use crate::events::{
     binding::{
@@ -28,36 +31,51 @@ use eddy::{
     Client,
     client::{
         Command, Payload,
+        Request, Response,
     },
-    width_cache::WidthCache,
+    width_cache::{
+        WidthCache,
+        Width,
+    },
     styles::{ 
         ThemeStyleMap,
         Style,
     },
     line_cache::LineCache,
+    Size,
     Rope,
 };
 use ui::{
     widget::Widget,
-    view::ViewWidget,
+    view::{
+        ViewWidget,
+        ViewResources,
+    },
 };
+use render::text::FontBounds;
+
+pub enum EditorEvent {}
 
 pub type Threaded<T> = Arc<Mutex<T>>;
 
 pub struct EditorState {
+    proxy: EventLoopProxy<EditorEvent>, 
     key_bindings: Vec<KeyBinding>,
     mouse_bindings: Vec<MouseBinding>,
     client: Arc<Client>,
     style_map: RefCell<ThemeStyleMap>, 
-    styles: Arc<Mutex<HashMap<isize, Style>>>,
+    styles: Arc<Mutex<HashMap<usize, Style>>>,
     width_cache: RefCell<WidthCache>,
     kill_ring: RefCell<Rope>,
     file_manager: FileManager,
     editors: BTreeMap<BufferId, RefCell<Editor>>,
     views: BTreeMap<ViewId, RefCell<View>>,
     view_widgets: BTreeMap<ViewId, Threaded<ViewWidget>>,
-    line_cache: Threaded<LineCache>,
+    view_resources: Threaded<ViewResources>,
+    line_cache: BTreeMap<ViewId, Threaded<LineCache>>,
+    font_bounds: Arc<Mutex<FontBounds>>,
     focused_view_id: Option<ViewId>,
+    frontend_thread: Option<JoinHandle<()>>,
     id_counter: usize,
 }
 
@@ -66,9 +84,8 @@ fn create_frontend_thread(
     client: Arc<Client>,
     view_widget: Threaded<ViewWidget>,
     cache: Threaded<LineCache>,
-    styles: Arc<Mutex<HashMap<isize, Style>>>,
-) {
-
+    styles: Arc<Mutex<HashMap<usize, Style>>>,
+) -> JoinHandle<()> {
     std::thread::spawn(move || {
         println!("frontend_thread started...");
 
@@ -77,12 +94,16 @@ fn create_frontend_thread(
             match msg.payload {
                 Payload::BufferUpdate(update) => {
                     if let Some(msg_view_id) = msg.view_id { 
-                        if msg_view_id == view_id {
-                            if let Ok(mut line_cache) = cache.try_lock() {
-                                line_cache.apply_update(update);
+                        if msg_view_id != view_id {
+                            println!("Message buffer payload tried to update a view with different view_id: {:?}", msg_view_id);
+                            return;
+                        }
+                        if let Ok(mut line_cache) = cache.try_lock() {
+                            line_cache.apply_update(update);
 
-                                view_widget.lock().unwrap()
-                                    .populate(&line_cache, styles.clone());
+                            if let Ok(mut view_widget) = view_widget.try_lock() {
+                                view_widget.populate(&line_cache, styles.clone());
+                                view_widget.set_dirty(true);
                             }
                         }
                     }
@@ -90,41 +111,66 @@ fn create_frontend_thread(
                 Payload::Command(Command::Scroll { line, col }) => {
                 },
                 Payload::Command(Command::Idle { token }) => {
-
                 },
                 Payload::Command(Command::ShowHover { req_id, content }) => {
-
                 },
                 Payload::Command(Command::DefineStyle { style_id, style }) => {
-
+                    if let Ok(mut styles) = styles.try_lock() {
+                        styles.insert(style_id, style);
+                    }
                 },
+                Payload::Request(Request::MeasureText { items }) => {
+                    let mut resp = Vec::new();
+
+                    if let Ok(view_widget) = view_widget.try_lock() {
+                        for req in items.iter() {
+                            let mut measurement = Vec::new();
+                            for s in req.strings.iter() {
+                                let width = view_widget.measure_text(s.into());
+                                measurement.push(width as Width);
+                            }
+                            resp.push(measurement);
+                        }
+                    }
+
+                    client.push_results(Response::MeasureText {
+                        response: resp,
+                    });
+                }
             }
+            
+            std::thread::sleep(std::time::Duration::from_millis(2));
         }
-    });
+    })
 }
 
 impl EditorState {
-    pub fn new() -> Self {
+    pub fn new(proxy: EventLoopProxy<EditorEvent>, font_bounds: Arc<Mutex<FontBounds>>) -> Self {
         let client = Arc::new(Client::new());
         let styles = Arc::new(Mutex::new(HashMap::new()));
         let editors = BTreeMap::<BufferId, RefCell<Editor>>::new();
         let views = BTreeMap::<ViewId, RefCell<View>>::new();
         let view_widgets = BTreeMap::<ViewId, Threaded<ViewWidget>>::new();
-        let line_cache = Arc::new(Mutex::new(LineCache::new()));
+        let line_cache = BTreeMap::<ViewId, Threaded<LineCache>>::new();
+        let view_resources = Arc::new(Mutex::new(ViewResources::default()));
         
         Self {
+            proxy,
             client,
             styles,
             editors,
             line_cache,
+            font_bounds,
             views,
             view_widgets,
+            view_resources,
             key_bindings: default_key_bindings(),
             mouse_bindings: default_mouse_bindings(),
             file_manager: FileManager::new(),
             width_cache: RefCell::new(WidthCache::new()),
             style_map: RefCell::new(ThemeStyleMap::new(None)),
             kill_ring: RefCell::new(Rope::from("")),
+            frontend_thread: None,
             focused_view_id: None,
             id_counter: 0,
         }
@@ -250,21 +296,31 @@ impl EditorState {
         let editor = RefCell::new(Editor::new());
         let view = RefCell::new(View::new(view_id, buffer_id));
         let line_cache = Arc::new(Mutex::new(LineCache::new()));
-        let view_widget = Arc::new(Mutex::new(ViewWidget::new(view_id, path_str)));
+        let view_resources = self.view_resources.clone();
+        let font_bounds = self.font_bounds.clone();
+        let view_widget = Arc::new(Mutex::new(ViewWidget::new(view_id, path_str, view_resources, font_bounds)));
 
         self.editors.insert(buffer_id, editor);
         self.views.insert(view_id, view);
-        self.line_cache = line_cache;
+        self.line_cache.insert(view_id, line_cache);
         self.view_widgets.insert(view_id, view_widget);
         self.focused_view_id = Some(view_id);
 
-        create_frontend_thread(
+        self.frontend_thread = Some(create_frontend_thread(
             view_id,
             self.client.clone(),
             self.view_widgets.get(&view_id).unwrap().clone(),
-            self.line_cache.clone(),
+            self.line_cache.get(&view_id).unwrap().clone(),
             self.styles.clone(),
-        );
+        ));
+    }
+
+    pub fn resize(&mut self, width: f64, height: f64) {
+        for (view_id, _) in self.views.iter() {
+            if let Some(mut ctx) = self.make_context(*view_id) {
+                ctx.do_edit(Action::Resize(Size { width, height }));
+            }
+        }
     }
 }
 

@@ -47,4 +47,20 @@ impl FontBounds {
     pub fn set_scale(&mut self, scale: f32) {
         self.font_size = scale;
     }
+    
+    pub fn get_text_width(&self, text: &str) -> f32 {
+        let mut w: f32 = 0.0;
+        for (_, ch) in text.char_indices() {
+            match ch {
+                '\n'
+                | '\r' => continue,
+                _ => {
+                    let bounds = self.get_char_bounds(ch);
+                    w += bounds.max.x;
+                }
+            }
+        }
+
+        w
+    }
 }

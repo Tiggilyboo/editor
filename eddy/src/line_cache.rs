@@ -1,27 +1,26 @@
 use std::mem;
-use std::ops::Range;
 
 use super::annotations::{
     AnnotationSlice,
     AnnotationType,
 };
 use super::client::{
-    Update, UpdateOp, OpType
+    Update, OpType
 };
 
 #[derive(Debug, Clone, Default)]
 pub struct Line {
     pub text: Option<String>,
-    pub styles: Vec<isize>,
+    pub styles: Vec<usize>,
     pub cursors: Vec<usize>,
     pub ln: Option<usize>,
 }
 
 #[derive(Debug)]
 pub struct Selection {
-    line_num: usize,
-    start_col: usize,
-    end_col: usize,
+    pub line_num: usize,
+    pub start_col: usize,
+    pub end_col: usize,
 }
 
 #[derive(Debug)]
@@ -140,8 +139,12 @@ impl LineCache {
         }
     }
 
-    pub fn get_selections(&self, line_num: usize) -> Vec<&Selection> {
+    pub fn get_line_selections(&self, line_num: usize) -> Vec<&Selection> {
         self.selections.iter().filter(|s| s.line_num == line_num).collect()
+    }
+
+    pub fn get_selections(&self) -> Vec<&Selection> {
+        self.selections.iter().collect()
     }
 
     pub fn clear(&mut self) {

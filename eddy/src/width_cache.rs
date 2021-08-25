@@ -26,9 +26,9 @@ use crate::client::Client;
 pub type Token = usize;
 
 /// A measured width, in px units.
-type Width = f64;
+pub type Width = f64;
 
-type StyleId = usize;
+pub type StyleId = usize;
 
 pub struct WidthCache {
     /// maps cache key to index within widths
@@ -54,10 +54,13 @@ pub struct WidthBatchReq<'a> {
 }
 
 #[derive(Debug)]
-pub enum WidthError {}
+pub enum WidthError {
+    NoResponse,
+}
 
 /// A request for measuring the widths of strings all of the same style
 /// (a request from core to front-end).
+#[derive(Debug, Clone)]
 pub struct WidthReq {
     pub id: StyleId,
     pub strings: Vec<String>,
@@ -75,7 +78,7 @@ pub trait WidthMeasure {
 
 impl WidthMeasure for Client {
     fn measure_width(&self, request: &[WidthReq]) -> Result<WidthResponse, WidthError> {
-        Client::measure_width(self, request)
+        self.measure_text(request)
     }
 }
 

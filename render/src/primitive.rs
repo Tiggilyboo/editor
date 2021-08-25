@@ -155,12 +155,8 @@ impl PrimitiveContext {
         }
     }
 
-    pub fn queue_primitive(&mut self, index: usize, primitive: Primitive) {
-        if self.primitives.len() <= index {
-            self.primitives.push(primitive);
-        } else {
-            self.primitives[index] = primitive;
-        }
+    pub fn queue_primitive(&mut self, primitive: Primitive) {
+        self.primitives.push(primitive);
         self.pristine = false;
     }
 

@@ -20,9 +20,9 @@ use render::{
 
 pub struct TextWidget {
     dirty: bool,
-    cursor: Option<Vec<usize>>,
     text_group: TextGroup,
 }
+
 
 impl TextWidget {
     pub fn new(text: String, scale: f32, colour: ColourRGBA) -> Self {
@@ -31,7 +31,6 @@ impl TextWidget {
 
         Self {
             dirty: true,
-            cursor: None,
             text_group, 
         } 
     }
@@ -40,8 +39,12 @@ impl TextWidget {
         self.text_group.set_screen_position(x, y);
     }
 
-    pub fn from_line(line: &Line, scale: f32, colour: ColourRGBA, styles: &HashMap<isize, Style>) -> Self {
+    pub fn from_line(line: &Line, scale: f32, colour: ColourRGBA, styles: &HashMap<usize, Style>) -> Self {
         let mut text_group = TextGroup::new();
+
+        if let Some(line_num) = line.ln {
+            text_group.set_screen_position(0.0, (line_num - 1) as f32 * scale);
+        }
 
         if let Some(text) = &line.text {
             let text = text.trim_end_matches(|c| c == '\r' || c == '\n');
@@ -69,10 +72,9 @@ impl TextWidget {
                 text_group.push(text.into(), scale, colour);
             }
         }
-
+        
         Self {
             dirty: true,
-            cursor: Some(line.cursors.to_owned()),
             text_group, 
         } 
     }
@@ -97,7 +99,7 @@ impl Widget for TextWidget {
 
     fn queue_draw(&self, renderer: &mut Renderer) {
         renderer
-            .get_text_context().borrow_mut()
+            .get_text_context().borrow()
             .queue_text(&self.text_group);
     }
 }
