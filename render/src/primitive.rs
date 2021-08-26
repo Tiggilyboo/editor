@@ -3,6 +3,10 @@ mod shaders;
 use std::sync::Arc;
 use std::iter;
 
+use abstract_renderer::AbstractRenderer;
+
+use winit::window::Window;
+
 use vulkano::{
     device::{
         Device,
@@ -62,14 +66,17 @@ pub struct Primitive {
 }
 
 pub struct PrimitiveContext {
-    _device: Arc<Device>,
+    device: Arc<Device>,
     queue: Arc<Queue>,
-    pipeline: Arc<dyn GraphicsPipelineAbstract + Send + Sync>,
-    framebuffers: Vec<Arc<dyn FramebufferAbstract + Send + Sync>>,
+    pipeline: Option<Arc<dyn GraphicsPipelineAbstract + Send + Sync>>,
+    framebuffers: Option<Vec<Arc<dyn FramebufferAbstract + Send + Sync>>>,
     
     uniform_buffer_pool: CpuBufferPool<UniformTransform>,
     vertex_buffer: Option<Arc<dyn TypedBufferAccess<Content=[Vertex]> + Send + Sync>>,
     index_buffer: Option<Arc<dyn TypedBufferAccess<Content=[u16]> + Send + Sync>>,
+
+    vertex_shader: vertex_shader::Shader,
+    fragment_shader: fragment_shader::Shader,
 
     descriptor_set: Option<Arc<dyn DescriptorSet + Send + Sync>>,
     dimensions: [f32; 2],
@@ -79,19 +86,17 @@ pub struct PrimitiveContext {
     pristine: bool,
 }
 
-impl PrimitiveContext {
-    pub fn new<W>(
-        device: Arc<Device>,
-        queue: Arc<Queue>,
-        swapchain: Arc<Swapchain<W>>,
-        images: &[Arc<SwapchainImage<W>>]
-    ) -> Self where W: Send + Sync + 'static {
-        
-        let vertex_shader = vertex_shader::Shader::load(device.clone())
-            .expect("unable to load primitive vertex shader");
+impl AbstractRenderer for PrimitiveContext {
+    fn get_pipeline(&self) -> Arc<dyn GraphicsPipelineAbstract + Send + Sync> {
+        self.pipeline.clone().expect("Uninitialised pipeline")
+    }
 
-        let fragment_shader = fragment_shader::Shader::load(device.clone())
-            .expect("unable to load primitive fragment shader");
+    fn get_framebuffers(&self) -> Vec<Arc<dyn FramebufferAbstract + Send + Sync>> {
+        self.framebuffers.clone().expect("Uninitialised framebuffers")
+    }
+
+    fn set_swap_chain(&mut self, swapchain: Arc<Swapchain<Window>>, images: &Vec<Arc<SwapchainImage<Window>>>) {
+        let device = &self.device;
 
         let render_pass = Arc::new(
             vulkano::single_pass_renderpass!(device.clone(),
@@ -120,7 +125,7 @@ impl PrimitiveContext {
 
         let pipeline = Arc::new(GraphicsPipeline::start()
             .vertex_input_single_buffer::<Vertex>()
-            .vertex_shader(vertex_shader.main_entry_point(), ())
+            .vertex_shader(self.vertex_shader.main_entry_point(), ())
             .triangle_list()
             .viewports(iter::once(Viewport {
                 origin: [0.0, 0.0],
@@ -130,20 +135,42 @@ impl PrimitiveContext {
                     images[0].dimensions()[1] as f32
                 ],
             }))
-            .fragment_shader(fragment_shader.main_entry_point(), ())
+            .fragment_shader(self.fragment_shader.main_entry_point(), ())
             .blend_alpha_blending()
             .render_pass(Subpass::from(render_pass.clone(), 0).unwrap())
             .build(device.clone())
             .expect("Unable to create primitive pipeline")
         );
 
+        self.pipeline = Some(pipeline);
+        self.framebuffers = Some(framebuffers);
+    }
+}
+
+impl PrimitiveContext {
+    pub fn new<W>(
+        device: Arc<Device>,
+        queue: Arc<Queue>,
+        swapchain: Arc<Swapchain<W>>,
+        images: &[Arc<SwapchainImage<W>>]
+    ) -> Self where W: Send + Sync + 'static {
+        
+        let vertex_shader = vertex_shader::Shader::load(device.clone())
+            .expect("unable to load primitive vertex shader");
+
+        let fragment_shader = fragment_shader::Shader::load(device.clone())
+            .expect("unable to load primitive fragment shader");
+
+
         let uniform_buffer_pool = CpuBufferPool::new(device.clone(), BufferUsage::uniform_buffer());
  
         PrimitiveContext {
-            _device: device.clone(),
+            device: device.clone(),
             queue,
-            pipeline,
-            framebuffers,
+            fragment_shader,
+            vertex_shader,
+            pipeline: None,
+            framebuffers: None,
             uniform_buffer_pool,
             primitives: Vec::new(),
             vertex_buffer: None,
@@ -223,17 +250,21 @@ impl PrimitiveContext {
             return;
         }
 
+        let framebuffers = self.get_framebuffers();
+
         builder
             .begin_render_pass(
-                self.framebuffers[image_num].clone(),
+                framebuffers[image_num].clone(),
                 SubpassContents::Inline,
                 vec![[0.0, 0.0, 0.0, 1.0].into()],
             ).expect("unable to begin primitive render pass");
 
         let vbuf: Arc<dyn BufferAccess + Send + Sync> = Arc::new(self.vertex_buffer.clone().unwrap());
 
+        let pipeline = self.get_pipeline();
+
         builder.draw_indexed(
-            self.pipeline.clone(),
+            pipeline.clone(),
             &DynamicState::none(),
             vec![vbuf],
             self.index_buffer.clone().unwrap(),
@@ -247,7 +278,7 @@ impl PrimitiveContext {
     }
 
     fn check_recreate_descriptor_set(&mut self, image_num: usize) {
-        let dimensions = self.framebuffers[image_num].dimensions(); 
+        let dimensions = self.get_framebuffers()[image_num].dimensions(); 
         let dimensions = [dimensions[0] as f32, dimensions[1] as f32];
 
         if self.dimensions[0] == dimensions[0]
@@ -259,7 +290,8 @@ impl PrimitiveContext {
         let uniform_buffer = {
             self.uniform_buffer_pool.next(transform).unwrap()
         };
-        let layout = self.pipeline.layout().descriptor_set_layouts().get(0)
+        let pipeline = self.get_pipeline();
+        let layout = pipeline.layout().descriptor_set_layouts().get(0)
             .expect("could not retrieve pipeline descriptor set layout 0");
 
         self.descriptor_set = Some(

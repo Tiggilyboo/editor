@@ -106,39 +106,35 @@ impl ViewWidget {
     pub fn resize(&mut self, width: f32, height: f32) {
         self.size.x = width;
         self.size.y = height;
+        self.background.set_size(width, height);
         self.set_dirty(true);
     }
 
     fn calculate_cursors(&mut self, line_cache: &LineCache) {
         let colour = self.resources.lock().unwrap().fg_colour;
-        let cursor_selections = line_cache.get_line_selections(0);
 
-        self.height = line_cache.height();
         self.cursor_widgets.clear();
 
         if let Ok(font_bounds) = self.font_bounds.try_lock() {
             let scale = font_bounds.get_scale();
 
-            for selection in cursor_selections.iter() {
-                if let Some(selected_line) = line_cache.get_line(selection.line_num) {
-                    if let Some(selected_text) = &selected_line.text {
-                        let start = selection.start_col;
-                        let end = selection.end_col;
-                        assert!(start <= end);
+            for line_num in self.first_line..self.height {
+                if let Some(line) = line_cache.get_line(line_num) {
+                    for cursor_index in line.cursors.iter() {
+                        if let Some(line) = &line.text {
+                            let text_left_of_cursor = if line.len() > *cursor_index {
+                                &line.as_str()[..(*cursor_index-1)]
+                            } else {
+                                &line.as_str()
+                            };
+                            let x = font_bounds.get_text_width(text_left_of_cursor);
+                            let y = line_num as f32 * scale;
 
-                        let selected_text = if start == end {
-                            &selected_text[..end]
-                        } else {
-                            &selected_text[start..end]
-                        };
-                        let x = font_bounds.get_text_width(selected_text);
-                        let y = selection.line_num as f32 * scale;
+                            let mut cursor_widget = TextWidget::new(CURSOR_TEXT.into(), scale, colour);
+                            cursor_widget.set_position(x, y);
 
-                        let mut cursor_widget = TextWidget::new(CURSOR_TEXT.into(), scale, colour);
-                        cursor_widget.set_position(x, y);
-                        println!("cursor position (selection: {}): {}, {}", selected_text, x, y);
-
-                        self.cursor_widgets.push(cursor_widget);
+                            self.cursor_widgets.push(cursor_widget);
+                        }
                     }
                 }
             }
@@ -148,9 +144,11 @@ impl ViewWidget {
     pub fn populate(&mut self, line_cache: &LineCache, styles: Arc<Mutex<HashMap<usize, Style>>>) {
         let scale = self.font_bounds.lock().unwrap().get_scale();
         let colour = self.resources.lock().unwrap().fg_colour;
+        
+        self.height = line_cache.height();
 
         if let Ok(styles) = styles.try_lock() {
-            for ix in 0..line_cache.height() {
+            for ix in self.first_line..self.height {
                 if let Some(line) = line_cache.get_line(ix) {
                     let line_widget = TextWidget::from_line(&line, scale, colour, &styles);
                     self.line_widgets.insert(ix, line_widget);
@@ -167,6 +165,7 @@ impl ViewWidget {
         self.font_bounds.lock().unwrap().get_text_width(&text) 
     }
 
+    // TODO: if col > width of screen, move the difference
     pub fn scroll(&mut self, line: usize, col: usize) {
         self.first_line = line;
         

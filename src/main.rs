@@ -26,7 +26,8 @@ fn main() {
     let el = EventLoop::<EditorEvent>::with_user_event();
     let proxy = el.create_proxy();
 
-    let renderer = RefCell::new(Renderer::new(&el, "Editor"));
+    let font_size = 13.0;
+    let renderer = RefCell::new(Renderer::new(&el, "Editor", font_size));
     let font_bounds = renderer.borrow_mut().get_text_context().borrow().get_font_bounds();
     let editor = Arc::new(Mutex::new(EditorState::new(proxy, font_bounds)));
     let input = Arc::new(Mutex::new(InputState::new()));

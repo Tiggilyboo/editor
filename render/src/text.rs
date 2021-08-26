@@ -2,6 +2,10 @@ mod shaders;
 mod font;
 mod unicode;
 
+use std::cell::RefCell;
+use std::sync::{Arc, Mutex};
+use std::iter;
+
 use self::shaders::{
     Vertex,
     vertex_shader,
@@ -11,10 +15,10 @@ use uniform::{
     UniformTransform,
     calculate_transform,
 };
+use super::abstract_renderer::AbstractRenderer;
 
-use std::cell::RefCell;
-use std::sync::{Arc, Mutex};
-use std::iter;
+use winit::window::Window;
+
 use vulkano::device::{
     Device,
     Queue,
@@ -93,11 +97,14 @@ pub struct TextGroup {
 pub struct TextContext {
     device: Arc<Device>,
     queue: Arc<Queue>,
-    pipeline: Arc<dyn GraphicsPipelineAbstract + Send + Sync>, 
-    framebuffers: Vec<Arc<dyn FramebufferAbstract + Send + Sync>>,
+    pipeline: Option<Arc<dyn GraphicsPipelineAbstract + Send + Sync>>, 
+    framebuffers: Option<Vec<Arc<dyn FramebufferAbstract + Send + Sync>>>,
     uniform_buffer_pool: CpuBufferPool<UniformTransform>,
     vertex_buffer: Option<Arc<ImmutableBuffer<[Vertex]>>>,
     index_buffer: Option<Arc<dyn TypedBufferAccess<Content=[u16]> + Send + Sync>>,
+    
+    vertex_shader: vertex_shader::Shader,
+    fragment_shader: fragment_shader::Shader,
     
     glyph_brush: RefCell<GlyphBrush<TextVertex>>,
     font_bounds: Arc<Mutex<FontBounds>>,
@@ -240,34 +247,16 @@ impl TextGroup {
     }
 }
 
-impl TextContext {
-    pub fn new<W>(
-        device: Arc<Device>, 
-        queue: Arc<Queue>,
-        swapchain: Arc<Swapchain<W>>,
-        images: &[Arc<SwapchainImage<W>>]
-    ) -> Self where W: Send + Sync + 'static {
+impl AbstractRenderer for TextContext {
+    fn get_pipeline(&self) -> Arc<dyn GraphicsPipelineAbstract + Send + Sync> {
+        self.pipeline.clone().expect("Uninitialised pipeline")
+    }
 
-        let vertex_shader = vertex_shader::Shader::load(device.clone())
-            .expect("unable to load text vertex shader");
-        
-        let fragment_shader = fragment_shader::Shader::load(device.clone())
-            .expect("unable to load fragment shader");
-
-        let font = FontArc::try_from_slice(include_bytes!("../../fonts/Hack-Regular.ttf"))
-            .expect("unable to load font");
-
-        let font_bounds = Arc::new(Mutex::new(FontBounds::new(font.clone(), 20.0)));
-        
-        let glyph_brush = RefCell::from(
-            GlyphBrushBuilder::using_font(font)
-                .cache_glyph_positioning(true)
-                .cache_redraws(true)
-                .build());
-
-        let cache_dimensions = glyph_brush.borrow().texture_dimensions();
-        let cache_dimensions = (cache_dimensions.0 as usize, cache_dimensions.1 as usize);
-        let cache_pixel_buffer = vec![0; cache_dimensions.0 * cache_dimensions.1];
+    fn get_framebuffers(&self) -> Vec<Arc<dyn FramebufferAbstract + Send + Sync>> {
+        self.framebuffers.clone().expect("Uninitialised framebuffers")
+    }
+    fn set_swap_chain(&mut self, swapchain: Arc<Swapchain<Window>>, images: &Vec<Arc<SwapchainImage<Window>>>) {
+        let device = &self.device;
 
         let render_pass = Arc::new(vulkano::single_pass_renderpass!(device.clone(),
             attachments: {
@@ -297,7 +286,7 @@ impl TextContext {
 
         let pipeline = Arc::new(GraphicsPipeline::start()
             .vertex_input_single_buffer::<Vertex>()
-            .vertex_shader(vertex_shader.main_entry_point(), ())
+            .vertex_shader(self.vertex_shader.main_entry_point(), ())
             .triangle_list()
             .viewports(iter::once(Viewport {
                 origin: [0.0, 0.0],
@@ -307,12 +296,44 @@ impl TextContext {
                     images[0].dimensions()[1] as f32
                 ],
             }))
-            .fragment_shader(fragment_shader.main_entry_point(), ())
+            .fragment_shader(self.fragment_shader.main_entry_point(), ())
             .blend_alpha_blending()
             .render_pass(Subpass::from(render_pass.clone(), 0).unwrap())
             .build(device.clone())
             .expect("Unable to create text pipeline")
         );
+
+        self.pipeline = Some(pipeline);
+        self.framebuffers = Some(framebuffers);
+    }
+}
+
+impl TextContext {
+    pub fn new(
+        device: Arc<Device>, 
+        queue: Arc<Queue>,
+        font_size: f32,
+    ) -> Self {
+        let vertex_shader = vertex_shader::Shader::load(device.clone())
+            .expect("unable to load text vertex shader");
+        
+        let fragment_shader = fragment_shader::Shader::load(device.clone())
+            .expect("unable to load fragment shader");
+
+        let font = FontArc::try_from_slice(include_bytes!("../../fonts/Hack-Regular.ttf"))
+            .expect("unable to load font");
+
+        let font_bounds = Arc::new(Mutex::new(FontBounds::new(font.clone(), font_size)));
+        
+        let glyph_brush = RefCell::from(
+            GlyphBrushBuilder::using_font(font)
+                .cache_glyph_positioning(true)
+                .cache_redraws(true)
+                .build());
+
+        let cache_dimensions = glyph_brush.borrow().texture_dimensions();
+        let cache_dimensions = (cache_dimensions.0 as usize, cache_dimensions.1 as usize);
+        let cache_pixel_buffer = vec![0; cache_dimensions.0 * cache_dimensions.1];
 
         let uniform_buffer_pool = CpuBufferPool::new(device.clone(), BufferUsage::uniform_buffer());
 
@@ -327,7 +348,6 @@ impl TextContext {
             0.0, 1.0, 0.0, 0.0
         ).unwrap();
 
-
         TextContext {
             device: device.clone(),
             queue,
@@ -340,13 +360,15 @@ impl TextContext {
                 sampler,
                 dirty: true,
             },
-            pipeline,
-            framebuffers,
+            pipeline: None,
+            framebuffers: None,
             uniform_buffer_pool,
             vertex_buffer: None, 
             index_buffer: None,
             dimensions: [0.0, 0.0],
             descriptor_set: None,
+            vertex_shader,
+            fragment_shader,
         }
     }
 
@@ -476,7 +498,7 @@ impl TextContext {
         if self.texture.image.is_none() {
             return
         }
-        let dimensions = self.framebuffers[image_num].dimensions(); 
+        let dimensions = self.get_framebuffers()[image_num].dimensions(); 
         let dimensions = [dimensions[0] as f32, dimensions[1] as f32];
         if !self.texture.dirty && self.dimensions[0] == dimensions[0] && self.dimensions[1] == dimensions[1] {
             return
@@ -487,7 +509,8 @@ impl TextContext {
             self.uniform_buffer_pool.next(transform).unwrap()
         };
         let cache_tex = self.texture.image.clone().unwrap();
-        let layout = self.pipeline.layout().descriptor_set_layouts().get(0)
+        let pipeline = self.get_pipeline();
+        let layout = pipeline.layout().descriptor_set_layouts().get(0)
             .expect("could not retrieve pipeline descriptor set layout 0");
     
         self.dimensions = dimensions;
@@ -518,16 +541,18 @@ impl TextContext {
         }
     
         let vbuf: Arc<dyn BufferAccess + Send + Sync> = Arc::new(self.vertex_buffer.clone().unwrap());
+        let framebuffers = self.get_framebuffers();
+        let pipeline = self.get_pipeline();
 
         builder 
             .begin_render_pass(
-                self.framebuffers[image_num].clone(), 
+                framebuffers[image_num].clone(), 
                 SubpassContents::Inline,
                 vec![ClearValue::None],
             ).expect("unable to begin text render pass")
 
             .draw_indexed(
-                self.pipeline.clone(),
+                pipeline,
                 &DynamicState::none(),
                 vec![vbuf],
                 self.index_buffer.clone().unwrap(),

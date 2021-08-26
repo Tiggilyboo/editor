@@ -10,7 +10,7 @@ use render::{
     colour::ColourRGBA,
 };
 
-
+#[derive(Debug)]
 pub struct PrimitiveWidget {
     position: Position,
     size: Size,
@@ -60,5 +60,10 @@ impl PrimitiveWidget {
             colour,
             dirty: true,
         }
+    }
+
+    pub fn set_size(&mut self, width: f32, height: f32) {
+        self.size.x = width;
+        self.size.y = height;
     }
 }

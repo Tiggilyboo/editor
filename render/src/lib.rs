@@ -10,9 +10,12 @@ pub mod text;
 pub mod primitive;
 pub mod uniform;
 pub mod colour;
+mod abstract_renderer;
 
 use std::sync::Arc;
 use std::cell::RefCell;
+
+use abstract_renderer::AbstractRenderer;
 
 use vulkano::command_buffer::{
     PrimaryAutoCommandBuffer,
@@ -52,7 +55,7 @@ pub struct Renderer {
 }
 
 impl Renderer {
-    pub fn new<L>(events_loop: &EventLoop<L>, title: &str) -> Self {
+    pub fn new<L>(events_loop: &EventLoop<L>, title: &str, font_size: f32) -> Self {
         let core = RenderCore::new(events_loop, title);
         let render_pass = core.create_render_pass(None);
 
@@ -69,11 +72,10 @@ impl Renderer {
         let device = core.get_device();
         let graphics_queue = core.get_graphics_queue();
 
-        let text_context = Arc::new(RefCell::<TextContext>::new(TextContext::new(
+        let text_context = Arc::new(RefCell::new(TextContext::new(
             device.clone(), 
             graphics_queue.clone(), 
-            core.swap_chain.clone(), 
-            &core.swap_chain_images))); 
+            font_size))); 
 
         let primitive_context = Arc::new(RefCell::<PrimitiveContext>::new(PrimitiveContext::new(
             device.clone(),
@@ -193,19 +195,15 @@ impl Renderer {
             &self.render_pass, 
             &mut self.dynamic_state);
 
-        self.text_context = Arc::new(RefCell::from(TextContext::new(
-            self.core.get_device().clone(),
-            self.core.get_graphics_queue().clone(),
+        self.text_context.borrow_mut().set_swap_chain(
             self.core.swap_chain.clone(),
             &self.core.swap_chain_images,
-        )));
+        );
 
-        self.primitive_context = Arc::new(RefCell::from(PrimitiveContext::new(
-            self.core.get_device().clone(),
-            self.core.get_graphics_queue().clone(),
+        self.primitive_context.borrow_mut().set_swap_chain(
             self.core.swap_chain.clone(),
             &self.core.swap_chain_images,
-        )));
+        );
     }
 
     #[inline]

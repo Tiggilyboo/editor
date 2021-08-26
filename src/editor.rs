@@ -115,6 +115,7 @@ fn create_frontend_thread(
                     }
                 },
                 Payload::Command(Command::Idle { token }) => {
+                    std::thread::sleep(std::time::Duration::from_millis(2));
                 },
                 Payload::Command(Command::ShowHover { req_id, content }) => {
                 },
