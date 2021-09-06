@@ -72,16 +72,13 @@ impl Renderer {
         let device = core.get_device();
         let graphics_queue = core.get_graphics_queue();
 
-        let text_context = Arc::new(RefCell::new(TextContext::new(
-            device.clone(), 
-            graphics_queue.clone(), 
-            font_size))); 
+        let mut text_context = TextContext::new(device.clone(), graphics_queue.clone(), font_size); 
+        text_context.set_swap_chain(core.swap_chain.clone(), &core.swap_chain_images);
+        let text_context = Arc::new(RefCell::new(text_context));
 
-        let primitive_context = Arc::new(RefCell::<PrimitiveContext>::new(PrimitiveContext::new(
-            device.clone(),
-            graphics_queue.clone(),
-            core.swap_chain.clone(),
-            &core.swap_chain_images)));
+        let mut primitive_context = PrimitiveContext::new(device.clone(), graphics_queue.clone());
+        primitive_context.set_swap_chain(core.swap_chain.clone(), &core.swap_chain_images);
+        let primitive_context = Arc::new(RefCell::new(primitive_context));
 
         let device: &Arc<Device> = &device.clone();
         let previous_frame_end = Some(Self::create_sync_objects(device));
@@ -195,11 +192,13 @@ impl Renderer {
             &self.render_pass, 
             &mut self.dynamic_state);
 
+        println!("Setting text_context swap chain");
         self.text_context.borrow_mut().set_swap_chain(
             self.core.swap_chain.clone(),
             &self.core.swap_chain_images,
         );
 
+        println!("Setting primitive_context swap chain");
         self.primitive_context.borrow_mut().set_swap_chain(
             self.core.swap_chain.clone(),
             &self.core.swap_chain_images,

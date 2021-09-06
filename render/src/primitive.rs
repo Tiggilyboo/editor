@@ -92,7 +92,8 @@ impl AbstractRenderer for PrimitiveContext {
     }
 
     fn get_framebuffers(&self) -> Vec<Arc<dyn FramebufferAbstract + Send + Sync>> {
-        self.framebuffers.clone().expect("Uninitialised framebuffers")
+        self.framebuffers.clone()
+            .expect("Uninitialised frame buffers")
     }
 
     fn set_swap_chain(&mut self, swapchain: Arc<Swapchain<Window>>, images: &Vec<Arc<SwapchainImage<Window>>>) {
@@ -148,19 +149,13 @@ impl AbstractRenderer for PrimitiveContext {
 }
 
 impl PrimitiveContext {
-    pub fn new<W>(
-        device: Arc<Device>,
-        queue: Arc<Queue>,
-        swapchain: Arc<Swapchain<W>>,
-        images: &[Arc<SwapchainImage<W>>]
-    ) -> Self where W: Send + Sync + 'static {
-        
+    pub fn new(device: Arc<Device>, queue: Arc<Queue>) -> Self {
+
         let vertex_shader = vertex_shader::Shader::load(device.clone())
             .expect("unable to load primitive vertex shader");
 
         let fragment_shader = fragment_shader::Shader::load(device.clone())
             .expect("unable to load primitive fragment shader");
-
 
         let uniform_buffer_pool = CpuBufferPool::new(device.clone(), BufferUsage::uniform_buffer());
  
@@ -278,7 +273,8 @@ impl PrimitiveContext {
     }
 
     fn check_recreate_descriptor_set(&mut self, image_num: usize) {
-        let dimensions = self.get_framebuffers()[image_num].dimensions(); 
+        let fbs = self.get_framebuffers();
+        let dimensions = fbs[image_num].dimensions(); 
         let dimensions = [dimensions[0] as f32, dimensions[1] as f32];
 
         if self.dimensions[0] == dimensions[0]
