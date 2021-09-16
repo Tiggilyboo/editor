@@ -536,7 +536,7 @@ impl TextContext {
         if self.vertex_buffer.is_none()
         || self.index_buffer.is_none()
         || self.texture.image.is_none() {
-            println!("text draw_internal vertex_buffer, index_buffer or texture image is none");
+            //println!("text draw_internal vertex_buffer, index_buffer or texture image is none");
             return false;
         }
     

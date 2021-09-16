@@ -50,17 +50,31 @@ impl TextWidget {
             let text = text.trim_end_matches(|c| c == '\r' || c == '\n');
 
             if line.styles.len() > 2 {
+                println!("line style: {:?}", line.styles);
+                println!("Styles: {:?}", styles);
                 let mut ix = 0;
                 for triple in line.styles.chunks(3) {
-                    let start = ix + triple[0];
-                    let end = start + triple[1];
+                    let mut start = ix + triple[0];
+                    let mut end = start + triple[1];
                     let style_id = triple[2];
+
+                    if start > end {
+                        end = start;
+                    }
+                    if start > text.len() {
+                        start = text.len();
+                    }
+                    if end > text.len() {
+                        end = text.len();
+                    }
 
                     let content = &text[start as usize .. end as usize];
 
                     if let Some(style) = styles.get(&style_id) {
                         if let Some(fg) = style.fg_color {
                             text_group.push(content.into(), scale, fg.to_rgba_f32array());
+                        } else {
+                            text_group.push(content.into(), scale, colour);
                         }
                     } else {
                         text_group.push(content.into(), scale, colour);

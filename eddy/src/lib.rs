@@ -38,6 +38,7 @@ pub enum Mode {
     None,
     Normal,
     Insert,
+    Delete,
     Replace,
     Visual,
     Command,

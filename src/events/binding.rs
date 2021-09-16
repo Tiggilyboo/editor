@@ -194,11 +194,53 @@ macro_rules! bindings_key_range {
     }};
 }
 
+fn default_symbol_bindings() -> Vec<KeyBinding> {
+    let bindings = bindings!(
+        KeyBinding; 
+
+        Period, +Mode::Insert; Action::InsertChars(".".into());
+        Comma, +Mode::Insert; Action::InsertChars(",".into());
+        Apostrophe, +Mode::Insert; Action::InsertChars("'".into());
+        Semicolon, +Mode::Insert; Action::InsertChars(";".into());
+        Slash, +Mode::Insert; Action::InsertChars("/".into());
+
+        Period, shift!(), +Mode::Insert; Action::InsertChars(">".into());
+        Comma, shift!(), +Mode::Insert; Action::InsertChars("<".into());
+        Apostrophe, shift!(), +Mode::Insert; Action::InsertChars("\"".into());
+        Colon, +Mode::Insert; Action::InsertChars(":".into());
+        Semicolon, shift!(), +Mode::Insert; Action::InsertChars(":".into());
+        Slash, shift!(), +Mode::Insert; Action::InsertChars("?".into());
+        Backslash, shift!(), +Mode::Insert; Action::InsertChars("\\".into());
+
+        Key0, shift!(), +Mode::Insert; Action::InsertChars(")".into());
+        Key1, shift!(), +Mode::Insert; Action::InsertChars("!".into());
+        Key2, shift!(), +Mode::Insert; Action::InsertChars("@".into());
+        Key3, shift!(), +Mode::Insert; Action::InsertChars("#".into());
+        Key4, shift!(), +Mode::Insert; Action::InsertChars("$".into());
+        Key5, shift!(), +Mode::Insert; Action::InsertChars("%".into());
+        Key6, shift!(), +Mode::Insert; Action::InsertChars("^".into());
+        Key7, shift!(), +Mode::Insert; Action::InsertChars("&".into());
+        Key8, shift!(), +Mode::Insert; Action::InsertChars("*".into());
+        Key9, shift!(), +Mode::Insert; Action::InsertChars("(".into());
+
+        Plus, +Mode::Insert; Action::InsertChars("+".into());
+        Minus, +Mode::Insert; Action::InsertChars("-".into());
+        Equals, +Mode::Insert; Action::InsertChars("=".into());
+        LBracket, shift!(), +Mode::Insert; Action::InsertChars("{".into());
+        RBracket, shift!(), +Mode::Insert; Action::InsertChars("}".into());
+        LBracket, +Mode::Insert; Action::InsertChars("[".into());
+        RBracket, +Mode::Insert; Action::InsertChars("]".into());
+    );
+
+    bindings
+}
+
 pub fn default_key_bindings() -> Vec<KeyBinding> {
     let mut bindings = bindings!(
         KeyBinding;
         
         // Modes
+        Escape, +Mode::Visual; Action::CollapseSelections;
         Escape, ~Mode::Normal; Action::SetMode(Mode::Normal);
         I, +Mode::Normal; Action::SetMode(Mode::Insert);
         V, +Mode::Normal; Action::SetMode(Mode::Visual);
@@ -206,19 +248,63 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
         V, ctrl!(), +Mode::Normal; Action::SetMode(Mode::Visual);
         A, +Mode::Normal; motion!(Forward), Action::SetMode(Mode::Insert);
         S, +Mode::Normal; Action::Delete(Motion::Forward, Quantity::Character), Action::SetMode(Mode::Insert);
-        Colon, +Mode::Normal; Action::SetMode(Mode::Command);       
+        D, +Mode::Normal; Action::SetMode(Mode::Delete);
+        Colon, +Mode::Normal; Action::SetMode(Mode::Command);
         
         // Insert
         Back, +Mode::Insert; Action::Delete(Motion::Backward, Quantity::Character);
+        Delete, +Mode::Insert; Action::Delete(Motion::Forward, Quantity::Character);
+        Delete, +Mode::Normal; Action::Delete(Motion::Forward, Quantity::Character);
         Space, +Mode::Insert; Action::InsertChars(" ".into());
+        Space, +Mode::Normal; Action::Move(Motion::Forward, Quantity::Character);
         Return, +Mode::Insert; Action::InsertNewline;
         Tab, +Mode::Insert; Action::InsertTab;
 
+        // Character 
         Up, +Mode::Normal; Action::Move(Motion::Above, Quantity::Character);
         Down, +Mode::Normal; Action::Move(Motion::Below, Quantity::Character);
         Left, +Mode::Normal; Action::Move(Motion::Backward, Quantity::Character);
         Right, +Mode::Normal; Action::Move(Motion::Forward, Quantity::Character);
+        Up, +Mode::Insert; Action::Move(Motion::Above, Quantity::Character);
+        Down, +Mode::Insert; Action::Move(Motion::Below, Quantity::Character);
+        Left, +Mode::Insert; Action::Move(Motion::Backward, Quantity::Character);
+        Right, +Mode::Insert; Action::Move(Motion::Forward, Quantity::Character);
+
+        // Word 
+        Up, ctrl!(), +Mode::Normal; Action::Move(Motion::Above, Quantity::Word);
+        Down, ctrl!(), +Mode::Normal; Action::Move(Motion::Below, Quantity::Word);
+        Left, ctrl!(), +Mode::Normal; Action::Move(Motion::Backward, Quantity::Word);
+        Right, ctrl!(), +Mode::Normal; Action::Move(Motion::Forward, Quantity::Word);
+        Up, ctrl!(), +Mode::Insert; Action::Move(Motion::Above, Quantity::Word);
+        Down, ctrl!(), +Mode::Insert; Action::Move(Motion::Below, Quantity::Word);
+        Left, ctrl!(), +Mode::Insert; Action::Move(Motion::Backward, Quantity::Word);
+        Right, ctrl!(), +Mode::Insert; Action::Move(Motion::Forward, Quantity::Word);
+
+        // Line
+        PageUp, +Mode::Normal; Action::Move(Motion::Above, Quantity::Page);
+        PageDown, +Mode::Normal; Action::Move(Motion::Below, Quantity::Page);
+        Home, +Mode::Normal; Action::Move(Motion::First, Quantity::Line);
+        End, +Mode::Normal; Action::Move(Motion::Last, Quantity::Line); 
+        PageUp, +Mode::Insert; Action::Move(Motion::Above, Quantity::Page);
+        PageDown, +Mode::Insert; Action::Move(Motion::Below, Quantity::Page);
+        Home, +Mode::Insert; Action::Move(Motion::First, Quantity::Line);
+        End, +Mode::Insert; Action::Move(Motion::Last, Quantity::Line); 
+
+        // Delete
+        Left, +Mode::Delete; Action::Delete(Motion::Backward, Quantity::Character);
+        Right, +Mode::Delete; Action::Delete(Motion::Forward, Quantity::Character);
+        Up, +Mode::Delete; Action::Delete(Motion::Above, Quantity::Line);
+        Down, +Mode::Delete; Action::Delete(Motion::Below, Quantity::Line);
+        D, +Mode::Delete; Action::Move(Motion::First, Quantity::Line), Action::Delete(Motion::Forward, Quantity::Line);
+
+        // Visual
+        Left, +Mode::Visual; Action::MoveSelection(Motion::Backward, Quantity::Character);
+        Right, +Mode::Visual; Action::MoveSelection(Motion::Forward, Quantity::Character);
+        Up, +Mode::Visual; Action::MoveSelection(Motion::Above, Quantity::Character);
+        Down, +Mode::Visual; Action::MoveSelection(Motion::Below, Quantity::Character);
     );
+    let mut insert_symbol_bindings = default_symbol_bindings();
+    bindings.append(&mut insert_symbol_bindings);
 
     let mut insert_bindings_ranges = bindings_key_range!(
         KeyBinding; 
@@ -226,7 +312,6 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
         ['A'-'Z'], +Mode::Insert; InsertChars;
         ['A'-'Z'], shift!(), +Mode::Insert; InsertChars;
     );
-
     bindings.append(&mut insert_bindings_ranges);
 
     bindings

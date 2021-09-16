@@ -90,7 +90,6 @@ fn create_frontend_thread(
         println!("frontend_thread started...");
 
         while let Ok(msg) = client.get_message_stream().lock().unwrap().recv() {
-            println!("Got message: {:?}", msg);
             match msg.payload {
                 Payload::BufferUpdate(update) => {
                     if let Some(msg_view_id) = msg.view_id { 
@@ -114,12 +113,15 @@ fn create_frontend_thread(
                         view_widget.set_dirty(true);
                     }
                 },
-                Payload::Command(Command::Idle { token }) => {
+                Payload::Command(Command::Idle { .. }) => {
                     std::thread::sleep(std::time::Duration::from_millis(2));
                 },
                 Payload::Command(Command::ShowHover { req_id, content }) => {
+                    println!("Command::ShowHover triggered: {}", req_id);
+                    unimplemented!()
                 },
                 Payload::Command(Command::DefineStyle { style_id, style }) => {
+                    println!("DefineStyle: {}, {:?}", style_id, style);
                     if let Ok(mut styles) = styles.try_lock() {
                         styles.insert(style_id, style);
                     }
@@ -281,21 +283,15 @@ impl EditorState {
             }).collect()
     }
 
+    pub fn get_views(&self) -> Vec<&Arc<Mutex<ViewWidget>>> {
+        self.view_widgets.iter().map(|(_,vw)| vw).collect()
+    }
+
     pub fn requires_redraw(&self) -> bool {
         self.view_widgets.iter().any(|(_, vw)| vw.lock().unwrap().dirty())
     }
 
-    pub fn do_new_view(&mut self, path: Option<PathBuf>) {
-        let path_str: Option<String> = if let Some(path) = path {
-            if let Ok(path) = path.into_os_string().into_string() {
-                Some(path)
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-
+    pub fn do_new_view(&mut self, path: Option<String>) {
         let view_id = self.next_view_id();
         let buffer_id = self.next_buffer_id();
 
@@ -305,13 +301,22 @@ impl EditorState {
         let line_cache = Arc::new(Mutex::new(LineCache::new()));
         let view_resources = self.view_resources.clone();
         let font_bounds = self.font_bounds.clone();
-        let view_widget = Arc::new(Mutex::new(ViewWidget::new(view_id, path_str, view_resources, font_bounds)));
+        let view_widget = Arc::new(Mutex::new(ViewWidget::new(view_id, path.clone(), view_resources, font_bounds)));
 
         self.editors.insert(buffer_id, editor);
         self.views.insert(view_id, view);
         self.line_cache.insert(view_id, line_cache);
         self.view_widgets.insert(view_id, view_widget);
         self.focused_view_id = Some(view_id);
+        
+        if let Some(path) = path {
+            let path = PathBuf::from(path);
+            if let Ok(text) = self.file_manager.open(&path, buffer_id) {
+                if let Some(mut context) = self.make_context(view_id) {
+                    context.reload(text);
+                }
+            }
+        }
 
         self.frontend_thread = Some(create_frontend_thread(
             view_id,
@@ -326,6 +331,12 @@ impl EditorState {
         for (view_id, _) in self.views.iter() {
             if let Some(mut ctx) = self.make_context(*view_id) {
                 ctx.do_edit(Action::Resize(Size { width, height }));
+            }
+            if let Some(view_widget) = self.view_widgets.get(&view_id) {
+                if let Ok(mut view_widget) = view_widget.try_lock() {
+                    view_widget.resize(width as f32, height as f32);
+                    view_widget.set_dirty(true);
+                }
             }
         }
     }

@@ -515,13 +515,12 @@ impl Editor {
         cmd: Action,
     ) {
         match cmd {
-            Action::SetMode(mode) => view.set_mode(mode),
             Action::Delete(motion, quantity) => {
                 match motion {
                     Motion::Backward => self.do_delete_backward(view),
                     _ => self.do_delete_by_movement(view, motion, quantity, false, kill_ring),
                 }
-            }
+            },
             Action::Undo => self.do_undo(),
             Action::Redo => self.do_redo(),
             Action::Uppercase => self.do_transform_text(view, |s| s.to_uppercase()),
@@ -533,13 +532,14 @@ impl Editor {
             Action::InsertChars(chars) => self.do_insert(view, &chars),
             Action::Paste(chars) => self.do_paste(view, &chars),
             Action::Yank => self.do_yank(view, kill_ring),
+            Action::DuplicateLine => self.do_duplicate_line(view),
             Action::Duplicate(quantity) => match quantity {
                 Quantity::Line => self.do_duplicate_line(view),
                 _ => unimplemented!(),
             },
             Action::IncreaseNumber => self.do_change_number(view, |s| s.checked_add(1)),
             Action::DecreaseNumber => self.do_change_number(view, |s| s.checked_sub(1)),
-            _ => ()
+            _ => unimplemented!(),
         }
     }
 

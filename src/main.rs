@@ -4,6 +4,8 @@ mod editor;
 use std::cell::RefCell;
 use std::sync::Mutex;
 use std::sync::Arc;
+use std::env;
+
 use render::Renderer;
 use editor::{
     EditorState,
@@ -12,21 +14,33 @@ use editor::{
 use events::state::InputState;
 use ui::widget::Widget;
 
-use winit::event_loop::{
-    EventLoop,
-    ControlFlow, 
-};
-use winit::event::{
-    WindowEvent,
-    Event,
+use winit::{
+    event_loop::{
+        EventLoop,
+        ControlFlow, 
+    },
+    event::{
+        WindowEvent,
+        Event,
+    },
 };
 
+fn get_filepath() -> Option<String> {
+   let args: Vec<String> = env::args().collect();
+
+   if args.len() > 0 {
+        if let Some(last_arg) = args.get(args.len()-1) {
+            return Some(last_arg.to_string())
+        }
+   }
+   None
+}
 
 fn main() {
     let el = EventLoop::<EditorEvent>::with_user_event();
     let proxy = el.create_proxy();
 
-    let font_size = 13.0;
+    let font_size = 15.0;
     let renderer = RefCell::new(Renderer::new(&el, "Editor", font_size));
     let font_bounds = renderer.borrow_mut().get_text_context().borrow().get_font_bounds();
     let editor = Arc::new(Mutex::new(EditorState::new(proxy, font_bounds)));
@@ -34,7 +48,8 @@ fn main() {
     
     let mut screen_dimensions: [f32; 2] = renderer.borrow().get_screen_dimensions();
 
-    editor.lock().unwrap().do_new_view(None);
+    let filepath = get_filepath();
+    editor.lock().unwrap().do_new_view(filepath);
 
     el.run(move |event: Event<'_, EditorEvent>, _, control_flow: &mut ControlFlow| {
         *control_flow = ControlFlow::Wait;
@@ -64,16 +79,16 @@ fn main() {
                         }
                         
                     }
-                    renderer.borrow_mut().draw_frame();
                 }
+
+                renderer.borrow_mut().draw_frame();
             },
             Event::WindowEvent { event, .. } => match event {
                 WindowEvent::KeyboardInput { .. }
                 | WindowEvent::MouseInput { .. }
                 | WindowEvent::MouseWheel { .. }
                 | WindowEvent::CursorMoved { .. }
-                | WindowEvent::ModifiersChanged(_)
-                | WindowEvent::Focused(_) => {
+                | WindowEvent::ModifiersChanged(_) => {
                     if let Ok(mut input) = input.try_lock() {
                         input.update(event, screen_dimensions);
 
@@ -88,6 +103,16 @@ fn main() {
                     } else {
                         panic!("Unable to lock input")
                     }
+                },
+                WindowEvent::Focused(_) => {
+                    if let Ok(editor) = editor.try_lock() {
+                        for view_widget in editor.get_views() {
+                            if let Ok(mut view_widget) = view_widget.try_lock() {
+                                view_widget.set_dirty(true)
+                            }
+                        }
+                    }
+                    renderer.borrow().request_redraw();
                 },
                 _ => {
                     // println!("Unhandled window event: {:?}", event);

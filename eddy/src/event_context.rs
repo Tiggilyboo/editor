@@ -121,15 +121,12 @@ impl<'a> EventContext<'a> {
             | Resize(..)
             | RequestLines(..)
             | RequestHover { .. }
-            | Reindent 
-            | SetMode(..) => ActionTarget::Special,
+            | Reindent => ActionTarget::Special,
 
             Delete(..)
-            | Insert(..)
             | InsertChars(..)
             | InsertNewline
             | InsertTab
-            | Join
             | Undo
             | Redo
             | Yank
@@ -146,6 +143,7 @@ impl<'a> EventContext<'a> {
             | Duplicate(..) => ActionTarget::Buffer,
 
             SelectAll
+            | SetMode( .. )
             | AddSelection(..)
             | CollapseSelections
             | GoToLine(..)
@@ -176,9 +174,6 @@ impl<'a> EventContext<'a> {
 
     fn do_special(&mut self, cmd: Action) {
         match cmd {
-            Action::SetMode(mode) => {
-                self.with_view(|view, _| view.set_mode(mode));
-            },
             Action::Resize(size) => {
                 self.with_view(|view, _| view.set_size(size));
                 //if self.config.word_wrap {

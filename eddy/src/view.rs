@@ -191,6 +191,7 @@ impl View {
     pub fn do_edit(&mut self, text: &Rope, cmd: Action) {
         use self::Action::*;
         match cmd {
+            Action::SetMode(mode) => self.set_mode(mode),
             Move(motion, quantity) => self.do_move(text, motion, quantity, false),
             MoveSelection(motion, quantity) => self.do_move(text, motion, quantity, true),
             SelectAll => self.select_all(text),

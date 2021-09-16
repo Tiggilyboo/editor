@@ -28,6 +28,7 @@ pub const CURSOR_TEXT: &str = "\u{2588}";
 pub struct ViewResources {
     pub bg_colour: ColourRGBA,
     pub fg_colour: ColourRGBA,
+    pub cr_colour: ColourRGBA,
 }
 
 pub struct ViewWidget {
@@ -110,33 +111,36 @@ impl ViewWidget {
         self.set_dirty(true);
     }
 
-    fn calculate_cursors(&mut self, line_cache: &LineCache) {
-        let colour = self.resources.lock().unwrap().fg_colour;
+    fn populate_cursors(&mut self, line_cache: &LineCache) {
+        let colour = self.resources.lock().unwrap().cr_colour;
 
         self.cursor_widgets.clear();
 
         if let Ok(font_bounds) = self.font_bounds.try_lock() {
             let scale = font_bounds.get_scale();
 
-            for line_num in self.first_line..self.height {
-                if let Some(line) = line_cache.get_line(line_num) {
-                    for cursor_index in line.cursors.iter() {
-                        if let Some(line) = &line.text {
-                            let text_left_of_cursor = if line.len() > *cursor_index {
-                                &line.as_str()[..(*cursor_index-1)]
-                            } else {
-                                &line.as_str()
-                            };
-                            let x = font_bounds.get_text_width(text_left_of_cursor);
-                            let y = line_num as f32 * scale;
+            let selections = line_cache.get_selections();
+            if selections.len() == 0 {
+                return;
+            }
+            
+            // Selection 0: Cursor
+            let selection = selections[0];
+            let line = line_cache.get_line(selection.line_num);
+            if let Some(line) = line {
+                let text = &line.text.clone().unwrap_or(String::new());
+                let text_left_of_cursor = if text.len() > selection.start_col {
+                    &text.as_str()[..selection.start_col]
+                } else {
+                    &text.as_str()
+                };
+                let x = font_bounds.get_text_width(text_left_of_cursor);
+                let y = selection.line_num as f32 * scale;
 
-                            let mut cursor_widget = TextWidget::new(CURSOR_TEXT.into(), scale, colour);
-                            cursor_widget.set_position(x, y);
+                let mut cursor_widget = TextWidget::new(CURSOR_TEXT.into(), scale, colour);
+                cursor_widget.set_position(x, y);
 
-                            self.cursor_widgets.push(cursor_widget);
-                        }
-                    }
-                }
+                self.cursor_widgets.push(cursor_widget);
             }
         }
     }
@@ -156,7 +160,7 @@ impl ViewWidget {
             }
         }
 
-        self.calculate_cursors(line_cache);
+        self.populate_cursors(line_cache);
 
         self.dirty = true;
     }
@@ -183,8 +187,9 @@ impl ViewWidget {
 impl Default for ViewResources {
     fn default() -> Self {
         Self {
-            bg_colour: [0.3, 0.3, 0.3, 1.0], 
-            fg_colour: [1.0, 1.0, 1.0, 1.0],
+            bg_colour: [0.1, 0.1, 0.1, 1.0], 
+            fg_colour: [0.9, 0.9, 0.9, 1.0],
+            cr_colour: [1.0, 1.0, 1.0, 1.0],
         }
     }
 }

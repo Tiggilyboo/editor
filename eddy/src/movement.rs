@@ -1,7 +1,6 @@
 use std::cmp::max;
 
 use super::{
-    Mode, 
     Motion,
     Quantity,
 };
@@ -26,25 +25,6 @@ const SCROLL_OVERLAP: isize = 2;
 /// less than the height of the viewport, to allow overlap).
 fn scroll_height(height: usize) -> isize {
     max(height as isize - SCROLL_OVERLAP, 1)
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum Action {
-    SetMode(Mode),
-    Delete(Motion, Quantity),
-    Insert(Motion, Quantity),
-    InsertChar,
-    Join,
-    Paste(Motion),
-    Replace(Quantity),
-    SelectBegin(Motion, Quantity),
-    SelectEnd(Motion, Quantity),
-    SelectAction(Box<Action>),
-    Yank(Quantity),
-    Undo(Quantity),
-    Redo(Quantity),
-    Move(Motion, Quantity),
-    Repeat(Box<Action>, Quantity),
 }
 
 /// Based on the current selection position this will return the cursor position, the current line, and the
