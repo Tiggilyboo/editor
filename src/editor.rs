@@ -245,7 +245,7 @@ impl EditorState {
 
     #[inline]
     fn process_action(&self, action: Action) {
-        println!("Action: {:?}", action);
+        //println!("Action: {:?}", action);
 
         if let Some(view_id) = self.focused_view_id {
             if let Some(mut ctx) = self.make_context(view_id) {

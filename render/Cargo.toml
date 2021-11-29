@@ -2,6 +2,7 @@
 name = "render"
 version = "0.1.0"
 authors = ["Simon Willshire"]
+edition = "2021"
 
 [lib]
 

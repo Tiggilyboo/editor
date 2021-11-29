@@ -111,7 +111,7 @@ impl Renderer {
     }
 
     pub fn draw_frame(&mut self) { 
-        println!("Drawing frame...");
+        //println!("Drawing frame...");
         self.previous_frame_end.as_mut().unwrap().cleanup_finished();
 
         if self.recreate_swap_chain {

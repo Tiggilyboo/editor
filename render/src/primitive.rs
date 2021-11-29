@@ -3,7 +3,6 @@ mod shaders;
 use std::sync::Arc;
 use std::iter;
 
-use abstract_renderer::AbstractRenderer;
 
 use winit::window::Window;
 
@@ -52,10 +51,11 @@ use self::shaders::{
     vertex_shader,
     fragment_shader,
 };
-use uniform::{
+use super::uniform::{
     UniformTransform,
     calculate_transform,
 };
+use super::abstract_renderer::AbstractRenderer;
 
 #[derive(Debug)]
 pub struct Primitive {

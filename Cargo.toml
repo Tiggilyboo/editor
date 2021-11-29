@@ -2,13 +2,13 @@
 name = "editor"
 version = "0.1.0"
 authors = ["simon"]
-edition = "2018"
+edition = "2021"
 
 [dependencies]
 render = { path = "./render" }
 eddy = { path = "./eddy" }
 ui = { path = "./ui" }
-dirs = "3.0"
+dirs = "4.0"
 
 [dependencies.winit]
 version = "0.25"

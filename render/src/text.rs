@@ -11,7 +11,7 @@ use self::shaders::{
     vertex_shader,
     fragment_shader,
 };
-use uniform::{
+use super::uniform::{
     UniformTransform,
     calculate_transform,
 };
