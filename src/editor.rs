@@ -117,7 +117,7 @@ fn create_frontend_thread(
                     std::thread::sleep(std::time::Duration::from_millis(2));
                 },
                 Payload::Command(Command::ShowHover { req_id, content }) => {
-                    println!("Command::ShowHover triggered: {}", req_id);
+                    println!("Command::ShowHover triggered: {} = {}", req_id, content);
                     unimplemented!()
                 },
                 Payload::Command(Command::DefineStyle { style_id, style }) => {

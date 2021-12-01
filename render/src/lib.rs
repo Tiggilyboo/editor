@@ -20,7 +20,6 @@ use abstract_renderer::AbstractRenderer;
 use vulkano::command_buffer::{
     PrimaryAutoCommandBuffer,
     AutoCommandBufferBuilder,
-    DynamicState,
     CommandBufferUsage,
 };
 use vulkano::device::Device;
@@ -46,7 +45,6 @@ pub struct Renderer {
     core: RenderCore,
     render_pass: Arc<RenderPass>,
     swap_chain_frame_buffers: Vec<Arc<dyn FramebufferAbstract + Send + Sync>>,
-    dynamic_state: DynamicState,
     previous_frame_end: Option<Box<dyn GpuFuture>>,
     recreate_swap_chain: bool,
 
@@ -58,16 +56,7 @@ impl Renderer {
     pub fn new<L>(events_loop: &EventLoop<L>, title: &str, font_size: f32) -> Self {
         let core = RenderCore::new(events_loop, title);
         let render_pass = core.create_render_pass(None);
-
-        let mut dynamic_state = DynamicState {
-            line_width: None,
-            viewports: None,
-            scissors: None,
-            compare_mask: None,
-            write_mask: None,
-            reference: None,
-        };
-        let swap_chain_frame_buffers = core.create_framebuffers(&render_pass, &mut dynamic_state);
+        let swap_chain_frame_buffers = core.create_framebuffers(&render_pass);
 
         let device = core.get_device();
         let graphics_queue = core.get_graphics_queue();
@@ -90,7 +79,6 @@ impl Renderer {
             text_context,
             primitive_context,
 
-            dynamic_state,
             render_pass,
 
             previous_frame_end,
@@ -188,9 +176,7 @@ impl Renderer {
         
         self.render_pass = self.core.create_render_pass(None);
 
-        self.swap_chain_frame_buffers = self.core.create_framebuffers(
-            &self.render_pass, 
-            &mut self.dynamic_state);
+        self.swap_chain_frame_buffers = self.core.create_framebuffers(&self.render_pass);
 
         println!("Setting text_context swap chain");
         self.text_context.borrow_mut().set_swap_chain(

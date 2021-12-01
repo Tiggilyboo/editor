@@ -29,7 +29,7 @@ use vulkano::format::{
 };
 use vulkano::pipeline::{
     GraphicsPipeline,
-    GraphicsPipelineAbstract,
+    PipelineBindPoint,
     viewport::Viewport,
 };
 use vulkano::descriptor_set::{
@@ -67,7 +67,6 @@ use vulkano::sampler::{
 use vulkano::command_buffer::{
     AutoCommandBufferBuilder,
     PrimaryAutoCommandBuffer,
-    DynamicState,
     SubpassContents,
     pool::standard::StandardCommandPoolBuilder,
 };  
@@ -97,7 +96,7 @@ pub struct TextGroup {
 pub struct TextContext {
     device: Arc<Device>,
     queue: Arc<Queue>,
-    pipeline: Option<Arc<dyn GraphicsPipelineAbstract + Send + Sync>>, 
+    pipeline: Option<Arc<GraphicsPipeline>>, 
     framebuffers: Option<Vec<Arc<dyn FramebufferAbstract + Send + Sync>>>,
     uniform_buffer_pool: CpuBufferPool<UniformTransform>,
     vertex_buffer: Option<Arc<ImmutableBuffer<[Vertex]>>>,
@@ -248,12 +247,14 @@ impl TextGroup {
 }
 
 impl AbstractRenderer for TextContext {
-    fn get_pipeline(&self) -> Arc<dyn GraphicsPipelineAbstract + Send + Sync> {
-        self.pipeline.clone().expect("Uninitialised pipeline")
+    fn get_pipeline(&self) -> Arc<GraphicsPipeline> {
+        self.pipeline.clone()
+            .expect("Uninitialised pipeline")
     }
 
     fn get_framebuffers(&self) -> Vec<Arc<dyn FramebufferAbstract + Send + Sync>> {
-        self.framebuffers.clone().expect("Uninitialised framebuffers")
+        self.framebuffers.clone()
+            .expect("Uninitialised framebuffers")
     }
     fn set_swap_chain(&mut self, swapchain: Arc<Swapchain<Window>>, images: &Vec<Arc<SwapchainImage<Window>>>) {
         let device = &self.device;
@@ -419,7 +420,7 @@ impl TextContext {
             buffer,
             dimensions,
             MipmapsCount::One,
-            Format::R8Unorm,
+            Format::R8_UNORM,
             self.queue.clone(),
         ).expect("Unable to create unintialised immutable image");
 
@@ -506,27 +507,32 @@ impl TextContext {
 
         let transform = calculate_transform(0.0, dimensions[0], 0.0, dimensions[1], 1.0, -1.0);
         let uniform_buffer = {
-            self.uniform_buffer_pool.next(transform).unwrap()
+            Arc::new(self.uniform_buffer_pool.next(transform).unwrap())
         };
         let cache_tex = self.texture.image.clone().unwrap();
         let pipeline = self.get_pipeline();
         let layout = pipeline.layout().descriptor_set_layouts().get(0)
             .expect("could not retrieve pipeline descriptor set layout 0");
+
+        let mut descriptor_set_builder = PersistentDescriptorSet::start(layout.clone());
+
+        descriptor_set_builder
+            .add_sampled_image(cache_tex, self.texture.sampler.clone())
+            .expect("could not add sampled image to PersistentDescriptorSet binding 0");
+
+        descriptor_set_builder
+            .add_buffer(uniform_buffer)
+            .expect("could not add uniform buffer to PersistentDescriptorSet binding 1");
     
         self.dimensions = dimensions;
-        self.descriptor_set = Some(Arc::new(
-            PersistentDescriptorSet::start(layout.clone())
-                .add_sampled_image(cache_tex, self.texture.sampler.clone())
-                .expect("could not add sampled image to PersistentDescriptorSet binding 0")
-                .add_buffer(uniform_buffer)
-                .expect("could not add uniform buffer to PersistentDescriptorSet binding 1")
+        self.descriptor_set = Some(
+            Arc::new(descriptor_set_builder
                 .build()
                 .expect("TextContext: unable to create PersistentDescriptorSet 0")
         ));
         self.texture.dirty = false;
     }
 
-    #[inline]
     fn draw_internal<'a>(&'a mut self, 
         builder: &'a mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer, StandardCommandPoolBuilder>, 
         image_num: usize,
@@ -536,30 +542,38 @@ impl TextContext {
         if self.vertex_buffer.is_none()
         || self.index_buffer.is_none()
         || self.texture.image.is_none() {
-            //println!("text draw_internal vertex_buffer, index_buffer or texture image is none");
             return false;
         }
     
-        let vbuf: Arc<dyn BufferAccess + Send + Sync> = Arc::new(self.vertex_buffer.clone().unwrap());
         let framebuffers = self.get_framebuffers();
         let pipeline = self.get_pipeline();
+        let dimensions = framebuffers[image_num].dimensions();
+        let indices_count = self.index_buffer.clone().unwrap().len() as u32;
+        let indices = self.index_buffer.clone().unwrap();
+        let vertices = self.vertex_buffer.clone().unwrap();
+        let descriptor_set = self.descriptor_set.clone().unwrap();
 
         builder 
             .begin_render_pass(
                 framebuffers[image_num].clone(), 
                 SubpassContents::Inline,
                 vec![ClearValue::None],
-            ).expect("unable to begin text render pass")
+            ).expect("unable to begin text render pass");
 
-            .draw_indexed(
-                pipeline,
-                &DynamicState::none(),
-                vec![vbuf],
-                self.index_buffer.clone().unwrap(),
-                self.descriptor_set.clone().unwrap(), 
-                (),
-            ).expect("unable to draw to command buffer for glyph")
+        builder
+            .bind_pipeline_graphics(pipeline.clone())
+            .bind_descriptor_sets(
+                PipelineBindPoint::Graphics,
+                pipeline.layout().clone(),
+                0,
+                descriptor_set.clone()
+            )
+            .bind_vertex_buffers(0, vertices.clone())
+            .bind_index_buffer(indices.clone())
+            .draw_indexed(indices_count, 1, 0, 0, 0)
+            .unwrap();
 
+        builder
             .end_render_pass()
             .expect("unable to end text render pass");
 
@@ -570,6 +584,7 @@ impl TextContext {
         builder: &'a mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer, StandardCommandPoolBuilder>,
         image_num: usize,
     ) -> bool {
+
         let cache_dimensions = self.texture.cache_dimensions;
         let cache_pixel_buffer = &mut self.texture.cache_pixel_buffer;
         let mut updated_texture = false;

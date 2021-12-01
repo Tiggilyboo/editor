@@ -6,7 +6,6 @@ use std::collections::HashSet;
 use vulkano::instance::{
     Instance,
     InstanceExtensions,
-    layers_list,
 };
 use vulkano::device::{
     physical::PhysicalDevice,
@@ -43,7 +42,6 @@ use vulkano::sync::{
     NowFuture,
     SharingMode,
 };
-use vulkano::command_buffer::DynamicState;
 use vulkano::pipeline::viewport::Viewport;
 use vulkano::Version;
 
@@ -54,14 +52,6 @@ use winit::dpi::LogicalSize;
 use winit::event_loop::EventLoop;
 
 use self::queue_indices::QueueFamilyIndices;
-
-const VALIDATION_LAYERS: &[&str] = &[
-    "VK_LAYER_LUNARG_standard_validation"
-];
-#[cfg(all(debug_assertions))]
-const ENABLE_VALIDATION_LAYERS: bool = true;
-#[cfg(not(debug_assertions))]
-const ENABLE_VALIDATION_LAYERS: bool = false;
 
 fn device_extensions() -> DeviceExtensions {
     DeviceExtensions {
@@ -109,40 +99,16 @@ impl RenderCore {
         }
     }
 
-    fn check_validation_layer_support() -> bool {
-        let layers: Vec<_> = layers_list().unwrap()
-            .map(|l| l.name().to_owned())
-            .collect();
-
-        VALIDATION_LAYERS.iter()
-            .all(|layer_name| layers.contains(&layer_name.to_string()))
-    }
-    
     fn get_required_extensions() -> InstanceExtensions {
-        let mut extensions = vulkano_win::required_extensions();
-
-        if ENABLE_VALIDATION_LAYERS {
-            extensions.ext_debug_utils = true;
-        }
-
-        extensions
+        vulkano_win::required_extensions()
     }
 
     fn create_instance() -> Arc<Instance> {
-        if ENABLE_VALIDATION_LAYERS && !Self::check_validation_layer_support() {
-            println!("Validation layers enabled, but not supported");
-        }
-
         let app_info = vulkano::app_info_from_cargo_toml!();
         let req_extensions = Self::get_required_extensions();
 
-        if ENABLE_VALIDATION_LAYERS && Self::check_validation_layer_support() {
-            Instance::new(Some(&app_info), Version::V1_1, &req_extensions, VALIDATION_LAYERS.iter().cloned())
-                .expect("unable to create new vulkan instance")
-        } else {
-           Instance::new(Some(&app_info), Version::V1_1, &req_extensions, None) 
-                .expect("unable to create new vulkan instance")
-        }
+       Instance::new(Some(&app_info), Version::V1_1, &req_extensions, None) 
+            .expect("unable to create new vulkan instance")
     }
 
     fn is_device_suitable(surface: &Arc<Surface<Window>>, device: &PhysicalDevice) -> bool {
@@ -192,8 +158,6 @@ impl RenderCore {
         surface: &Arc<Surface<Window>>,
         physical_device_id: usize,
     ) -> (Arc<Device>, Arc<Queue>, Arc<Queue>) {
-        use std::iter::FromIterator;
-
         let physical_device = PhysicalDevice::from_index(&instance, physical_device_id).unwrap();
         let indices = QueueFamilyIndices::find_queue_families(surface, &physical_device);
 
@@ -219,7 +183,7 @@ impl RenderCore {
     fn choose_swap_surface_format(avail_formats: &[(Format, ColorSpace)]) -> (Format, ColorSpace) {
         *avail_formats.iter()
             .find(|(format, color_space)|
-                  *format == Format::B8G8R8A8Unorm && *color_space == ColorSpace::SrgbNonLinear
+                  *format == Format::B8G8R8A8_UNORM && *color_space == ColorSpace::SrgbNonLinear
             ).unwrap_or_else(|| &avail_formats[0])
     }
 
@@ -324,15 +288,7 @@ impl RenderCore {
     pub fn create_framebuffers(
         &self,
         render_pass: &Arc<RenderPass>,
-        dynamic_state: &mut DynamicState,
     ) -> Vec<Arc<dyn FramebufferAbstract + Send + Sync>> {
-        let dimensions = self.swap_chain_images[0].dimensions();
-        let viewport = Viewport {
-            origin: [0.0, 0.0],
-            dimensions: [dimensions[0] as f32, dimensions[1] as f32],
-            depth_range: 0.0 .. 1.0,
-        };
-        dynamic_state.viewports = Some(vec![viewport]);
 
         self.swap_chain_images.iter()
             .map(|image| {

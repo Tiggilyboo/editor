@@ -21,11 +21,3 @@ pub mod fragment_shader {
     }
 }
 
-impl Vertex {
-    pub fn new(position: [f32; 3], colour: [f32; 4]) -> Self {
-        Self {
-            position,
-            colour,
-        }
-    }
-}

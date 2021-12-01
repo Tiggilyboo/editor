@@ -4,12 +4,10 @@ version = "0.1.0"
 authors = ["Simon Willshire"]
 edition = "2021"
 
-[lib]
-
 [dependencies]
-vulkano = "0.25"
-vulkano-win = "0.25"
-vulkano-shaders = "0.25"
+vulkano = "0.26"
+vulkano-win = "0.26"
+vulkano-shaders = "0.26"
 
 [dependencies.winit]
 version = "0.25"

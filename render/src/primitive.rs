@@ -11,7 +11,6 @@ use vulkano::{
         Device,
         Queue,
     },
-    pipeline::viewport::Viewport,
     descriptor_set::{
         PersistentDescriptorSet,
         DescriptorSet,
@@ -21,18 +20,17 @@ use vulkano::{
         ImmutableBuffer,
         CpuBufferPool,
         TypedBufferAccess,
-        BufferAccess,
     },
     command_buffer::{
         pool::standard::StandardCommandPoolBuilder,
         PrimaryAutoCommandBuffer,
         AutoCommandBufferBuilder,
-        DynamicState,
         SubpassContents,
     },
     pipeline::{
+        viewport::Viewport,
+        PipelineBindPoint,
         GraphicsPipeline,
-        GraphicsPipelineAbstract,
     },
     render_pass::{
         Framebuffer,
@@ -68,7 +66,7 @@ pub struct Primitive {
 pub struct PrimitiveContext {
     device: Arc<Device>,
     queue: Arc<Queue>,
-    pipeline: Option<Arc<dyn GraphicsPipelineAbstract + Send + Sync>>,
+    pipeline: Option<Arc<GraphicsPipeline>>,
     framebuffers: Option<Vec<Arc<dyn FramebufferAbstract + Send + Sync>>>,
     
     uniform_buffer_pool: CpuBufferPool<UniformTransform>,
@@ -87,8 +85,9 @@ pub struct PrimitiveContext {
 }
 
 impl AbstractRenderer for PrimitiveContext {
-    fn get_pipeline(&self) -> Arc<dyn GraphicsPipelineAbstract + Send + Sync> {
-        self.pipeline.clone().expect("Uninitialised pipeline")
+    fn get_pipeline(&self) -> Arc<GraphicsPipeline> {
+        self.pipeline.clone()
+            .expect("Uninitialised pipeline")
     }
 
     fn get_framebuffers(&self) -> Vec<Arc<dyn FramebufferAbstract + Send + Sync>> {
@@ -246,6 +245,12 @@ impl PrimitiveContext {
         }
 
         let framebuffers = self.get_framebuffers();
+        let pipeline = self.get_pipeline();
+        let dimensions = framebuffers[image_num].dimensions();
+        let indices_count = self.index_buffer.clone().unwrap().len() as u32;
+        let indices = self.index_buffer.clone().unwrap();
+        let vertices = self.vertex_buffer.clone().unwrap();
+        let descriptor_set = self.descriptor_set.clone().unwrap();
 
         builder
             .begin_render_pass(
@@ -254,18 +259,18 @@ impl PrimitiveContext {
                 vec![[0.0, 0.0, 0.0, 1.0].into()],
             ).expect("unable to begin primitive render pass");
 
-        let vbuf: Arc<dyn BufferAccess + Send + Sync> = Arc::new(self.vertex_buffer.clone().unwrap());
-
-        let pipeline = self.get_pipeline();
-
-        builder.draw_indexed(
-            pipeline.clone(),
-            &DynamicState::none(),
-            vec![vbuf],
-            self.index_buffer.clone().unwrap(),
-            self.descriptor_set.clone().unwrap(),
-            (),
-        ).expect("unable to draw to command buffer for primitive");
+        builder
+            .bind_pipeline_graphics(pipeline.clone())
+            .bind_descriptor_sets(
+                PipelineBindPoint::Graphics,
+                pipeline.layout().clone(),
+                0,
+                descriptor_set.clone(),
+            )
+            .bind_vertex_buffers(0, vertices.clone())
+            .bind_index_buffer(indices.clone())
+            .draw_indexed(indices_count, 1, 0, 0, 0)
+            .unwrap();
 
         builder
             .end_render_pass()
@@ -290,11 +295,14 @@ impl PrimitiveContext {
         let layout = pipeline.layout().descriptor_set_layouts().get(0)
             .expect("could not retrieve pipeline descriptor set layout 0");
 
+        let mut descriptor_set_builder = PersistentDescriptorSet::start(layout.clone());
+
+        descriptor_set_builder
+                .add_buffer(Arc::new(uniform_buffer))
+                .expect("could not add uniform buffer to PersistentDescriptorSet binding 0");
+
         self.descriptor_set = Some(
-            Arc::new(
-                PersistentDescriptorSet::start(layout.clone())
-                .add_buffer(uniform_buffer)
-                .expect("could not add uniform buffer to PersistentDescriptorSet binding 0")
+            Arc::new(descriptor_set_builder
                 .build()
                 .expect("PrimitiveContext: unable to create PersistentDescriptorSet 0")
         ));
