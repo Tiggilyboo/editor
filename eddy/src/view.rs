@@ -134,7 +134,7 @@ impl View {
             lines: Lines::default(),
             lc_shadow: LineCacheShadow::default(),
             annotations: AnnotationStore::new(),
-            mode: Mode::None,
+            mode: Mode::Normal,
         }
     }
 

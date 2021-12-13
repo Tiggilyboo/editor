@@ -19,8 +19,8 @@ use render::{
 };
 
 pub struct TextWidget {
-    dirty: bool,
     text_group: TextGroup,
+    dirty: bool,
 }
 
 
@@ -37,6 +37,7 @@ impl TextWidget {
 
     pub fn set_position(&mut self, x: f32, y: f32) {
         self.text_group.set_screen_position(x, y);
+        self.dirty = true;
     }
 
     pub fn from_line(line: &Line, scale: f32, colour: ColourRGBA, styles: &HashMap<usize, Style>) -> Self {
@@ -58,26 +59,48 @@ impl TextWidget {
                     let mut end = start + triple[1];
                     let style_id = triple[2];
 
+                    let text_len = text.len();
+                    if start > text_len {
+                        start = text_len;
+                    }
+                    if end > text_len {
+                        end = text_len;
+                    }
                     if start > end {
+                        let t = end;
                         end = start;
-                    }
-                    if start > text.len() {
-                        start = text.len();
-                    }
-                    if end > text.len() {
-                        end = text.len();
+                        start = t;
                     }
 
                     let content = &text[start as usize .. end as usize];
 
                     if let Some(style) = styles.get(&style_id) {
-                        if let Some(fg) = style.fg_color {
-                            text_group.push(content.into(), scale, fg.to_rgba_f32array());
+                        let fg_color = if let Some(fg) = style.fg_color {
+                            fg.to_rgba_f32array()
                         } else {
-                            text_group.push(content.into(), scale, colour);
+                            colour
+                        };
+
+                        // Draw starting portions of the line
+                        if start > 0 {
+                            let beginning = &text[0 .. start as usize];
+                            if beginning.len() > 1 {
+                                text_group.push(beginning.into(), scale, fg_color);
+                            }
                         }
+                        // style selection
+                        text_group.push(content.into(), scale, fg_color);
+
+                        // Draw end portion of the line
+                        if end < text_len {
+                            let tail = &text[end as usize .. text_len];
+                            if tail.len() > 1 {
+                                text_group.push(tail.into(), scale, fg_color);
+                            }
+                        }
+
                     } else {
-                        text_group.push(content.into(), scale, colour);
+                        text_group.push(text.into(), scale, colour);
                     }
 
                     ix = end;
@@ -88,8 +111,8 @@ impl TextWidget {
         }
         
         Self {
-            dirty: true,
             text_group, 
+            dirty: true,
         } 
     }
 }

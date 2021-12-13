@@ -96,6 +96,8 @@ fn main() {
                             editor.process_input_actions(&input);   
                             if editor.requires_redraw() {
                                 renderer.borrow().request_redraw();
+                            } else {
+                                println!("Did not require redraw");
                             }
                         } else {
                             panic!("Unable to lock editor state");
@@ -104,7 +106,7 @@ fn main() {
                         panic!("Unable to lock input")
                     }
                 },
-                WindowEvent::Focused(_) => {
+                WindowEvent::Focused(focus) => {
                     if let Ok(editor) = editor.try_lock() {
                         for view_widget in editor.get_views() {
                             if let Ok(mut view_widget) = view_widget.try_lock() {
@@ -112,7 +114,9 @@ fn main() {
                             }
                         }
                     }
-                    renderer.borrow().request_redraw();
+                    if focus {
+                        renderer.borrow().request_redraw();
+                    }
                 },
                 _ => {
                     // println!("Unhandled window event: {:?}", event);

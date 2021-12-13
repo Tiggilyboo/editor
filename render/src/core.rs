@@ -30,7 +30,6 @@ use vulkano::swapchain::{
 use vulkano::format::Format;
 use vulkano::render_pass::{
     RenderPass,
-    FramebufferAbstract,
     Framebuffer,
 };
 use vulkano::image::{
@@ -42,7 +41,6 @@ use vulkano::sync::{
     NowFuture,
     SharingMode,
 };
-use vulkano::pipeline::viewport::Viewport;
 use vulkano::Version;
 
 use vulkano_win::VkSurfaceBuild;
@@ -269,7 +267,7 @@ impl RenderCore {
     }
 
     pub fn create_render_pass(&self, color_fmt: Option<Format>) -> Arc<RenderPass> {
-        Arc::new(vulkano::single_pass_renderpass!(self.device.clone(),
+        vulkano::single_pass_renderpass!(self.device.clone(),
             attachments: {
                 color: {
                     load: Clear,
@@ -282,21 +280,22 @@ impl RenderCore {
                 color: [color],
                 depth_stencil: {}
             }
-        ).unwrap())
+        )
+            .expect("unable to create single_pass_renderpass")
     }
 
     pub fn create_framebuffers(
         &self,
         render_pass: &Arc<RenderPass>,
-    ) -> Vec<Arc<dyn FramebufferAbstract + Send + Sync>> {
+    ) -> Vec<Arc<Framebuffer>> {
 
         self.swap_chain_images.iter()
             .map(|image| {
                 let view = ImageView::new(image.clone()).unwrap();
-                Arc::new(Framebuffer::start(render_pass.clone())
+                Framebuffer::start(render_pass.clone())
                     .add(view).unwrap()
-                    .build().unwrap()
-                ) as Arc<dyn FramebufferAbstract + Send + Sync>
+                    .build()
+                    .unwrap()
             }).collect::<Vec<_>>()
     }
 

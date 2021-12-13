@@ -4,13 +4,9 @@ mod unicode;
 
 use std::cell::RefCell;
 use std::sync::{Arc, Mutex};
-use std::iter;
 
-use self::shaders::{
-    Vertex,
-    vertex_shader,
-    fragment_shader,
-};
+use self::shaders::Vertex;
+
 use super::uniform::{
     UniformTransform,
     calculate_transform,
@@ -27,22 +23,24 @@ use vulkano::format::{
     Format,
     ClearValue,
 };
+use vulkano::shader::ShaderModule;
 use vulkano::pipeline::{
     GraphicsPipeline,
+    Pipeline,
     PipelineBindPoint,
-    viewport::Viewport,
+    graphics::viewport::{
+        ViewportState,
+        Viewport,
+    },
+    graphics::vertex_input::BuffersDefinition,
+    graphics::input_assembly::InputAssemblyState,
 };
-use vulkano::descriptor_set::{
-    PersistentDescriptorSet,  
-    DescriptorSet,
-};
+use vulkano::descriptor_set::PersistentDescriptorSet;
 use vulkano::buffer::{
-    BufferAccess,
     BufferUsage,
     CpuAccessibleBuffer,
     ImmutableBuffer,
     CpuBufferPool,
-    TypedBufferAccess,
 };
 use vulkano::swapchain::Swapchain;
 use vulkano::image::{
@@ -53,9 +51,7 @@ use vulkano::image::{
     view::ImageView,
 };
 use vulkano::render_pass::{
-    FramebufferAbstract, 
     Framebuffer,
-    RenderPass,
     Subpass,
 };
 use vulkano::sampler::{
@@ -97,18 +93,19 @@ pub struct TextContext {
     device: Arc<Device>,
     queue: Arc<Queue>,
     pipeline: Option<Arc<GraphicsPipeline>>, 
-    framebuffers: Option<Vec<Arc<dyn FramebufferAbstract + Send + Sync>>>,
+    framebuffers: Option<Vec<Arc<Framebuffer>>>,
     uniform_buffer_pool: CpuBufferPool<UniformTransform>,
     vertex_buffer: Option<Arc<ImmutableBuffer<[Vertex]>>>,
-    index_buffer: Option<Arc<dyn TypedBufferAccess<Content=[u16]> + Send + Sync>>,
+    index_buffer: Option<Arc<ImmutableBuffer<[u16]>>>,
+    indices_len: usize,
     
-    vertex_shader: vertex_shader::Shader,
-    fragment_shader: fragment_shader::Shader,
+    vertex_shader: Arc<ShaderModule>,
+    fragment_shader: Arc<ShaderModule>,
     
     glyph_brush: RefCell<GlyphBrush<TextVertex>>,
     font_bounds: Arc<Mutex<FontBounds>>,
 
-    descriptor_set: Option<Arc<dyn DescriptorSet + Send + Sync>>,
+    descriptor_set: Option<Arc<PersistentDescriptorSet>>,
     texture: TextureCache,
     dimensions: [f32; 2],
 }
@@ -126,7 +123,7 @@ pub struct TextVertex {
 struct TextureCache {
     pub cache_pixel_buffer: Vec<u8>,
     pub cache_dimensions: (usize, usize),
-    image: Option<Arc<ImageView<Arc<ImmutableImage>>>>,
+    image: Option<Arc<ImageView<ImmutableImage>>>,
     sampler: Arc<Sampler>,
     dirty: bool,
 }
@@ -233,17 +230,6 @@ impl TextGroup {
     pub fn bounds(&self) -> (f32, f32) {
         self.section.bounds
     }
-
-    fn line_string(&self) -> String {
-        // TODO: NOT IDEAL, but need a way to simplify two iter loops char_indices with index
-        // offset being summed properly...
-        let line_string = self.section
-            .text.iter()
-            .flat_map(|t| t.text.chars())
-            .collect();
-
-        line_string
-    }
 }
 
 impl AbstractRenderer for TextContext {
@@ -252,14 +238,14 @@ impl AbstractRenderer for TextContext {
             .expect("Uninitialised pipeline")
     }
 
-    fn get_framebuffers(&self) -> Vec<Arc<dyn FramebufferAbstract + Send + Sync>> {
+    fn get_framebuffers(&self) -> Vec<Arc<Framebuffer>> {
         self.framebuffers.clone()
             .expect("Uninitialised framebuffers")
     }
     fn set_swap_chain(&mut self, swapchain: Arc<Swapchain<Window>>, images: &Vec<Arc<SwapchainImage<Window>>>) {
         let device = &self.device;
 
-        let render_pass = Arc::new(vulkano::single_pass_renderpass!(device.clone(),
+        let render_pass = vulkano::single_pass_renderpass!(device.clone(),
             attachments: {
                 color: {
                     load: Load,
@@ -272,37 +258,29 @@ impl AbstractRenderer for TextContext {
                 color: [color],
                 depth_stencil: {}
             }
-        ).unwrap()) as Arc<RenderPass>;
+        ).expect("Unable to create single renderpass for text context");
 
         let framebuffers = images.iter().map(|image| {
             let view = ImageView::new(image.clone()).unwrap();
-            Arc::new(
-                Framebuffer::start(render_pass.clone())
-                .add(view)
-                .unwrap()
-                .build()
-                .unwrap()
-            ) as Arc<dyn FramebufferAbstract + Send + Sync>
+            Framebuffer::start(render_pass.clone())
+            .add(view)
+            .unwrap()
+            .build()
+            .unwrap()
         }).collect::<Vec<_>>();
 
-        let pipeline = Arc::new(GraphicsPipeline::start()
-            .vertex_input_single_buffer::<Vertex>()
-            .vertex_shader(self.vertex_shader.main_entry_point(), ())
-            .triangle_list()
-            .viewports(iter::once(Viewport {
-                origin: [0.0, 0.0],
-                depth_range: 0.0..1.0,
-                dimensions: [
-                    images[0].dimensions()[0] as f32,
-                    images[0].dimensions()[1] as f32
-                ],
-            }))
-            .fragment_shader(self.fragment_shader.main_entry_point(), ())
+        let subpass = Subpass::from(render_pass.clone(), 0).unwrap();
+        let pipeline = GraphicsPipeline::start()
+            .input_assembly_state(InputAssemblyState::new()) // triangle_list
+            .viewport_state(ViewportState::viewport_dynamic_scissor_irrelevant())
+            .vertex_input_state(BuffersDefinition::new()
+                                .vertex::<Vertex>())
+            .vertex_shader(self.vertex_shader.entry_point("main").unwrap(), ())
+            .fragment_shader(self.fragment_shader.entry_point("main").unwrap(), ())
+            .render_pass(subpass)
             .blend_alpha_blending()
-            .render_pass(Subpass::from(render_pass.clone(), 0).unwrap())
             .build(device.clone())
-            .expect("Unable to create text pipeline")
-        );
+            .expect("Unable to create text pipeline");
 
         self.pipeline = Some(pipeline);
         self.framebuffers = Some(framebuffers);
@@ -315,10 +293,10 @@ impl TextContext {
         queue: Arc<Queue>,
         font_size: f32,
     ) -> Self {
-        let vertex_shader = vertex_shader::Shader::load(device.clone())
+        let vertex_shader = shaders::load_vs(device.clone())
             .expect("unable to load text vertex shader");
         
-        let fragment_shader = fragment_shader::Shader::load(device.clone())
+        let fragment_shader = shaders::load_fs(device.clone())
             .expect("unable to load fragment shader");
 
         let font = FontArc::try_from_slice(include_bytes!("../../fonts/Hack-Regular.ttf"))
@@ -366,6 +344,7 @@ impl TextContext {
             uniform_buffer_pool,
             vertex_buffer: None, 
             index_buffer: None,
+            indices_len: 0,
             dimensions: [0.0, 0.0],
             descriptor_set: None,
             vertex_shader,
@@ -402,7 +381,7 @@ impl TextContext {
         }
     }
 
-    fn upload_texture(&self) -> Arc<ImageView<Arc<ImmutableImage>>> {
+    fn upload_texture(&self) -> Arc<ImageView<ImmutableImage>> {
         let buffer = CpuAccessibleBuffer::<[u8]>::from_iter( 
             self.device.clone(),
             BufferUsage::transfer_source(),
@@ -424,9 +403,12 @@ impl TextContext {
             self.queue.clone(),
         ).expect("Unable to create unintialised immutable image");
 
+        // force immediate load
+        // TODO: This is sloppy???
         drop(_future);
         
-        ImageView::new(cache_tex).unwrap()
+        ImageView::new(cache_tex)
+            .expect("Unable to build ImageView for cached texture in text context")
     }
 
     fn get_max_image_dimension(device: Arc<Device>) -> usize {
@@ -456,8 +438,9 @@ impl TextContext {
     }
 
     fn upload_vertices(&mut self, vertices: Vec<TextVertex>) {
-        let mut indices = vec!();
-        let mut quadrupled_verts = vec!();
+        let vertices_len = vertices.len();
+        let mut indices = Vec::with_capacity(vertices_len * 6);
+        let mut quadrupled_verts = Vec::with_capacity(vertices_len * 4);
         let mut i = 0;
 
         for v in vertices.iter() {
@@ -477,6 +460,7 @@ impl TextContext {
             indices.push(ic+3);
             i += 1;
         }
+        self.indices_len = indices.len();
 
         let (vertex_buffer, _vfuture) = ImmutableBuffer::from_iter(
             quadrupled_verts.into_iter(),
@@ -511,7 +495,9 @@ impl TextContext {
         };
         let cache_tex = self.texture.image.clone().unwrap();
         let pipeline = self.get_pipeline();
-        let layout = pipeline.layout().descriptor_set_layouts().get(0)
+        let layout = pipeline.layout()
+            .descriptor_set_layouts()
+            .get(0)
             .expect("could not retrieve pipeline descriptor set layout 0");
 
         let mut descriptor_set_builder = PersistentDescriptorSet::start(layout.clone());
@@ -526,10 +512,10 @@ impl TextContext {
     
         self.dimensions = dimensions;
         self.descriptor_set = Some(
-            Arc::new(descriptor_set_builder
+            descriptor_set_builder
                 .build()
-                .expect("TextContext: unable to create PersistentDescriptorSet 0")
-        ));
+                .expect("TextContext: unable to create PersistentDescriptorSet 0"));
+
         self.texture.dirty = false;
     }
 
@@ -547,11 +533,11 @@ impl TextContext {
     
         let framebuffers = self.get_framebuffers();
         let pipeline = self.get_pipeline();
-        let dimensions = framebuffers[image_num].dimensions();
-        let indices_count = self.index_buffer.clone().unwrap().len() as u32;
-        let indices = self.index_buffer.clone().unwrap();
-        let vertices = self.vertex_buffer.clone().unwrap();
+
         let descriptor_set = self.descriptor_set.clone().unwrap();
+        let vertices = self.vertex_buffer.clone().unwrap();
+        let indices = self.index_buffer.clone().unwrap();
+        let indices_len = self.indices_len as u32;
 
         builder 
             .begin_render_pass(
@@ -561,6 +547,13 @@ impl TextContext {
             ).expect("unable to begin text render pass");
 
         builder
+            .set_viewport(0,
+              [Viewport {
+                  origin: [0.0, 0.0],
+                  dimensions: self.dimensions,
+                  depth_range: 0.0..1.0,
+              }],
+            )
             .bind_pipeline_graphics(pipeline.clone())
             .bind_descriptor_sets(
                 PipelineBindPoint::Graphics,
@@ -569,8 +562,8 @@ impl TextContext {
                 descriptor_set.clone()
             )
             .bind_vertex_buffers(0, vertices.clone())
-            .bind_index_buffer(indices.clone())
-            .draw_indexed(indices_count, 1, 0, 0, 0)
+            .bind_index_buffer(indices)
+            .draw_indexed(indices_len, 1, 0, 0, 0)
             .unwrap();
 
         builder

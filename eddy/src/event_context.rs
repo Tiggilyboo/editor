@@ -42,12 +42,6 @@ pub const MAX_SIZE_LIMIT: usize = 1024 * 1024;
 
 const LINE_ENDING: &str = "\n";
 
-//TODO: tune this. a few ms can make a big difference. We may in the future
-//want to make this tuneable at runtime, or to be configured by the client.
-/// The render delay after an edit occurs; plugin updates received in this
-/// window will be sent to the view along with the edit.
-const RENDER_DELAY: Duration = Duration::from_millis(2);
-
 pub enum ActionTarget {
     View,
     Buffer,
@@ -344,7 +338,7 @@ impl<'a> EventContext<'a> {
     fn update_wrap_settings(&mut self, rewrap_immediately: bool) {
         // TODO
         let wrap_width = 0; //self.config.wrap_width;
-        let word_wrap = true; //self.config.word_wrap;
+        let word_wrap = false; //self.config.word_wrap;
         self.with_view(|view, text| view.update_wrap_settings(text, wrap_width, word_wrap));
         if rewrap_immediately {
             self.rewrap();

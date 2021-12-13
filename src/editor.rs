@@ -102,7 +102,6 @@ fn create_frontend_thread(
 
                             if let Ok(mut view_widget) = view_widget.try_lock() {
                                 view_widget.populate(&line_cache, styles.clone());
-                                view_widget.set_dirty(true);
                             }
                         }
                     }
@@ -114,6 +113,7 @@ fn create_frontend_thread(
                     }
                 },
                 Payload::Command(Command::Idle { .. }) => {
+                    println!("Idling...");
                     std::thread::sleep(std::time::Duration::from_millis(2));
                 },
                 Payload::Command(Command::ShowHover { req_id, content }) => {
@@ -243,9 +243,8 @@ impl EditorState {
         triggered_actions
     }
 
-    #[inline]
     fn process_action(&self, action: Action) {
-        //println!("Action: {:?}", action);
+        println!("Action: {:?}", action);
 
         if let Some(view_id) = self.focused_view_id {
             if let Some(mut ctx) = self.make_context(view_id) {
@@ -258,7 +257,8 @@ impl EditorState {
 
     pub fn process_input_actions(&mut self, state: &InputState) {
         if let Some(focused_view_id) = self.focused_view_id {
-            let mode = self.views.get(&focused_view_id)
+            let mode = self.views
+                .get(&focused_view_id)
                 .unwrap().borrow()
                 .get_mode();
             let input_actions = self.acquire_input_actions(mode, state);
@@ -288,7 +288,8 @@ impl EditorState {
     }
 
     pub fn requires_redraw(&self) -> bool {
-        self.view_widgets.iter().any(|(_, vw)| vw.lock().unwrap().dirty())
+        self.view_widgets.iter()
+            .any(|(_, vw)| vw.lock().unwrap().dirty())
     }
 
     pub fn do_new_view(&mut self, path: Option<String>) {

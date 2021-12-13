@@ -35,6 +35,10 @@ impl<T: Widget + Send + Sync> WidgetTree<T> {
             .for_each(|(_, w)| w.set_dirty(dirty));
     }
 
+    pub fn dirty(&self) -> bool {
+        self.widgets.iter().any(|(_, w)| w.dirty())
+    }
+
     pub fn len(&self) -> usize {
         self.widgets.len()
     }

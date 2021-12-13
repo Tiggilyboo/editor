@@ -109,16 +109,6 @@ pub enum AnnotationType {
     Other(String),
 }
 
-impl AnnotationType {
-    fn as_str(&self) -> &str {
-        match self {
-            AnnotationType::Find => "find",
-            AnnotationType::Selection => "selection",
-            AnnotationType::Other(ref s) => s,
-        }
-    }
-}
-
 /// Location and range of an annotation ([start_line, start_col, end_line, end_col]).
 /// Location and range of an annotation
 #[derive(Debug, Default, Clone, Copy, PartialEq)]

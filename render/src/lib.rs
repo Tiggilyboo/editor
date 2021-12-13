@@ -25,7 +25,7 @@ use vulkano::command_buffer::{
 use vulkano::device::Device;
 use vulkano::render_pass::{
     RenderPass,
-    FramebufferAbstract,
+    Framebuffer,
 };
 use vulkano::swapchain::{
     SwapchainCreationError,
@@ -44,7 +44,7 @@ use self::primitive::PrimitiveContext;
 pub struct Renderer {
     core: RenderCore,
     render_pass: Arc<RenderPass>,
-    swap_chain_frame_buffers: Vec<Arc<dyn FramebufferAbstract + Send + Sync>>,
+    swap_chain_frame_buffers: Vec<Arc<Framebuffer>>,
     previous_frame_end: Option<Box<dyn GpuFuture>>,
     recreate_swap_chain: bool,
 
@@ -179,16 +179,18 @@ impl Renderer {
         self.swap_chain_frame_buffers = self.core.create_framebuffers(&self.render_pass);
 
         println!("Setting text_context swap chain");
-        self.text_context.borrow_mut().set_swap_chain(
-            self.core.swap_chain.clone(),
-            &self.core.swap_chain_images,
-        );
+        self.text_context
+            .borrow_mut()
+            .set_swap_chain(
+                self.core.swap_chain.clone(),
+                &self.core.swap_chain_images);
 
         println!("Setting primitive_context swap chain");
-        self.primitive_context.borrow_mut().set_swap_chain(
-            self.core.swap_chain.clone(),
-            &self.core.swap_chain_images,
-        );
+        self.primitive_context
+            .borrow_mut()
+            .set_swap_chain(
+                self.core.swap_chain.clone(),
+                &self.core.swap_chain_images);
     }
 
     #[inline]

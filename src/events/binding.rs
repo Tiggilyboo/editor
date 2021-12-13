@@ -47,28 +47,6 @@ impl<T: Eq> Binding<T> {
 macro_rules! shift { () => {{ ModifiersState::SHIFT }}; }
 macro_rules! ctrl { () => {{ ModifiersState::CTRL }}; }
 macro_rules! alt { () => {{ ModifiersState::ALT }}; }
-macro_rules! no_mods { () => {{ ModifiersState::empty() }}; }
-
-macro_rules! key_binding {
-    ($key:ident
-     ,$mods:expr
-     ,$mode:ident
-     ;$($action:expr),*
-    ) => {{
-        let mut _mods: ModifiersState = $mods;
-        let _notmode = Mode::None;
-        let mut _mode: Mode = Mode::$mode;
-        let mut _actions: Vec<Action> = Vec::new();
-        $(_actions.push($action);)*
-        KeyBinding {
-            trigger: Key::KeyCode($key),
-            mods: _mods,
-            mode: _mode,
-            notmode: _notmode,
-            actions: _actions,
-        }
-    }};
-}
 
 macro_rules! bindings {
     (KeyBinding;
@@ -244,10 +222,15 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
         Escape, ~Mode::Normal; Action::SetMode(Mode::Normal);
         I, +Mode::Normal; Action::SetMode(Mode::Insert);
         V, +Mode::Normal; Action::SetMode(Mode::Visual);
-        V, shift!(), +Mode::Normal; Action::Move(Motion::First, Quantity::Character), Action::MoveSelection(Motion::Last, Quantity::Character), Action::SetMode(Mode::Visual);
+        V, shift!(), +Mode::Normal; Action::Move(Motion::Begin, Quantity::Line), Action::MoveSelection(Motion::End, Quantity::Line), Action::SetMode(Mode::Visual);
         V, ctrl!(), +Mode::Normal; Action::SetMode(Mode::Visual);
         A, +Mode::Normal; motion!(Forward), Action::SetMode(Mode::Insert);
+        A, shift!(), +Mode::Normal; Action::Move(Motion::End, Quantity::Line), Action::SetMode(Mode::Insert);
         S, +Mode::Normal; Action::Delete(Motion::Forward, Quantity::Character), Action::SetMode(Mode::Insert);
+        S, shift!(), +Mode::Normal; Action::Move(Motion::Begin, Quantity::Line), Action::MoveSelection(Motion::Last, Quantity::Line), 
+            Action::Delete(Motion::Forward, Quantity::Selection), Action::SetMode(Mode::Insert);
+        O, +Mode::Normal; Action::Move(Motion::End, Quantity::Line), Action::InsertNewline, Action::SetMode(Mode::Insert);
+        O, shift!(), +Mode::Normal; motion!(Above), Action::Move(Motion::End, Quantity::Line), Action::InsertNewline, Action::SetMode(Mode::Insert);
         D, +Mode::Normal; Action::SetMode(Mode::Delete);
         Colon, +Mode::Normal; Action::SetMode(Mode::Command);
         
@@ -279,6 +262,8 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
         Down, ctrl!(), +Mode::Insert; Action::Move(Motion::Below, Quantity::Word);
         Left, ctrl!(), +Mode::Insert; Action::Move(Motion::Backward, Quantity::Word);
         Right, ctrl!(), +Mode::Insert; Action::Move(Motion::Forward, Quantity::Word);
+        W, +Mode::Insert; Action::Move(Motion::Forward, Quantity::Word);
+        B, +Mode::Insert; Action::Move(Motion::Backward, Quantity::Word);
 
         // Line
         PageUp, +Mode::Normal; Action::Move(Motion::Above, Quantity::Page);
@@ -289,6 +274,7 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
         PageDown, +Mode::Insert; Action::Move(Motion::Below, Quantity::Page);
         Home, +Mode::Insert; Action::Move(Motion::First, Quantity::Line);
         End, +Mode::Insert; Action::Move(Motion::Last, Quantity::Line); 
+        G, shift!(), +Mode::Normal; Action::Move(Motion::Last, Quantity::Line);
 
         // Delete
         Left, +Mode::Delete; Action::Delete(Motion::Backward, Quantity::Character);
@@ -302,6 +288,15 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
         Right, +Mode::Visual; Action::MoveSelection(Motion::Forward, Quantity::Character);
         Up, +Mode::Visual; Action::MoveSelection(Motion::Above, Quantity::Character);
         Down, +Mode::Visual; Action::MoveSelection(Motion::Below, Quantity::Character);
+
+        Left, ctrl!(), +Mode::Visual; Action::MoveSelection(Motion::Backward, Quantity::Word);
+        Right, ctrl!(), +Mode::Visual; Action::MoveSelection(Motion::Forward, Quantity::Word);
+        Up, ctrl!(), +Mode::Visual; Action::MoveSelection(Motion::Above, Quantity::Word);
+        Down, ctrl!(), +Mode::Visual; Action::MoveSelection(Motion::Below, Quantity::Word);
+
+        W, +Mode::Visual; Action::MoveSelection(Motion::Forward, Quantity::Word);
+        D, +Mode::Visual; Action::Delete(Motion::Forward, Quantity::Selection);
+        D, shift!(), +Mode::Visual; Action::CollapseSelections, Action::Move(Motion::First, Quantity::Character), Action::MoveSelection(Motion::Last, Quantity::Line), Action::Delete(Motion::Forward, Quantity::Selection);
     );
     let mut insert_symbol_bindings = default_symbol_bindings();
     bindings.append(&mut insert_symbol_bindings);

@@ -66,4 +66,9 @@ impl PrimitiveWidget {
         self.size.x = width;
         self.size.y = height;
     }
+
+    pub fn set_position(&mut self, x: f32, y: f32) {
+        self.position.x = x;
+        self.position.y = y;
+    }
 }

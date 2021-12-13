@@ -7,17 +7,16 @@ pub struct Vertex {
 }
 vulkano::impl_vertex!(Vertex, position, colour);
 
-pub mod vertex_shader {
-    vulkano_shaders::shader!{
-        ty: "vertex",
-        path: "shaders/primitive_vertex.glsl",
-    }
-}
-
-pub mod fragment_shader {
-    vulkano_shaders::shader!{
-        ty: "fragment",
-        path: "shaders/primitive_frag.glsl",
+vulkano_shaders::shader!{
+    shaders: {
+        vs: {
+            ty: "vertex",
+            path: "shaders/primitive_vertex.glsl",
+        },
+        fs: {
+            ty: "fragment",
+            path: "shaders/primitive_frag.glsl",
+        }
     }
 }
 
