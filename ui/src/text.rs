@@ -136,7 +136,7 @@ impl Widget for TextWidget {
 
     fn queue_draw(&self, renderer: &mut Renderer) {
         renderer
-            .get_text_context().borrow()
+            .get_text_renderer().borrow()
             .queue_text(&self.text_group);
     }
 }

@@ -1,11 +1,14 @@
 mod shaders;
 mod font;
 mod unicode;
+mod text_group;
 
 use std::cell::RefCell;
 use std::sync::{Arc, Mutex};
 
 use self::shaders::Vertex;
+pub use text_group::TextGroup;
+pub use font::FontBounds;
 
 use super::uniform::{
     UniformTransform,
@@ -13,17 +16,10 @@ use super::uniform::{
 };
 use super::abstract_renderer::AbstractRenderer;
 
-use winit::window::Window;
-
 use vulkano::device::{
     Device,
     Queue,
 }; 
-use vulkano::format::{
-    Format,
-    ClearValue,
-};
-use vulkano::shader::ShaderModule;
 use vulkano::pipeline::{
     GraphicsPipeline,
     Pipeline,
@@ -39,21 +35,17 @@ use vulkano::descriptor_set::PersistentDescriptorSet;
 use vulkano::buffer::{
     BufferUsage,
     CpuAccessibleBuffer,
-    ImmutableBuffer,
     CpuBufferPool,
+    ImmutableBuffer,
 };
-use vulkano::swapchain::Swapchain;
 use vulkano::image::{
-    SwapchainImage,
     ImmutableImage,
     ImageDimensions,
     MipmapsCount,
     view::ImageView,
 };
-use vulkano::render_pass::{
-    Framebuffer,
-    Subpass,
-};
+use vulkano::render_pass::Subpass;
+use vulkano::format::Format;
 use vulkano::sampler::{
     Sampler,
     Filter,
@@ -61,15 +53,11 @@ use vulkano::sampler::{
     SamplerAddressMode,
 };
 use vulkano::command_buffer::{
+    SecondaryAutoCommandBuffer,
     AutoCommandBufferBuilder,
-    PrimaryAutoCommandBuffer,
-    SubpassContents,
-    pool::standard::StandardCommandPoolBuilder,
+    CommandBufferUsage,
 };  
 use glyph_brush::{
-    OwnedSection,
-    OwnedText,
-    Layout,
     GlyphBrush,
     GlyphBrushBuilder,
     BrushAction,
@@ -82,25 +70,14 @@ use glyph_brush::ab_glyph::{
     Rect,
     point,
 };
-use super::colour::ColourRGBA;
-pub use self::font::FontBounds;
 
-pub struct TextGroup {
-    section: OwnedSection,
-}
-
-pub struct TextContext {
-    device: Arc<Device>,
+pub struct TextRenderer {
     queue: Arc<Queue>,
-    pipeline: Option<Arc<GraphicsPipeline>>, 
-    framebuffers: Option<Vec<Arc<Framebuffer>>>,
+    pipeline: Arc<GraphicsPipeline>, 
     uniform_buffer_pool: CpuBufferPool<UniformTransform>,
     vertex_buffer: Option<Arc<ImmutableBuffer<[Vertex]>>>,
     index_buffer: Option<Arc<ImmutableBuffer<[u16]>>>,
     indices_len: usize,
-    
-    vertex_shader: Arc<ShaderModule>,
-    fragment_shader: Arc<ShaderModule>,
     
     glyph_brush: RefCell<GlyphBrush<TextVertex>>,
     font_bounds: Arc<Mutex<FontBounds>>,
@@ -193,111 +170,31 @@ pub fn to_verts(text_vertex: &TextVertex) -> [Vertex; 4] {
     ]
 }
 
-impl TextGroup {
-    pub fn new() -> Self {
-       let section = OwnedSection::default()
-           .with_layout(Layout::default_single_line());
-
-       Self {
-           section,
-       }
-    }
-
-    fn get_section(&self) -> &OwnedSection {
-        &self.section
-    }
-
-    pub fn push(&mut self, text: String, scale: f32, colour: ColourRGBA) {
-        let new_text = OwnedText::new(&text)
-          .with_color(colour)
-          .with_scale(scale);
-
-        self.section.text.push(new_text);
-    }
-
-    pub fn clear(&mut self) {
-        self.section.text = vec![];
-    }
-
-    pub fn screen_position(&self) -> (f32, f32) {
-        self.section.screen_position
-    }
-
-    pub fn set_screen_position(&mut self, x: f32, y: f32) {
-        self.section.screen_position = (x, y);
-    }
-
-    pub fn bounds(&self) -> (f32, f32) {
-        self.section.bounds
-    }
-}
-
-impl AbstractRenderer for TextContext {
+impl AbstractRenderer for TextRenderer {
     fn get_pipeline(&self) -> Arc<GraphicsPipeline> {
         self.pipeline.clone()
-            .expect("Uninitialised pipeline")
     }
 
-    fn get_framebuffers(&self) -> Vec<Arc<Framebuffer>> {
-        self.framebuffers.clone()
-            .expect("Uninitialised framebuffers")
-    }
-    fn set_swap_chain(&mut self, swapchain: Arc<Swapchain<Window>>, images: &Vec<Arc<SwapchainImage<Window>>>) {
-        let device = &self.device;
+    fn new(queue: Arc<Queue>, subpass: Subpass) -> Self {
+        let font_size = 21.0;
 
-        let render_pass = vulkano::single_pass_renderpass!(device.clone(),
-            attachments: {
-                color: {
-                    load: Load,
-                    store: Store,
-                    format: swapchain.format(),
-                    samples: 1,
-                }
-            },
-            pass: {
-                color: [color],
-                depth_stencil: {}
-            }
-        ).expect("Unable to create single renderpass for text context");
+        let vertex_shader = shaders::load_vs(queue.device().clone())
+            .expect("unable to load primitive vertex shader");
 
-        let framebuffers = images.iter().map(|image| {
-            let view = ImageView::new(image.clone()).unwrap();
-            Framebuffer::start(render_pass.clone())
-            .add(view)
-            .unwrap()
-            .build()
-            .unwrap()
-        }).collect::<Vec<_>>();
+        let fragment_shader = shaders::load_fs(queue.device().clone())
+            .expect("unable to load primitive fragment shader");
 
-        let subpass = Subpass::from(render_pass.clone(), 0).unwrap();
         let pipeline = GraphicsPipeline::start()
             .input_assembly_state(InputAssemblyState::new()) // triangle_list
             .viewport_state(ViewportState::viewport_dynamic_scissor_irrelevant())
             .vertex_input_state(BuffersDefinition::new()
                                 .vertex::<Vertex>())
-            .vertex_shader(self.vertex_shader.entry_point("main").unwrap(), ())
-            .fragment_shader(self.fragment_shader.entry_point("main").unwrap(), ())
+            .vertex_shader(vertex_shader.entry_point("main").unwrap(), ())
+            .fragment_shader(fragment_shader.entry_point("main").unwrap(), ())
             .render_pass(subpass)
             .blend_alpha_blending()
-            .build(device.clone())
+            .build(queue.device().clone())
             .expect("Unable to create text pipeline");
-
-        self.pipeline = Some(pipeline);
-        self.framebuffers = Some(framebuffers);
-    }
-}
-
-impl TextContext {
-    pub fn new(
-        device: Arc<Device>, 
-        queue: Arc<Queue>,
-        font_size: f32,
-    ) -> Self {
-        let vertex_shader = shaders::load_vs(device.clone())
-            .expect("unable to load text vertex shader");
-        
-        let fragment_shader = shaders::load_fs(device.clone())
-            .expect("unable to load fragment shader");
 
         let font = FontArc::try_from_slice(include_bytes!("../../fonts/Hack-Regular.ttf"))
             .expect("unable to load font");
@@ -314,10 +211,10 @@ impl TextContext {
         let cache_dimensions = (cache_dimensions.0 as usize, cache_dimensions.1 as usize);
         let cache_pixel_buffer = vec![0; cache_dimensions.0 * cache_dimensions.1];
 
-        let uniform_buffer_pool = CpuBufferPool::new(device.clone(), BufferUsage::uniform_buffer());
+        let uniform_buffer_pool = CpuBufferPool::new(queue.device().clone(), BufferUsage::uniform_buffer());
 
         let sampler = Sampler::new(
-            device.clone(),
+            queue.device().clone(),
             Filter::Linear,
             Filter::Linear,
             MipmapMode::Nearest,
@@ -327,8 +224,7 @@ impl TextContext {
             0.0, 1.0, 0.0, 0.0
         ).unwrap();
 
-        TextContext {
-            device: device.clone(),
+        TextRenderer {
             queue,
             glyph_brush,
             font_bounds,
@@ -339,19 +235,58 @@ impl TextContext {
                 sampler,
                 dirty: true,
             },
-            pipeline: None,
-            framebuffers: None,
+            pipeline,
             uniform_buffer_pool,
             vertex_buffer: None, 
             index_buffer: None,
             indices_len: 0,
             dimensions: [0.0, 0.0],
             descriptor_set: None,
-            vertex_shader,
-            fragment_shader,
         }
     }
+    
+    fn draw<'a>(&'a mut self, viewport_dimensions: [u32; 2]) -> SecondaryAutoCommandBuffer {
+        self.process();
+        self.check_recreate_descriptor_set(viewport_dimensions);
 
+        let pipeline = self.get_pipeline();
+        let descriptor_set = self.descriptor_set.clone().unwrap();
+        let vertices = self.vertex_buffer.clone().unwrap();
+        let indices = self.index_buffer.clone().unwrap();
+        let indices_len = self.indices_len as u32;
+
+        let mut builder = AutoCommandBufferBuilder::secondary_graphics(
+            self.queue.device().clone(),
+            self.queue.family(),
+            CommandBufferUsage::MultipleSubmit,
+            pipeline.subpass().clone()
+        ).unwrap();
+
+        builder
+            .set_viewport(0,
+              [Viewport {
+                  origin: [0.0, 0.0],
+                  dimensions: self.dimensions,
+                  depth_range: 0.0..1.0,
+              }],
+            )
+            .bind_pipeline_graphics(pipeline.clone())
+            .bind_descriptor_sets(
+                PipelineBindPoint::Graphics,
+                pipeline.layout().clone(),
+                0,
+                descriptor_set.clone()
+            )
+            .bind_vertex_buffers(0, vertices.clone())
+            .bind_index_buffer(indices)
+            .draw_indexed(indices_len, 1, 0, 0, 0)
+            .unwrap();
+
+        builder.build().unwrap()
+    }
+}
+
+impl TextRenderer {
     pub fn queue_text(&self, text: &TextGroup) {
         self.glyph_brush.borrow_mut().queue(text.get_section());
     }
@@ -383,7 +318,7 @@ impl TextContext {
 
     fn upload_texture(&self) -> Arc<ImageView<ImmutableImage>> {
         let buffer = CpuAccessibleBuffer::<[u8]>::from_iter( 
-            self.device.clone(),
+            self.queue.device().clone(),
             BufferUsage::transfer_source(),
             true,
             self.texture.cache_pixel_buffer.iter().cloned(),
@@ -419,7 +354,7 @@ impl TextContext {
     }
 
     fn resize_cache(&mut self, width: usize, height: usize) {
-        let max_image_dimension = Self::get_max_image_dimension(self.device.clone());
+        let max_image_dimension = Self::get_max_image_dimension(self.queue.device().clone());
         let glyph_dimensions = self.glyph_brush.borrow().texture_dimensions();
         let cache_dimensions = if (width > max_image_dimension || height > max_image_dimension)
             && ((glyph_dimensions.0 as usize) < max_image_dimension || (glyph_dimensions.1 as usize) < max_image_dimension)
@@ -466,24 +401,23 @@ impl TextContext {
             quadrupled_verts.into_iter(),
             BufferUsage::vertex_buffer(),
             self.queue.clone(),
-        ).expect("TextContext: unable to create vertex buffer");
+        ).expect("TextRenderer: unable to create vertex buffer");
 
         let (index_buffer, _ifuture) = ImmutableBuffer::from_iter(
             indices.into_iter(),
             BufferUsage::index_buffer(),
             self.queue.clone(),
-        ).expect("TextContext: unable to create index buffer");
+        ).expect("TextRenderer: unable to create index buffer");
 
          
         self.vertex_buffer = Some(vertex_buffer);
         self.index_buffer = Some(index_buffer);
     }
 
-    fn check_recreate_descriptor_set(&mut self, image_num: usize) {
+    fn check_recreate_descriptor_set(&mut self, dimensions: [u32; 2]) {
         if self.texture.image.is_none() {
             return
         }
-        let dimensions = self.get_framebuffers()[image_num].dimensions(); 
         let dimensions = [dimensions[0] as f32, dimensions[1] as f32];
         if !self.texture.dirty && self.dimensions[0] == dimensions[0] && self.dimensions[1] == dimensions[1] {
             return
@@ -491,7 +425,7 @@ impl TextContext {
 
         let transform = calculate_transform(0.0, dimensions[0], 0.0, dimensions[1], 1.0, -1.0);
         let uniform_buffer = {
-            Arc::new(self.uniform_buffer_pool.next(transform).unwrap())
+            self.uniform_buffer_pool.next(transform).unwrap()
         };
         let cache_tex = self.texture.image.clone().unwrap();
         let pipeline = self.get_pipeline();
@@ -514,70 +448,13 @@ impl TextContext {
         self.descriptor_set = Some(
             descriptor_set_builder
                 .build()
-                .expect("TextContext: unable to create PersistentDescriptorSet 0"));
+                .expect("TextRenderer: unable to create PersistentDescriptorSet 0"));
 
         self.texture.dirty = false;
     }
 
-    fn draw_internal<'a>(&'a mut self, 
-        builder: &'a mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer, StandardCommandPoolBuilder>, 
-        image_num: usize,
-    ) -> bool {
-        self.check_recreate_descriptor_set(image_num);
 
-        if self.vertex_buffer.is_none()
-        || self.index_buffer.is_none()
-        || self.texture.image.is_none() {
-            return false;
-        }
-    
-        let framebuffers = self.get_framebuffers();
-        let pipeline = self.get_pipeline();
-
-        let descriptor_set = self.descriptor_set.clone().unwrap();
-        let vertices = self.vertex_buffer.clone().unwrap();
-        let indices = self.index_buffer.clone().unwrap();
-        let indices_len = self.indices_len as u32;
-
-        builder 
-            .begin_render_pass(
-                framebuffers[image_num].clone(), 
-                SubpassContents::Inline,
-                vec![ClearValue::None],
-            ).expect("unable to begin text render pass");
-
-        builder
-            .set_viewport(0,
-              [Viewport {
-                  origin: [0.0, 0.0],
-                  dimensions: self.dimensions,
-                  depth_range: 0.0..1.0,
-              }],
-            )
-            .bind_pipeline_graphics(pipeline.clone())
-            .bind_descriptor_sets(
-                PipelineBindPoint::Graphics,
-                pipeline.layout().clone(),
-                0,
-                descriptor_set.clone()
-            )
-            .bind_vertex_buffers(0, vertices.clone())
-            .bind_index_buffer(indices)
-            .draw_indexed(indices_len, 1, 0, 0, 0)
-            .unwrap();
-
-        builder
-            .end_render_pass()
-            .expect("unable to end text render pass");
-
-        true
-    }
-
-    pub fn draw_text<'a>(&'a mut self, 
-        builder: &'a mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer, StandardCommandPoolBuilder>,
-        image_num: usize,
-    ) -> bool {
-
+    pub fn process<'a>(&'a mut self) {
         let cache_dimensions = self.texture.cache_dimensions;
         let cache_pixel_buffer = &mut self.texture.cache_pixel_buffer;
         let mut updated_texture = false;
@@ -602,12 +479,10 @@ impl TextContext {
                 self.resize_cache(suggested.0 as usize, suggested.1 as usize);
             },
         };
-        if updated_texture {
+        if updated_texture || self.texture.image.is_none() {
             self.texture.image = Some(self.upload_texture());
             self.texture.dirty = true;
         }
-
-        self.draw_internal(builder, image_num)
     }
 }
 

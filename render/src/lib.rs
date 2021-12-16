@@ -21,11 +21,13 @@ use vulkano::command_buffer::{
     PrimaryAutoCommandBuffer,
     AutoCommandBufferBuilder,
     CommandBufferUsage,
+    SubpassContents,
 };
 use vulkano::device::Device;
 use vulkano::render_pass::{
     RenderPass,
     Framebuffer,
+    Subpass,
 };
 use vulkano::swapchain::{
     SwapchainCreationError,
@@ -38,46 +40,47 @@ use vulkano::sync::{
 use winit::event_loop::EventLoop;
 
 use self::core::RenderCore;
-use self::text::TextContext;
-use self::primitive::PrimitiveContext;
+use self::text::TextRenderer;
+use self::primitive::PrimitiveRenderer;
 
 pub struct Renderer {
     core: RenderCore,
     render_pass: Arc<RenderPass>,
-    swap_chain_frame_buffers: Vec<Arc<Framebuffer>>,
+    frame_buffers: Vec<Arc<Framebuffer>>,
     previous_frame_end: Option<Box<dyn GpuFuture>>,
     recreate_swap_chain: bool,
 
-    text_context: Arc<RefCell<TextContext>>,
-    primitive_context: Arc<RefCell<PrimitiveContext>>,
+    text_renderer: Arc<RefCell<TextRenderer>>,
+    primitive_renderer: Arc<RefCell<PrimitiveRenderer>>,
 }
 
 impl Renderer {
-    pub fn new<L>(events_loop: &EventLoop<L>, title: &str, font_size: f32) -> Self {
+    pub fn new<L>(events_loop: &EventLoop<L>, title: &str) -> Self {
         let core = RenderCore::new(events_loop, title);
         let render_pass = core.create_render_pass(None);
-        let swap_chain_frame_buffers = core.create_framebuffers(&render_pass);
+        let frame_buffers = core.create_framebuffers(&render_pass);
 
         let device = core.get_device();
         let graphics_queue = core.get_graphics_queue();
 
-        let mut text_context = TextContext::new(device.clone(), graphics_queue.clone(), font_size); 
-        text_context.set_swap_chain(core.swap_chain.clone(), &core.swap_chain_images);
-        let text_context = Arc::new(RefCell::new(text_context));
+        let subpass = Subpass::from(render_pass.clone(), 0).unwrap();
+        let text_renderer = Arc::new(RefCell::new(
+                TextRenderer::new(graphics_queue.clone(), subpass.clone())
+        )); 
 
-        let mut primitive_context = PrimitiveContext::new(device.clone(), graphics_queue.clone());
-        primitive_context.set_swap_chain(core.swap_chain.clone(), &core.swap_chain_images);
-        let primitive_context = Arc::new(RefCell::new(primitive_context));
+        let primitive_renderer = Arc::new(RefCell::new(
+                PrimitiveRenderer::new(graphics_queue.clone(), subpass.clone())
+        ));
 
         let device: &Arc<Device> = &device.clone();
         let previous_frame_end = Some(Self::create_sync_objects(device));
 
         Self {
             core,
-            swap_chain_frame_buffers,
+            frame_buffers,
 
-            text_context,
-            primitive_context,
+            text_renderer,
+            primitive_renderer,
 
             render_pass,
 
@@ -90,12 +93,12 @@ impl Renderer {
         Box::new(sync::now(device.clone())) as Box<dyn GpuFuture>
     }
 
-    pub fn get_text_context(&mut self) -> Arc<RefCell<TextContext>> {
-        self.text_context.clone()
+    pub fn get_text_renderer(&mut self) -> Arc<RefCell<TextRenderer>> {
+        self.text_renderer.clone()
     }
 
-    pub fn get_primitive_context(&mut self) -> Arc<RefCell<PrimitiveContext>> {
-        self.primitive_context.clone()
+    pub fn get_primitive_renderer(&mut self) -> Arc<RefCell<PrimitiveRenderer>> {
+        self.primitive_renderer.clone()
     }
 
     pub fn draw_frame(&mut self) { 
@@ -161,7 +164,7 @@ impl Renderer {
     }
 
     fn recreate_swap_chain(&mut self) {
-        let dimensions: [u32; 2] = self.core.get_window().inner_size().into();
+        let dimensions = self.get_window_dimensions();
         let (new_swapchain, new_images) = match self.core.swap_chain
             .recreate()
             .dimensions(dimensions)
@@ -175,41 +178,39 @@ impl Renderer {
         self.core.swap_chain_images = new_images;
         
         self.render_pass = self.core.create_render_pass(None);
-
-        self.swap_chain_frame_buffers = self.core.create_framebuffers(&self.render_pass);
-
-        println!("Setting text_context swap chain");
-        self.text_context
-            .borrow_mut()
-            .set_swap_chain(
-                self.core.swap_chain.clone(),
-                &self.core.swap_chain_images);
-
-        println!("Setting primitive_context swap chain");
-        self.primitive_context
-            .borrow_mut()
-            .set_swap_chain(
-                self.core.swap_chain.clone(),
-                &self.core.swap_chain_images);
+        self.frame_buffers = self.core.create_framebuffers(&self.render_pass);
     }
 
-    #[inline]
-    fn create_command_buffer(&mut self, image_index: usize) -> Option<Arc<PrimaryAutoCommandBuffer>> {
+    fn create_command_buffer(&mut self, image_idx: usize) -> Option<Arc<PrimaryAutoCommandBuffer>> {
         let mut builder = AutoCommandBufferBuilder::primary(
                 self.core.get_device().clone(),
                 self.core.get_graphics_queue().family(),
                 CommandBufferUsage::OneTimeSubmit,
         ).expect("unable to create AutoCommandBufferBuilder");
 
-        self.primitive_context
-            .borrow_mut()
-            .draw_primitives(&mut builder, image_index);
+        builder.begin_render_pass(
+            self.frame_buffers[image_idx].clone(),
+            SubpassContents::SecondaryCommandBuffers,
+            vec![[0.0; 4].into()],
+        ).unwrap();
 
-        self.text_context
+        let dimensions = self.get_window_dimensions();
+        
+        let primitive_buffer = self.primitive_renderer
             .borrow_mut()
-            .draw_text(&mut builder, image_index);
-            
-        let command_buffer = builder.build()
+            .draw(dimensions);
+
+        let text_buffer = self.text_renderer
+            .borrow_mut()
+            .draw(dimensions);
+
+        builder.execute_commands(primitive_buffer).unwrap();
+        builder.execute_commands(text_buffer).unwrap();
+
+        builder.end_render_pass().unwrap();
+
+        let command_buffer = builder
+            .build()
             .expect("unable to build command buffer from builder");
 
         Some(Arc::new(command_buffer))
@@ -218,6 +219,11 @@ impl Renderer {
     pub fn recreate_swap_chain_next_frame(&mut self) {
         self.recreate_swap_chain = true;
     }
+
+    pub fn get_window_dimensions(&self) -> [u32; 2] {
+        self.core.get_window().inner_size().into()
+    }
+
 
     pub fn get_screen_dimensions(&self) -> [f32; 2] {
         self.core.get_window().inner_size().into()

@@ -258,12 +258,12 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
         Down, ctrl!(), +Mode::Normal; Action::Move(Motion::Below, Quantity::Word);
         Left, ctrl!(), +Mode::Normal; Action::Move(Motion::Backward, Quantity::Word);
         Right, ctrl!(), +Mode::Normal; Action::Move(Motion::Forward, Quantity::Word);
+        W, +Mode::Normal; Action::Move(Motion::Forward, Quantity::Word);
+        B, +Mode::Normal; Action::Move(Motion::Backward, Quantity::Word);
         Up, ctrl!(), +Mode::Insert; Action::Move(Motion::Above, Quantity::Word);
         Down, ctrl!(), +Mode::Insert; Action::Move(Motion::Below, Quantity::Word);
         Left, ctrl!(), +Mode::Insert; Action::Move(Motion::Backward, Quantity::Word);
         Right, ctrl!(), +Mode::Insert; Action::Move(Motion::Forward, Quantity::Word);
-        W, +Mode::Insert; Action::Move(Motion::Forward, Quantity::Word);
-        B, +Mode::Insert; Action::Move(Motion::Backward, Quantity::Word);
 
         // Line
         PageUp, +Mode::Normal; Action::Move(Motion::Above, Quantity::Page);

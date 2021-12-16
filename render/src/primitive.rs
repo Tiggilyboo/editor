@@ -1,13 +1,9 @@
 mod shaders;
 
 use std::sync::Arc;
-use winit::window::Window;
 
 use vulkano::{
-    device::{
-        Device,
-        Queue,
-    },
+    device::Queue,
     descriptor_set::PersistentDescriptorSet,
     buffer::{
         BufferUsage,
@@ -15,10 +11,9 @@ use vulkano::{
         CpuBufferPool,
     },
     command_buffer::{
-        pool::standard::StandardCommandPoolBuilder,
-        PrimaryAutoCommandBuffer,
+        SecondaryAutoCommandBuffer,
         AutoCommandBufferBuilder,
-        SubpassContents,
+        CommandBufferUsage,
     },
     pipeline::{
         graphics::viewport::{
@@ -31,16 +26,7 @@ use vulkano::{
         Pipeline,
         PipelineBindPoint,
     },
-    render_pass::{
-        Framebuffer,
-        Subpass,
-    },
-    swapchain::Swapchain,
-    shader::ShaderModule,
-    image::{
-        SwapchainImage,
-        view::ImageView,
-    },
+    render_pass::Subpass,
 };
 
 use self::shaders::Vertex;
@@ -58,19 +44,14 @@ pub struct Primitive {
     pub colour: [f32; 4],
 }
 
-pub struct PrimitiveContext {
-    device: Arc<Device>,
+pub struct PrimitiveRenderer {
     queue: Arc<Queue>,
-    pipeline: Option<Arc<GraphicsPipeline>>,
-    framebuffers: Option<Vec<Arc<Framebuffer>>>,
+    pipeline: Arc<GraphicsPipeline>,
     
     uniform_buffer_pool: CpuBufferPool<UniformTransform>,
     vertex_buffer: Option<Arc<ImmutableBuffer<[Vertex]>>>,
     index_buffer: Option<Arc<ImmutableBuffer<[u16]>>>,
     indices_len: usize,
-
-    vertex_shader: Arc<ShaderModule>,
-    fragment_shader: Arc<ShaderModule>,
 
     descriptor_set: Option<Arc<PersistentDescriptorSet>>,
     dimensions: [f32; 2],
@@ -80,91 +61,93 @@ pub struct PrimitiveContext {
     pristine: bool,
 }
 
-impl AbstractRenderer for PrimitiveContext {
-    fn get_pipeline(&self) -> Arc<GraphicsPipeline> {
-        self.pipeline.clone()
-            .expect("Uninitialised pipeline")
-    }
+impl AbstractRenderer for PrimitiveRenderer {
+    fn new(queue: Arc<Queue>, subpass: Subpass) -> Self {
+        
+        let vertex_shader = shaders::load_vs(queue.device().clone())
+            .expect("unable to load primitive vertex shader");
 
-    fn get_framebuffers(&self) -> Vec<Arc<Framebuffer>> {
-        self.framebuffers.clone()
-            .expect("Uninitialised frame buffers")
-    }
+        let fragment_shader = shaders::load_fs(queue.device().clone())
+            .expect("unable to load primitive fragment shader");
 
-    fn set_swap_chain(&mut self, swapchain: Arc<Swapchain<Window>>, images: &Vec<Arc<SwapchainImage<Window>>>) {
-        let device = &self.device;
-
-        let render_pass = vulkano::single_pass_renderpass!(device.clone(),
-                attachments: {
-                    color: {
-                        load: Clear,
-                        store: Store,
-                        format: swapchain.format(),
-                        samples: 1,
-                    }
-                },
-                pass: {
-                    color: [color],
-                    depth_stencil: {}
-                }
-            ).unwrap();
-
-        let framebuffers = images.iter().map(|image| {
-            let view = ImageView::new(image.clone()).unwrap();
-                Framebuffer::start(render_pass.clone())
-                .add(view).unwrap()
-                .build()
-                .expect("Framebuffer could not be created for renderpass in ImageView for primitive")
-        }).collect::<Vec<_>>();
-
-        let subpass = Subpass::from(render_pass.clone(), 0).unwrap();
-
+        let uniform_buffer_pool = CpuBufferPool::new(queue.device().clone(), BufferUsage::uniform_buffer());
+ 
         let pipeline = GraphicsPipeline::start()
             .input_assembly_state(InputAssemblyState::new()) // triangle_list
             .viewport_state(ViewportState::viewport_dynamic_scissor_irrelevant())
             .vertex_input_state(BuffersDefinition::new().vertex::<Vertex>())
-            .vertex_shader(self.vertex_shader.entry_point("main").unwrap(), ())
-            .fragment_shader(self.fragment_shader.entry_point("main").unwrap(), ())
+            .vertex_shader(vertex_shader.entry_point("main").unwrap(), ())
+            .fragment_shader(fragment_shader.entry_point("main").unwrap(), ())
             .render_pass(subpass)
             .blend_alpha_blending()
-            .build(device.clone())
+            .build(queue.device().clone())
             .expect("Unable to create primitive pipeline");
 
-        self.pipeline = Some(pipeline);
-        self.framebuffers = Some(framebuffers);
-    }
-}
-
-impl PrimitiveContext {
-    pub fn new(device: Arc<Device>, queue: Arc<Queue>) -> Self {
-
-        let vertex_shader = shaders::load_vs(device.clone())
-            .expect("unable to load primitive vertex shader");
-
-        let fragment_shader = shaders::load_fs(device.clone())
-            .expect("unable to load primitive fragment shader");
-
-        let uniform_buffer_pool = CpuBufferPool::new(device.clone(), BufferUsage::uniform_buffer());
- 
-        PrimitiveContext {
-            device: device.clone(),
+        PrimitiveRenderer {
             queue,
-            fragment_shader,
-            vertex_shader,
-            pipeline: None,
-            framebuffers: None,
+            pipeline,
             uniform_buffer_pool,
-            primitives: Vec::new(),
             vertex_buffer: None,
             index_buffer: None,
             indices_len: 0,
             descriptor_set: None,
             dimensions: [0.0, 0.0],
+            primitives: Vec::new(),
             primitives_len: 0,
             pristine: false,
         }
     }
+    
+    fn draw<'a>(&'a mut self, viewport_dimensions: [u32; 2]) -> SecondaryAutoCommandBuffer {
+        self.process();
+        self.check_recreate_descriptor_set(viewport_dimensions);
 
+        let pipeline = self.get_pipeline();
+        let indices = self.index_buffer.clone().unwrap();
+        let vertices = self.vertex_buffer.clone().unwrap();
+        let indices_len = self.indices_len as u32;
+
+        let mut builder = AutoCommandBufferBuilder::secondary_graphics(
+            self.queue.device().clone(),
+            self.queue.family(),
+            CommandBufferUsage::MultipleSubmit,
+            self.pipeline.subpass().clone()
+        ).unwrap();
+
+        builder
+            .set_viewport(0,
+              [Viewport {
+                  origin: [0.0, 0.0],
+                  dimensions: self.dimensions,
+                  depth_range: 0.0..1.0,
+              }],
+            )
+            .bind_pipeline_graphics(pipeline.clone())
+            .bind_descriptor_sets(
+                PipelineBindPoint::Graphics,
+                pipeline.layout().clone(),
+                0,
+                self.descriptor_set.clone().unwrap(),
+            )
+            .bind_vertex_buffers(0, vertices.clone())
+            .bind_index_buffer(indices.clone())
+            .draw_indexed(indices_len, 1, 0, 0, 0)
+            .unwrap();
+
+        let buffer = builder.build().unwrap();
+
+        self.primitives.clear();
+        self.pristine = true;
+
+        buffer
+    }
+
+    fn get_pipeline(&self) -> Arc<GraphicsPipeline> {
+        self.pipeline.clone()
+    }
+}
+
+impl PrimitiveRenderer {
     pub fn queue_primitive(&mut self, primitive: Primitive) {
         self.primitives.push(primitive);
         self.pristine = false;
@@ -223,59 +206,27 @@ impl PrimitiveContext {
         self.index_buffer = Some(index_buffer);
     }
 
-    fn draw_internal<'a>(&'a mut self,
-        builder: &'a mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer, StandardCommandPoolBuilder>,
-        image_num: usize,
-    ) {
-        self.check_recreate_descriptor_set(image_num);
-    
-        if self.vertex_buffer.is_none()
-        || self.index_buffer.is_none() 
-        || self.descriptor_set.is_none() {
-            return;
+    fn process(&mut self) {
+        let len_prims = self.primitives.len();
+        self.primitives_len = len_prims;
+
+        let mut verts: Vec<Vertex> = Vec::with_capacity(len_prims * 4);
+        let mut indices: Vec<u16> = Vec::with_capacity(len_prims * 6);
+        let mut i: u16 = 0;
+
+        // process the Primitives to vertices and indices...
+        for prim in self.primitives.iter() {
+            let (prim_verts, prim_indices) = Self::primitive_to_buffer(i, prim);
+
+            verts.extend(prim_verts.iter());
+            indices.extend(prim_indices.iter());
+            i += 1;
         }
 
-        let framebuffers = self.get_framebuffers();
-        let pipeline = self.get_pipeline();
-        let indices = self.index_buffer.clone().unwrap();
-        let vertices = self.vertex_buffer.clone().unwrap();
-        let indices_len = self.indices_len as u32;
-
-        builder
-            .begin_render_pass(
-                framebuffers[image_num].clone(),
-                SubpassContents::Inline,
-                vec![[0.0, 0.0, 0.0, 1.0].into()],
-            ).expect("unable to begin primitive render pass");
-
-        builder
-            .set_viewport(0,
-              [Viewport {
-                  origin: [0.0, 0.0],
-                  dimensions: self.dimensions,
-                  depth_range: 0.0..1.0,
-              }],
-            )
-            .bind_pipeline_graphics(pipeline.clone())
-            .bind_descriptor_sets(
-                PipelineBindPoint::Graphics,
-                pipeline.layout().clone(),
-                0,
-                self.descriptor_set.clone().unwrap(),
-            )
-            .bind_vertex_buffers(0, vertices.clone())
-            .bind_index_buffer(indices.clone())
-            .draw_indexed(indices_len, 1, 0, 0, 0)
-            .unwrap();
-
-        builder
-            .end_render_pass()
-            .expect("unable to end primitive render pass");
-    }
-
-    fn check_recreate_descriptor_set(&mut self, image_num: usize) {
-        let fbs = self.get_framebuffers();
-        let dimensions = fbs[image_num].dimensions(); 
+        self.upload_buffers(verts, indices); 
+    }   
+    
+    fn check_recreate_descriptor_set(&mut self, dimensions: [u32; 2]) {
         let dimensions = [dimensions[0] as f32, dimensions[1] as f32];
 
         if self.dimensions[0] == dimensions[0]
@@ -302,47 +253,9 @@ impl PrimitiveContext {
         self.descriptor_set = Some(
             descriptor_set_builder
                 .build()
-                .expect("PrimitiveContext: unable to create PersistentDescriptorSet 0"));
+                .expect("PrimitiveRenderer: unable to create PersistentDescriptorSet 0"));
 
         self.dimensions = dimensions;
-    }
-
-    pub fn draw_primitives<'a>(&'a mut self, 
-        builder: &'a mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer, StandardCommandPoolBuilder>,
-        image_num: usize,
-    ) -> bool {
-        if self.pristine {
-            self.draw_internal(builder, image_num);
-            return true;
-        }
-
-        let len_prims = self.primitives.len();
-        if len_prims == 0 {
-            return true;
-        }
-        self.primitives_len = len_prims;
-
-        let mut verts: Vec<Vertex> = Vec::with_capacity(len_prims * 4);
-        let mut indices: Vec<u16> = Vec::with_capacity(len_prims * 6);
-        let mut i: u16 = 0;
-
-        // process the Primitives to vertices and indices...
-        for prim in self.primitives.iter() {
-            let (prim_verts, prim_indices) = Self::primitive_to_buffer(i, prim);
-
-            verts.extend(prim_verts.iter());
-            indices.extend(prim_indices.iter());
-            i += 1;
-        }
-
-        self.upload_buffers(verts, indices); 
-
-        self.draw_internal(builder, image_num);
-
-        self.primitives.clear();
-        self.pristine = true;
-
-        true
     }
 
 }

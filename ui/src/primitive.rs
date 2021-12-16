@@ -38,7 +38,7 @@ impl Widget for PrimitiveWidget {
 
     fn queue_draw(&self, renderer: &mut Renderer) {
         renderer
-            .get_primitive_context().borrow_mut()
+            .get_primitive_renderer().borrow_mut()
             .queue_primitive(Primitive {
                 top_left: [self.position.x, self.position.y],
                 bottom_right: [

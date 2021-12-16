@@ -1,13 +1,14 @@
 use std::sync::Arc;
-use winit::window::Window;
-use vulkano::swapchain::Swapchain;
-use vulkano::image::swapchain::SwapchainImage;
-use vulkano::pipeline::GraphicsPipeline;
-use vulkano::render_pass::Framebuffer;
+use vulkano::{
+    device::Queue,
+    pipeline::GraphicsPipeline,
+    command_buffer::SecondaryAutoCommandBuffer,
+    render_pass::Subpass,
+};
 
 pub trait AbstractRenderer {
-    fn set_swap_chain(&mut self, swap_chain: Arc<Swapchain<Window>>, swap_chain_images: &Vec<Arc<SwapchainImage<Window>>>);
+    fn new(queue: Arc<Queue>, subpass: Subpass) -> Self;
+    fn draw<'a>(&'a mut self, viewport_dimensions: [u32; 2]) -> SecondaryAutoCommandBuffer;
     fn get_pipeline(&self) -> Arc<GraphicsPipeline>;
-    fn get_framebuffers(&self) -> Vec<Arc<Framebuffer>>;
 }
 
