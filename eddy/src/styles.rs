@@ -30,7 +30,7 @@ pub use syntect::highlighting::ThemeSettings;
 pub const N_RESERVED_STYLES: usize = 8;
 const SYNTAX_PRIORITY_DEFAULT: u16 = 200;
 const SYNTAX_PRIORITY_LOWEST: u16 = 0;
-pub const DEFAULT_THEME: &str = "InspiredGitHub";
+pub const DEFAULT_THEME: &str = "Solarized (dark)";
 
 #[derive(Clone, PartialEq, Eq, Default, Hash)]
 /// A mergeable style. All values except priority are optional.
@@ -97,7 +97,8 @@ impl Style {
 
     /// Returns the default style for the given `Theme`.
     pub fn default_for_theme(theme: &Theme) -> Self {
-        let fg = theme.settings.foreground.unwrap_or(Color::BLACK);
+        let fg = theme.settings.foreground.unwrap_or(Color::WHITE);
+        
         Style::new(
             SYNTAX_PRIORITY_LOWEST,
             Some(Self::rgba_from_syntect_color(fg)),
@@ -229,6 +230,10 @@ impl ThemeStyleMap {
 
     pub fn lookup(&self, style: &Style) -> Option<usize> {
         self.map.get(style).cloned()
+    }
+
+    pub fn get(&self, style_id: usize) -> Option<&Style> {
+        self.styles.get(style_id)
     }
 
     pub fn add(&mut self, style: &Style) -> usize {
@@ -445,6 +450,18 @@ impl ToRgbaFloat32 for u32 {
             bytes[1] as f32 / 255.0,
             bytes[2] as f32 / 255.0,
             bytes[3] as f32 / 255.0,
+        ]
+    }
+}
+
+impl ToRgbaFloat32 for syntect::highlighting::Color {
+    #[inline]
+    fn to_rgba_f32array(&self) -> [f32; 4] {
+        [
+            self.r as f32 / 255.0,
+            self.g as f32 / 255.0,
+            self.b as f32 / 255.0,
+            self.a as f32 / 255.0,
         ]
     }
 }

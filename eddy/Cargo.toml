@@ -14,7 +14,7 @@ version = "0.10"
 features = ["default"]
 
 [dependencies.syntect]
-version = "3.2"
+version = "4.6"
 default-features = false
 features = ["assets","dump-load-rs","dump-create"]
 

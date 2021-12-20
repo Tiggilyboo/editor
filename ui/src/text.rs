@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use crate::widget::{
     Widget,
     Position,
@@ -7,7 +6,7 @@ use crate::widget::{
 use eddy::{
     line_cache::Line,
     styles::{
-        Style,
+        ThemeStyleMap,
         ToRgbaFloat32,
     },
 };
@@ -40,7 +39,7 @@ impl TextWidget {
         self.dirty = true;
     }
 
-    pub fn from_line(line: &Line, scale: f32, colour: ColourRGBA, styles: &HashMap<usize, Style>) -> Self {
+    pub fn from_line(line: &Line, scale: f32, style_map: &ThemeStyleMap) -> Self {
         let mut text_group = TextGroup::new();
 
         if let Some(line_num) = line.ln {
@@ -49,10 +48,16 @@ impl TextWidget {
 
         if let Some(text) = &line.text {
             let text = text.trim_end_matches(|c| c == '\r' || c == '\n');
+            let default_style = style_map.get_default_style();
+            let def_fg_color = default_style.fg_color.unwrap().to_rgba_f32array();
+            let def_sel_color = if let Some(sel_color) = style_map.get_theme_settings().selection {
+                sel_color.to_rgba_f32array()
+            } else {
+                def_fg_color    
+            };
 
             if line.styles.len() > 2 {
                 println!("line style: {:?}", line.styles);
-                println!("Styles: {:?}", styles);
                 let mut ix = 0;
                 for triple in line.styles.chunks(3) {
                     let mut start = ix + triple[0];
@@ -73,40 +78,44 @@ impl TextWidget {
                     }
 
                     let content = &text[start as usize .. end as usize];
-
-                    if let Some(style) = styles.get(&style_id) {
-                        let fg_color = if let Some(fg) = style.fg_color {
-                            fg.to_rgba_f32array()
-                        } else {
-                            colour
-                        };
-
-                        // Draw starting portions of the line
-                        if start > 0 {
-                            let beginning = &text[0 .. start as usize];
-                            if beginning.len() > 1 {
-                                text_group.push(beginning.into(), scale, fg_color);
-                            }
-                        }
-                        // style selection
-                        text_group.push(content.into(), scale, fg_color);
-
-                        // Draw end portion of the line
-                        if end < text_len {
-                            let tail = &text[end as usize .. text_len];
-                            if tail.len() > 1 {
-                                text_group.push(tail.into(), scale, fg_color);
-                            }
-                        }
-
+                    
+                    let fg_color = if style_id == 0 {
+                        def_sel_color
                     } else {
-                        text_group.push(text.into(), scale, colour);
+                        if let Some(style) = style_map.get(style_id) {
+                            if let Some(fg) = style.fg_color {
+                                fg.to_rgba_f32array()
+                            } else {
+                                def_fg_color
+                            }
+                        } else {
+                            def_fg_color
+                        }
+                    };
+
+                    // Draw starting portions of the line
+                    if start > 0 {
+                        let beginning = &text[0 .. start as usize];
+                        if beginning.len() > 1 {
+                            text_group.push(beginning.into(), scale, def_fg_color);
+                        }
+                    }
+
+                    // style selection
+                    text_group.push(content.into(), scale, fg_color);
+
+                    // Draw end portion of the line
+                    if end < text_len {
+                        let tail = &text[end as usize .. text_len];
+                        if tail.len() > 1 {
+                            text_group.push(tail.into(), scale, def_fg_color);
+                        }
                     }
 
                     ix = end;
                 }
             } else {
-                text_group.push(text.into(), scale, colour);
+                text_group.push(text.into(), scale, def_fg_color);
             }
         }
         

@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::collections::BTreeMap;
 use std::sync::{
     Arc,
@@ -17,7 +16,10 @@ use eddy::{
         LineCache,
         Selection,
     },
-    styles::Style,
+    styles::{
+        ToRgbaFloat32,
+        ThemeStyleMap,
+    },
 };
 use super::widget::{
     Widget,
@@ -30,11 +32,15 @@ use super::primitive::PrimitiveWidget;
 
 pub const CURSOR_TEXT: &str = "\u{2588}";
 
+#[derive(Debug)]
 pub struct ViewResources {
-    pub bg_colour: ColourRGBA,
-    pub fg_colour: ColourRGBA,
-    pub cr_colour: ColourRGBA,
-    pub sl_colour: ColourRGBA,
+    pub background: ColourRGBA,
+    pub foreground: ColourRGBA,
+    pub caret: ColourRGBA,
+    pub selection: ColourRGBA,
+    pub selection_bg: ColourRGBA,
+    pub gutter: ColourRGBA,
+    pub gutter_bg: ColourRGBA,
 }
 
 pub struct ViewWidget {
@@ -101,7 +107,7 @@ impl ViewWidget {
 ) -> Self {
         let line_widgets = WidgetTree::<TextWidget>::new();
         let selection_widgets = BTreeMap::new();
-        let bg_colour = resources.lock().unwrap().bg_colour;
+        let bg_colour = resources.lock().unwrap().background;
         let background = PrimitiveWidget::new(
             Position::default(), 
             Size::default(), 
@@ -155,9 +161,10 @@ impl ViewWidget {
     fn populate_selections(&mut self, line_cache: &LineCache, scale: f32) {
         self.selection_widgets.clear();
 
-        let colour = self.resources.lock().unwrap().sl_colour;
+        let sel_bg = self.resources.lock().unwrap().selection_bg;
+
         let selections = line_cache.get_selections();
-        if selections.len() == 0 {
+        if selections.len() > 1 {
             return;
         }
 
@@ -170,8 +177,8 @@ impl ViewWidget {
                 let highlight = PrimitiveWidget::new(
                     (x, y).into(), 
                     (self.position.x, scale).into(), 
-                    1.0, 
-                    colour);
+                    0.1, 
+                    sel_bg);
 
                 if let Some(widgets) = self.selection_widgets.get_mut(&sel.line_num) {
                     widgets.push(highlight);
@@ -183,7 +190,7 @@ impl ViewWidget {
     }
 
     fn populate_cursors(&mut self, line_cache: &LineCache, scale: f32) {
-        let colour = self.resources.lock().unwrap().cr_colour;
+        let caret = self.resources.lock().unwrap().caret;
 
         self.cursor_widgets.clear();
 
@@ -197,10 +204,10 @@ impl ViewWidget {
         let line = line_cache.get_line(selection.line_num);
         if let Some(line) = line {
 
-            let mut cursor_widget = TextWidget::new(CURSOR_TEXT.into(), scale, colour);
             let y = selection.line_num as f32 * scale;
             let x = self.measure_selection_width(line, selection);
 
+            let mut cursor_widget = TextWidget::new(CURSOR_TEXT.into(), scale, caret);
             cursor_widget.set_position(x, y);         
             self.cursor_widgets.push(cursor_widget);
         } else {
@@ -208,22 +215,20 @@ impl ViewWidget {
         }
     }
 
-    pub fn populate(&mut self, line_cache: &LineCache, styles: Arc<Mutex<HashMap<usize, Style>>>) {
+    pub fn populate(&mut self, line_cache: &LineCache, style_map: Arc<Mutex<ThemeStyleMap>>) {
         let scale = self.font_bounds.lock().unwrap().get_scale();
-        let colour = self.resources.lock().unwrap().fg_colour;
         
         self.height = line_cache.height();
 
-        if let Ok(styles) = styles.try_lock() {
+        if let Ok(style_map) = style_map.try_lock() {
             for ix in self.first_line..self.height {
                 if let Some(line) = line_cache.get_line(ix) {
-                    let line_widget = TextWidget::from_line(&line, scale, colour, &styles);
+                    let line_widget = TextWidget::from_line(&line, scale, &style_map);
                     self.line_widgets.insert(ix, line_widget);
                 }
             }
         }
 
-        self.populate_selections(line_cache, scale);
         self.populate_cursors(line_cache, scale);
         self.set_dirty(true);
     }
@@ -257,10 +262,73 @@ impl ViewWidget {
 impl Default for ViewResources {
     fn default() -> Self {
         Self {
-            bg_colour: [0.1, 0.1, 0.1, 1.0], 
-            fg_colour: [0.9, 0.9, 0.9, 1.0],
-            cr_colour: [1.0, 1.0, 1.0, 1.0],
-            sl_colour: [1.0, 1.0, 1.0, 0.3],
+            background: [0.1, 0.1, 0.1, 1.0], 
+            foreground: [0.9, 0.9, 0.9, 1.0],
+            caret: [1.0, 1.0, 1.0, 1.0],
+            selection_bg: [1.0, 1.0, 1.0, 0.3],
+            selection: [0.1, 0.1, 0.1, 1.0],
+            gutter: [0.7, 0.7, 0.7, 1.0],
+            gutter_bg: [0.2, 0.2, 0.2, 1.0],
+        }
+    }
+}
+
+impl ViewResources {
+    pub fn from(style_map: &ThemeStyleMap) -> Self {
+        let default = style_map.get_default_style();
+        let settings = style_map.get_theme_settings();
+
+        println!("Theme settings: {:?}", settings);
+
+        let foreground = if let Some(fg) = settings.foreground {
+            fg.to_rgba_f32array()
+        } else {
+            default.fg_color.unwrap().to_rgba_f32array()
+        };
+        let background = if let Some(bg) = settings.background {
+            bg.to_rgba_f32array()
+        } else {
+            default.bg_color.unwrap().to_rgba_f32array()
+        };
+        let caret = if let Some(cr) = settings.caret {
+            cr.to_rgba_f32array()
+        } else {
+            [
+                1.0 - background[0],
+                1.0 - background[1],
+                1.0 - background[2],
+                1.0
+            ]
+        };
+        let selection = if let Some(sl) = settings.selection_foreground {
+            sl.to_rgba_f32array()
+        } else {
+            background
+        };
+        let selection_bg = if let Some(sl) = settings.selection {
+            sl.to_rgba_f32array()
+        } else {
+            foreground
+        };
+        let gutter_bg = if let Some(gt) = settings.gutter {
+            gt.to_rgba_f32array()
+        } else {
+            background
+        };
+        let gutter = if let Some(gt) = settings.gutter_foreground {
+            gt.to_rgba_f32array()
+        } else {
+            foreground
+        };
+
+        Self {
+            foreground,
+            background,
+            caret,
+            selection,
+            selection_bg,
+            gutter,
+            gutter_bg
         }
     }
 }

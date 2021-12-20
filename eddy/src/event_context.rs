@@ -16,10 +16,12 @@
 
 use std::iter;
 use std::cell::RefCell;
-use std::sync::Arc;
+use std::sync::{
+    Arc,
+    Mutex,
+};
 use std::ops::Range;
 use std::path::Path;
-use std::time::Duration;
 
 use rope::{Cursor, Rope, RopeDelta};
 
@@ -51,13 +53,6 @@ pub enum ActionTarget {
 #[derive(Debug)]
 pub enum EventError {}
 
-/// Hover Item sent from Plugin to Core
-#[derive(Debug, Clone)]
-pub struct Hover {
-    pub content: String,
-    pub range: Option<Range<usize>>,
-}
-
 /// A collection of all the state relevant for handling a particular event.
 ///
 /// This is created dynamically for each event that arrives to the core,
@@ -70,7 +65,7 @@ pub struct EventContext<'a> {
     pub info: Option<&'a FileInfo>,
     pub siblings: Vec<&'a RefCell<View>>,
     pub client: &'a Arc<Client>,
-    pub style_map: &'a RefCell<ThemeStyleMap>,
+    pub style_map: &'a Arc<Mutex<ThemeStyleMap>>,
     pub width_cache: &'a RefCell<WidthCache>,
     pub kill_ring: &'a RefCell<Rope>,
 }
@@ -113,9 +108,8 @@ impl<'a> EventContext<'a> {
         match action {
             NewView { .. }
             | Resize(..)
-            | RequestLines(..)
-            | RequestHover { .. }
-            | Reindent => ActionTarget::Special,
+            | SetTheme(..)
+            | RequestLines(..) => ActionTarget::Special,
 
             Delete(..)
             | InsertChars(..)
@@ -177,10 +171,9 @@ impl<'a> EventContext<'a> {
             Action::RequestLines(first, last) => {
                 self.do_request_lines(first, last)
             }
-            Action::RequestHover { request_id, position } => {
-                self.do_request_hover(request_id, position)
-            }
-            Action::Reindent => self.do_reindent(),
+            Action::SetTheme(theme) => {
+                self.do_set_theme(&theme)
+            },
             _ => unreachable!(),
         }
     }
@@ -237,11 +230,6 @@ impl<'a> EventContext<'a> {
         }
     }
 
-    pub fn _finish_delayed_render(&mut self) {
-        self.render();
-        self.view.borrow_mut().set_has_pending_render(false);
-    }
-
     /// Flushes any changes in the views out to the frontend.
     fn render(&mut self) {
         let ed = self.editor.borrow();
@@ -291,8 +279,6 @@ impl<'a> EventContext<'a> {
 
     /// Returns `true` if this was the last view
     pub fn close_view(&self) -> bool {
-        // we probably want to notify plugins _before_ we close the view
-        // TODO: determine what plugins we're stopping
         self.siblings.is_empty()
     }
 
@@ -328,6 +314,17 @@ impl<'a> EventContext<'a> {
             rope
         } else {
             rope
+        }
+    }
+    
+    fn do_set_theme(&mut self, theme_name: &str) {
+        if let Ok(mut theme) = self.style_map.lock() {
+            if theme_name == theme.get_theme_name() {
+                return;
+            }
+            if let Err(e) = theme.set_theme(theme_name) {
+                panic!("{}", e);
+            }
         }
     }
 
@@ -420,26 +417,6 @@ impl<'a> EventContext<'a> {
         }
 
         line_ranges
-    }
-
-    fn do_reindent(&mut self) {
-        println!("TODO: Syntect reindentation handling");
-    }
-
-    fn do_request_hover(&mut self, request_id: usize, position: Option<Position>) {
-        if let Some(position) = self.get_resolved_position(position) {
-            //self.with_each_plugin(|p| p.get_hover(self.view_id, request_id, position))
-        }
-    }
-
-    fn do_show_hover(&mut self, request_id: usize, hover: Result<Hover, EventError>) {
-        match hover {
-            Ok(hover) => {
-                // TODO: Get Range from hover here and use it to highlight text
-                self.client.show_hover(self.view_id, request_id, hover.content)
-            }
-            Err(err) => println!("Hover Response from Client Error {:?}", err),
-        }
     }
 
     /// Gives the requested position in UTF-8 offset format to be sent to plugin

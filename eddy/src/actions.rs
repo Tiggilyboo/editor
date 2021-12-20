@@ -12,12 +12,8 @@ pub enum Action {
     NewView { path: Option<String> },
     Resize(Size),
     RequestLines(usize, usize),
-    RequestHover {
-        request_id: usize, 
-        position: Option<Position>,
-    },
-    Reindent,
     SetMode(Mode),
+    SetTheme(String),
     Delete(Motion, Quantity),
     InsertChars(String),
     InsertNewline,

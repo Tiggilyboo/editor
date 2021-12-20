@@ -105,7 +105,7 @@ fn main() {
                         panic!("Unable to lock input")
                     }
                 },
-                WindowEvent::Focused(focus) => {
+                WindowEvent::Focused(_) => {
                     if let Ok(editor) = editor.try_lock() {
                         for view_widget in editor.get_views() {
                             if let Ok(mut view_widget) = view_widget.try_lock() {
@@ -113,9 +113,8 @@ fn main() {
                             }
                         }
                     }
-                    if focus {
-                        renderer.borrow().request_redraw();
-                    }
+                   
+                    renderer.borrow().request_redraw();
                 },
                 _ => {
                     // println!("Unhandled window event: {:?}", event);
