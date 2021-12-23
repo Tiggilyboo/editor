@@ -1,8 +1,5 @@
 use std::iter::Iterator;
-use std::collections::{
-    BTreeMap,
-    HashMap,
-};
+use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 use std::path::PathBuf;
 use std::cell::RefCell;
@@ -37,10 +34,7 @@ use eddy::{
         WidthCache,
         Width,
     },
-    styles::{ 
-        ThemeStyleMap,
-        Style,
-    },
+    styles::ThemeStyleMap,
     line_cache::LineCache,
     Size,
     Rope,
@@ -93,10 +87,13 @@ fn create_frontend_thread(
                 Payload::BufferUpdate(update) => {
                     if let Some(msg_view_id) = msg.view_id { 
                         if msg_view_id != view_id {
-                            println!("Message buffer payload tried to update a view with different view_id: {:?}", msg_view_id);
-                            return;
+                            panic!("Message buffer payload tried to update a view with different view_id: {:?}", msg_view_id);
                         }
                         if let Ok(mut line_cache) = cache.try_lock() {
+                            print!("Applying update to line cache: ");
+                            for l in update.ops.iter() {
+                                print!("{} ", l.first_line_number.unwrap_or(0));
+                            }
                             line_cache.apply_update(update);
 
                             if let Ok(mut view_widget) = view_widget.try_lock() {
@@ -107,7 +104,7 @@ fn create_frontend_thread(
                 },
                 Payload::Command(Command::Scroll { line, col }) => {
                     if let Ok(mut view_widget) = view_widget.try_lock() {
-                        view_widget.scroll(line, col);
+                        view_widget.scroll_to(line, col);
                         view_widget.set_dirty(true);
                     }
                 },
@@ -304,7 +301,7 @@ impl EditorState {
         self.editors.insert(buffer_id, editor);
         self.views.insert(view_id, view);
         self.line_cache.insert(view_id, line_cache);
-        self.view_widgets.insert(view_id, view_widget);
+        self.view_widgets.insert(view_id, view_widget.clone());
         self.focused_view_id = Some(view_id);
         
         if let Some(path) = path {
@@ -331,9 +328,11 @@ impl EditorState {
                 ctx.do_edit(Action::Resize(Size { width, height }));
             }
             if let Some(view_widget) = self.view_widgets.get(&view_id) {
-                if let Ok(mut view_widget) = view_widget.try_lock() {
+                if let Ok(mut view_widget) = view_widget.lock() {
                     view_widget.resize(width as f32, height as f32);
                     view_widget.set_dirty(true);
+                } else {
+                    panic!("unable to lock view for resize");
                 }
             }
         }

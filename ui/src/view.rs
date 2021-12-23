@@ -1,12 +1,20 @@
+pub mod settings;
+pub mod resources;
+mod gutter;
+
+pub use resources::ViewResources;
+
 use std::collections::BTreeMap;
 use std::sync::{
     Arc,
     Mutex,
 };
 
+use settings::ViewWidgetSettings;
+use gutter::GutterWidget;
+
 use render::{
     Renderer,
-    colour::ColourRGBA,
     text::FontBounds,
 };
 use eddy::{
@@ -16,10 +24,7 @@ use eddy::{
         LineCache,
         Selection,
     },
-    styles::{
-        ToRgbaFloat32,
-        ThemeStyleMap,
-    },
+    styles::ThemeStyleMap,
 };
 use super::widget::{
     Widget,
@@ -32,31 +37,26 @@ use super::primitive::PrimitiveWidget;
 
 pub const CURSOR_TEXT: &str = "\u{2588}";
 
-#[derive(Debug)]
-pub struct ViewResources {
-    pub background: ColourRGBA,
-    pub foreground: ColourRGBA,
-    pub caret: ColourRGBA,
-    pub selection: ColourRGBA,
-    pub selection_bg: ColourRGBA,
-    pub gutter: ColourRGBA,
-    pub gutter_bg: ColourRGBA,
-}
 
 pub struct ViewWidget {
     view_id: ViewId,
-    size: Size,
     position: Position,
+    dirty: bool,
     first_line: usize,
-    height: usize,
-    filepath: Option<String>,
+    last_line: usize,
+    scroll_offset: f32,
+    settings: ViewWidgetSettings,
+    
+    // widgets
     line_widgets: WidgetTree<TextWidget>,
     background: PrimitiveWidget,
     selection_widgets: BTreeMap<usize, Vec<PrimitiveWidget>>,
     cursor_widgets: Vec<TextWidget>,
+    gutter: GutterWidget,
+
+    // shared
     resources: Arc<Mutex<ViewResources>>,
     font_bounds: Arc<Mutex<FontBounds>>,
-    dirty: bool,
 }
 
 impl Widget for ViewWidget {
@@ -65,7 +65,7 @@ impl Widget for ViewWidget {
     }
 
     fn size(&self) -> Size {
-        self.size
+        self.background.size()
     }
 
     fn dirty(&self) -> bool {
@@ -75,8 +75,13 @@ impl Widget for ViewWidget {
     fn set_dirty(&mut self, dirty: bool) {
         self.background.set_dirty(dirty);
         self.line_widgets.set_dirty(dirty);
+        self.gutter.set_dirty(dirty);
+
         for cw in self.cursor_widgets.iter_mut() {
             cw.set_dirty(dirty); 
+        }
+        for (_, sw) in self.selection_widgets.iter_mut() {
+            sw.iter_mut().for_each(|w| w.set_dirty(dirty));
         }
 
         self.dirty = dirty;
@@ -85,6 +90,7 @@ impl Widget for ViewWidget {
     fn queue_draw(&self, renderer: &mut Renderer) {
         self.background.queue_draw(renderer);
         self.line_widgets.queue_draw(renderer);
+        self.gutter.queue_draw(renderer);
 
         for (_, sels) in self.selection_widgets.iter() {
             for sw in sels.iter() {
@@ -104,7 +110,7 @@ impl ViewWidget {
         filepath: Option<String>, 
         resources: Arc<Mutex<ViewResources>>, 
         font_bounds: Arc<Mutex<FontBounds>>,
-) -> Self {
+    ) -> Self {
         let line_widgets = WidgetTree::<TextWidget>::new();
         let selection_widgets = BTreeMap::new();
         let bg_colour = resources.lock().unwrap().background;
@@ -114,20 +120,36 @@ impl ViewWidget {
             0.0, 
             bg_colour);
 
+        let gutter_bg = resources.lock().unwrap().gutter_bg;
+        let gutter_fg = resources.lock().unwrap().gutter;
+        let gutter = GutterWidget::new(
+            Position::default(),
+            Size::default(),
+            gutter_bg, gutter_fg);
+
+        let settings = ViewWidgetSettings {
+            filepath: filepath.clone(),
+            show_filepath: filepath.is_some(),
+            show_gutter: true,
+            show_line_info: true,
+            show_mode: true,
+        };
+
         Self {
             view_id,
-            filepath,
+            position: Position::default(),
+            first_line: 0,
+            last_line: 0,
+            scroll_offset: 0.0,
+            dirty: true,
+            settings,
             line_widgets,
             selection_widgets,
+            gutter,
+            cursor_widgets: Vec::new(),
             background,
             resources,
             font_bounds,
-            cursor_widgets: Vec::new(),
-            size: Size::default(),
-            position: Position::default(),
-            first_line: 0,
-            height: 0,
-            dirty: true,
         }
     }
 
@@ -135,10 +157,15 @@ impl ViewWidget {
         self.view_id
     }
 
+    pub fn get_scale(&self) -> f32 {
+        self.font_bounds.lock().unwrap().get_scale()
+    }
+
     pub fn resize(&mut self, width: f32, height: f32) {
-        self.size.x = width;
-        self.size.y = height;
         self.background.set_size(width, height);
+        self.gutter.set_height(height);
+        self.update_viewport();
+
         self.set_dirty(true);
     }
 
@@ -158,77 +185,77 @@ impl ViewWidget {
         }
     }
 
-    fn populate_selections(&mut self, line_cache: &LineCache, scale: f32) {
-        self.selection_widgets.clear();
+    pub fn update_background(&mut self) {
+       let bg_colour = self.resources.lock().unwrap().background;
+       let current_colour = self.background.colour();
 
-        let sel_bg = self.resources.lock().unwrap().selection_bg;
+       if *current_colour != bg_colour {
+           self.background.set_colour(bg_colour);
+           self.background.set_dirty(true);
+       }
 
-        let selections = line_cache.get_selections();
-        if selections.len() > 1 {
-            return;
-        }
-
-        // Skip the first, as it is always the cursor
-        for sel in selections.iter().skip(1) {
-            if let Some(line) = line_cache.get_line(sel.line_num) {
-                let y = sel.line_num as f32 * scale;
-                let x = self.measure_selection_width(line, sel);
-        
-                let highlight = PrimitiveWidget::new(
-                    (x, y).into(), 
-                    (self.position.x, scale).into(), 
-                    0.1, 
-                    sel_bg);
-
-                if let Some(widgets) = self.selection_widgets.get_mut(&sel.line_num) {
-                    widgets.push(highlight);
-                } else {
-                    self.selection_widgets.insert(sel.line_num, vec![highlight]);
-                }
-            }
-        }
+       let gutter_bg = self.resources.lock().unwrap().gutter_bg;
+       self.gutter.set_background(gutter_bg);
     }
 
     fn populate_cursors(&mut self, line_cache: &LineCache, scale: f32) {
-        let caret = self.resources.lock().unwrap().caret;
-
         self.cursor_widgets.clear();
 
         let selections = line_cache.get_selections();
-        if selections.len() == 0 {
+        if selections.len() != 1 {
             return;
         }
         
+        let caret = self.resources.lock().unwrap().caret;
+        
         // Selection 0: Cursor
         let selection = selections[0];
-        let line = line_cache.get_line(selection.line_num);
-        if let Some(line) = line {
+        let line = line_cache.get_line(selection.line_num)
+            .expect("selection line did not exist in cache");
 
-            let y = selection.line_num as f32 * scale;
-            let x = self.measure_selection_width(line, selection);
+        let y = self.line_to_content_y(selection.line_num);
+        let x = self.gutter.size().x
+            + self.measure_selection_width(line, selection);
 
-            let mut cursor_widget = TextWidget::new(CURSOR_TEXT.into(), scale, caret);
-            cursor_widget.set_position(x, y);         
-            self.cursor_widgets.push(cursor_widget);
-        } else {
-            panic!("Got selection without line number in cache!");
-        }
+        let mut cursor_widget = TextWidget::with_text(CURSOR_TEXT.into(), scale, caret);
+        cursor_widget.set_position(x, y);
+        self.cursor_widgets.push(cursor_widget);
     }
 
     pub fn populate(&mut self, line_cache: &LineCache, style_map: Arc<Mutex<ThemeStyleMap>>) {
-        let scale = self.font_bounds.lock().unwrap().get_scale();
-        
-        self.height = line_cache.height();
+        let scale = self.get_scale();
+        let foreground = self.resources.lock().unwrap().foreground;
+        let gutter_width = self.gutter.size().x;
 
-        if let Ok(style_map) = style_map.try_lock() {
-            for ix in self.first_line..self.height {
+        let first_drawable_line = self.y_to_line(self.position.y);
+        let last_drawable_line = std::cmp::min(self.y_to_line(self.size().y), self.last_line);
+
+        self.line_widgets.clear();
+        let mut last_valid_line = self.first_line;
+        if let Ok(style_map) = style_map.lock() {
+            for ix in first_drawable_line..last_drawable_line {
                 if let Some(line) = line_cache.get_line(ix) {
-                    let line_widget = TextWidget::from_line(&line, scale, &style_map);
+                    let y = self.line_to_content_y(ix);
+                    let mut line_widget = TextWidget::from_line(&line, scale, &style_map);
+                    line_widget.set_position(gutter_width, y);
+
                     self.line_widgets.insert(ix, line_widget);
+                    last_valid_line = ix;
                 }
             }
+        } else {
+            panic!("unable to lock style map in view");
         }
 
+        if self.settings.show_gutter {
+            // measure what the largest line number is and adjust the gutter width as required
+            let largest_item_width = self.measure_text(last_valid_line.to_string());
+
+            self.gutter.set_width(largest_item_width);
+            self.gutter.update(self.first_line, last_valid_line, scale, foreground);
+        }
+
+        self.update_background();
         self.populate_cursors(line_cache, scale);
         self.set_dirty(true);
     }
@@ -237,98 +264,41 @@ impl ViewWidget {
         self.font_bounds.lock().unwrap().get_text_width(&text) 
     }
 
-    // TODO: if col > width of screen, move the difference
-    pub fn scroll(&mut self, line: usize, col: usize) {
-        self.first_line = line;
-        
-        let scale = self.font_bounds.lock().unwrap().get_scale();
-
-        for ix in self.first_line..self.height {
-            let y = self.position.y + (ix as f32 * scale);
-            if let Some(line_widget) = self.line_widgets.get_mut(ix) {
-                line_widget.set_position(self.position.x, y);
-                line_widget.set_dirty(true);
-            }
-            if let Some(selections_on_line) = self.selection_widgets.get_mut(&ix) {
-                for sel_w in selections_on_line.iter_mut() {
-                    sel_w.set_position(self.position.x, y);
-                    sel_w.set_dirty(true);
-                }
-            }
+    pub fn scroll_to(&mut self, line: usize, _col: usize) {
+        let y = self.position.y + self.line_to_content_y(line);
+        let h = self.size().y;
+        if y < self.scroll_offset {
+            self.scroll_offset = y;
+            self.set_dirty(true);
+        } else if y > self.scroll_offset + h { 
+            self.scroll_offset = y - h;
+            self.set_dirty(true);
         }
+
+        self.update_viewport();
+    }
+
+    fn line_to_content_y(&self, line: usize) -> f32 {
+        self.position.y + (line as f32 * self.get_scale()) - self.scroll_offset
+    }
+
+    fn y_to_line(&self, y: f32) -> usize {
+        let scale = self.get_scale();
+        let mut line = (y + self.scroll_offset - self.position.y) / scale;
+        if line < 0.0 {
+            line = 0.0;
+        }
+
+        std::cmp::min(line as usize, self.last_line)
+    }
+
+    pub fn update_viewport(&mut self) {
+        let scale = self.get_scale();
+        let first = self.y_to_line(self.position.y);
+        let last = first + (self.size().y / scale).floor() as usize;
+
+        self.first_line = first;
+        self.last_line = last;
     }
 }
 
-impl Default for ViewResources {
-    fn default() -> Self {
-        Self {
-            background: [0.1, 0.1, 0.1, 1.0], 
-            foreground: [0.9, 0.9, 0.9, 1.0],
-            caret: [1.0, 1.0, 1.0, 1.0],
-            selection_bg: [1.0, 1.0, 1.0, 0.3],
-            selection: [0.1, 0.1, 0.1, 1.0],
-            gutter: [0.7, 0.7, 0.7, 1.0],
-            gutter_bg: [0.2, 0.2, 0.2, 1.0],
-        }
-    }
-}
-
-impl ViewResources {
-    pub fn from(style_map: &ThemeStyleMap) -> Self {
-        let default = style_map.get_default_style();
-        let settings = style_map.get_theme_settings();
-
-        println!("Theme settings: {:?}", settings);
-
-        let foreground = if let Some(fg) = settings.foreground {
-            fg.to_rgba_f32array()
-        } else {
-            default.fg_color.unwrap().to_rgba_f32array()
-        };
-        let background = if let Some(bg) = settings.background {
-            bg.to_rgba_f32array()
-        } else {
-            default.bg_color.unwrap().to_rgba_f32array()
-        };
-        let caret = if let Some(cr) = settings.caret {
-            cr.to_rgba_f32array()
-        } else {
-            [
-                1.0 - background[0],
-                1.0 - background[1],
-                1.0 - background[2],
-                1.0
-            ]
-        };
-        let selection = if let Some(sl) = settings.selection_foreground {
-            sl.to_rgba_f32array()
-        } else {
-            background
-        };
-        let selection_bg = if let Some(sl) = settings.selection {
-            sl.to_rgba_f32array()
-        } else {
-            foreground
-        };
-        let gutter_bg = if let Some(gt) = settings.gutter {
-            gt.to_rgba_f32array()
-        } else {
-            background
-        };
-        let gutter = if let Some(gt) = settings.gutter_foreground {
-            gt.to_rgba_f32array()
-        } else {
-            foreground
-        };
-
-        Self {
-            foreground,
-            background,
-            caret,
-            selection,
-            selection_bg,
-            gutter,
-            gutter_bg
-        }
-    }
-}

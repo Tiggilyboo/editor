@@ -71,4 +71,12 @@ impl PrimitiveWidget {
         self.position.x = x;
         self.position.y = y;
     }
+
+    pub fn set_colour(&mut self, colour: ColourRGBA) {
+        self.colour = colour;
+    }
+
+    pub fn colour(&self) -> &ColourRGBA {
+        &self.colour
+    }
 }

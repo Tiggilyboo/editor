@@ -217,7 +217,6 @@ impl View {
                 self.extend_selection(text, offset, quantity)
             }
             GestureType::Drag => self.do_drag(text, offset, Affinity::default()),
-
             _ => {
                 panic!("Deprecated gesture type sent to do_gesture method");
             }
@@ -233,9 +232,7 @@ impl View {
         self.size = size;
     }
 
-    pub fn set_scroll(&mut self, first: i64, last: i64) {
-        let first = max(first, 0) as usize;
-        let last = max(last, 0) as usize;
+    pub fn set_scroll(&mut self, first: usize, last: usize) {
         self.first_line = first;
         self.height = last - first;
     }

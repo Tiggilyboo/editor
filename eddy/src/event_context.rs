@@ -163,10 +163,10 @@ impl<'a> EventContext<'a> {
     fn do_special(&mut self, cmd: Action) {
         match cmd {
             Action::Resize(size) => {
-                self.with_view(|view, _| view.set_size(size));
-                //if self.config.word_wrap {
-                    self.update_wrap_settings(false);
-                //}
+                self.with_view(|view, _| {
+                   view.set_size(size);
+                });
+                self.update_wrap_settings(false);
             }
             Action::RequestLines(first, last) => {
                 self.do_request_lines(first, last)
@@ -217,7 +217,7 @@ impl<'a> EventContext<'a> {
         });
     }
 
-    fn update_plugins(&self, ed: &mut Editor, delta: RopeDelta, author: &str) {
+    fn update_plugins(&self, ed: &mut Editor, _delta: RopeDelta, _author: &str) {
         //TODO
         ed.update_edit_type();
     }
@@ -233,14 +233,13 @@ impl<'a> EventContext<'a> {
     /// Flushes any changes in the views out to the frontend.
     fn render(&mut self) {
         let ed = self.editor.borrow();
-        //TODO: render other views
-        self.view.borrow_mut().render_if_dirty(
-            ed.get_buffer(),
-            self.client,
-            self.style_map,
-            ed.get_layers().get_merged(),
-            ed.is_pristine(),
-        )
+        self.view.borrow_mut()
+            .render_if_dirty(
+                ed.get_buffer(),
+                self.client,
+                self.style_map,
+                ed.get_layers().get_merged(),
+                ed.is_pristine())
     }
 }
 
@@ -252,7 +251,7 @@ impl<'a> EventContext<'a> {
 impl<'a> EventContext<'a> {
     pub fn view_init(&mut self) {
         let wrap_width = 0; //self.config.wrap_width;
-        let word_wrap = true; // self.config.word_wrap;
+        let word_wrap = false; // self.config.word_wrap;
 
         self.with_view(|view, text| view.update_wrap_settings(text, wrap_width, word_wrap));
     }
@@ -271,7 +270,7 @@ impl<'a> EventContext<'a> {
         self.render()
     }
 
-    pub fn after_save(&mut self, path: &Path) {
+    pub fn after_save(&mut self, _path: &Path) {
         self.editor.borrow_mut().set_pristine();
         self.with_view(|view, text| view.set_dirty(text));
         self.render()

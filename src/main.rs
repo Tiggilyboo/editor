@@ -48,7 +48,9 @@ fn main() {
     let mut screen_dimensions: [f32; 2] = renderer.borrow().get_screen_dimensions();
 
     let filepath = get_filepath();
-    editor.lock().unwrap().do_new_view(filepath);
+    if let Ok(mut editor) = editor.lock() {
+        editor.do_new_view(filepath);
+    }
 
     el.run(move |event: Event<'_, EditorEvent>, _, control_flow: &mut ControlFlow| {
         *control_flow = ControlFlow::Wait;
@@ -105,7 +107,7 @@ fn main() {
                         panic!("Unable to lock input")
                     }
                 },
-                WindowEvent::Focused(_) => {
+                WindowEvent::Focused(focus) => {
                     if let Ok(editor) = editor.try_lock() {
                         for view_widget in editor.get_views() {
                             if let Ok(mut view_widget) = view_widget.try_lock() {
@@ -113,8 +115,10 @@ fn main() {
                             }
                         }
                     }
-                   
-                    renderer.borrow().request_redraw();
+                  
+                    if focus {
+                        renderer.borrow().request_redraw();
+                    }
                 },
                 _ => {
                     // println!("Unhandled window event: {:?}", event);

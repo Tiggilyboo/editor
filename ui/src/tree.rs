@@ -42,4 +42,8 @@ impl<T: Widget + Send + Sync> WidgetTree<T> {
     pub fn len(&self) -> usize {
         self.widgets.len()
     }
+
+    pub fn clear(&mut self) {
+        self.widgets.clear();
+    }
 }

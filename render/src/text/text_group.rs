@@ -4,6 +4,7 @@ use glyph_brush::{
     OwnedSection,
     OwnedText,
     Layout,
+    BuiltInLineBreaker,
 };
 
 pub struct TextGroup {
@@ -18,6 +19,15 @@ impl TextGroup {
        Self {
            section,
        }
+    }
+
+    pub fn set_multiline(&mut self, multiline: bool) {
+        if multiline {
+            self.section.layout = Layout::default()
+                .line_breaker(BuiltInLineBreaker::AnyCharLineBreaker);
+        } else {
+            self.section.layout = Layout::default_single_line();
+        }
     }
 
     pub fn get_section(&self) -> &OwnedSection {
@@ -46,5 +56,10 @@ impl TextGroup {
 
     pub fn bounds(&self) -> (f32, f32) {
         self.section.bounds
+    }
+
+    pub fn set_linewrap_width(&mut self, width: f32) {
+        let old_bounds = self.bounds();
+        self.section.bounds = (width, old_bounds.1).into();
     }
 }

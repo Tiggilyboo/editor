@@ -232,7 +232,11 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
         O, +Mode::Normal; Action::Move(Motion::End, Quantity::Line), Action::InsertNewline, Action::SetMode(Mode::Insert);
         O, shift!(), +Mode::Normal; motion!(Above), Action::Move(Motion::End, Quantity::Line), Action::InsertNewline, Action::SetMode(Mode::Insert);
         D, +Mode::Normal; Action::SetMode(Mode::Delete);
-        Colon, +Mode::Normal; Action::SetMode(Mode::Command);
+        Semicolon, +Mode::Normal; Action::SetMode(Mode::Command);
+
+        // Themes
+        F1, +Mode::Normal; Action::SetTheme("Solarized (dark)".into());
+        F2, +Mode::Normal; Action::SetTheme("Solarized (light)".into());
         
         // Insert
         Back, +Mode::Insert; Action::Delete(Motion::Backward, Quantity::Character);
@@ -260,21 +264,25 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
         Right, ctrl!(), +Mode::Normal; Action::Move(Motion::Forward, Quantity::Word);
         W, +Mode::Normal; Action::Move(Motion::Forward, Quantity::Word);
         B, +Mode::Normal; Action::Move(Motion::Backward, Quantity::Word);
-        Up, ctrl!(), +Mode::Insert; Action::Move(Motion::Above, Quantity::Word);
-        Down, ctrl!(), +Mode::Insert; Action::Move(Motion::Below, Quantity::Word);
+        Up, ctrl!(), +Mode::Insert; Action::Move(Motion::Above, Quantity::Character);
+        Down, ctrl!(), +Mode::Insert; Action::Move(Motion::Below, Quantity::Character);
         Left, ctrl!(), +Mode::Insert; Action::Move(Motion::Backward, Quantity::Word);
         Right, ctrl!(), +Mode::Insert; Action::Move(Motion::Forward, Quantity::Word);
 
-        // Line
-        PageUp, +Mode::Normal; Action::Move(Motion::Above, Quantity::Page);
-        PageDown, +Mode::Normal; Action::Move(Motion::Below, Quantity::Page);
+        // Line 
         Home, +Mode::Normal; Action::Move(Motion::First, Quantity::Line);
         End, +Mode::Normal; Action::Move(Motion::Last, Quantity::Line); 
-        PageUp, +Mode::Insert; Action::Move(Motion::Above, Quantity::Page);
-        PageDown, +Mode::Insert; Action::Move(Motion::Below, Quantity::Page);
         Home, +Mode::Insert; Action::Move(Motion::First, Quantity::Line);
         End, +Mode::Insert; Action::Move(Motion::Last, Quantity::Line); 
         G, shift!(), +Mode::Normal; Action::Move(Motion::Last, Quantity::Line);
+        
+        // Page
+        PageUp, +Mode::Normal; Action::Move(Motion::Above, Quantity::Page);
+        PageDown, +Mode::Normal; Action::Move(Motion::Below, Quantity::Page);
+        PageUp, +Mode::Insert; Action::Move(Motion::Above, Quantity::Page);
+        PageDown, +Mode::Insert; Action::Move(Motion::Below, Quantity::Page);
+        Up, shift!(), +Mode::Normal; Action::Move(Motion::Above, Quantity::Page);
+        Down, shift!(), +Mode::Normal; Action::Move(Motion::Below, Quantity::Page);
 
         // Delete
         Left, +Mode::Delete; Action::Delete(Motion::Backward, Quantity::Character);

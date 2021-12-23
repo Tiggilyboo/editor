@@ -22,9 +22,15 @@ pub struct TextWidget {
     dirty: bool,
 }
 
-
 impl TextWidget {
-    pub fn new(text: String, scale: f32, colour: ColourRGBA) -> Self {
+    pub fn new() -> Self {
+        Self {
+            dirty: true,
+            text_group: TextGroup::new(), 
+        } 
+    }
+
+    pub fn with_text(text: String, scale: f32, colour: ColourRGBA) -> Self {
         let mut text_group = TextGroup::new();
         text_group.push(text, scale, colour);
 
@@ -34,17 +40,27 @@ impl TextWidget {
         } 
     }
 
-    pub fn set_position(&mut self, x: f32, y: f32) {
-        self.text_group.set_screen_position(x, y);
-        self.dirty = true;
+    pub fn multiline(&mut self) -> Self {
+        let mut text_group = TextGroup::new();
+        text_group.set_multiline(true);
+
+        Self {
+            dirty: true,
+            text_group,
+        }
+    }
+
+    pub fn populate(&mut self, texts: Vec<String>, scale: f32, colour: ColourRGBA) {
+        self.text_group.clear();
+        for t in texts.iter() {
+            self.text_group.push(t.into(), scale, colour);
+        }
+
+        self.set_dirty(true);
     }
 
     pub fn from_line(line: &Line, scale: f32, style_map: &ThemeStyleMap) -> Self {
         let mut text_group = TextGroup::new();
-
-        if let Some(line_num) = line.ln {
-            text_group.set_screen_position(0.0, (line_num - 1) as f32 * scale);
-        }
 
         if let Some(text) = &line.text {
             let text = text.trim_end_matches(|c| c == '\r' || c == '\n');
@@ -60,25 +76,16 @@ impl TextWidget {
                 println!("line style: {:?}", line.styles);
                 let mut ix = 0;
                 for triple in line.styles.chunks(3) {
-                    let mut start = ix + triple[0];
+                    let start = ix + triple[0];
                     let mut end = start + triple[1];
                     let style_id = triple[2];
 
                     let text_len = text.len();
-                    if start > text_len {
-                        start = text_len;
-                    }
                     if end > text_len {
                         end = text_len;
                     }
-                    if start > end {
-                        let t = end;
-                        end = start;
-                        start = t;
-                    }
 
-                    let content = &text[start as usize .. end as usize];
-                    
+                    // Determine the selection colour
                     let fg_color = if style_id == 0 {
                         def_sel_color
                     } else {
@@ -95,19 +102,20 @@ impl TextWidget {
 
                     // Draw starting portions of the line
                     if start > 0 {
-                        let beginning = &text[0 .. start as usize];
-                        if beginning.len() > 1 {
+                        let beginning = &text[.. start as usize];
+                        if beginning.len() > 0 {
                             text_group.push(beginning.into(), scale, def_fg_color);
                         }
                     }
 
                     // style selection
+                    let content = &text[start as usize .. end as usize];
                     text_group.push(content.into(), scale, fg_color);
 
                     // Draw end portion of the line
-                    if end < text_len {
-                        let tail = &text[end as usize .. text_len];
-                        if tail.len() > 1 {
+                    if end > start && end != text_len {
+                        let tail = &text[end as usize ..];
+                        if tail.len() > 0 {
                             text_group.push(tail.into(), scale, def_fg_color);
                         }
                     }
@@ -124,6 +132,17 @@ impl TextWidget {
             dirty: true,
         } 
     }
+    
+    pub fn set_position(&mut self, x: f32, y: f32) {
+        self.text_group.set_screen_position(x, y);
+        self.dirty = true;
+    }
+
+    pub fn set_linewrap_width(&mut self, width: f32) {
+        self.text_group.set_linewrap_width(width);
+        self.dirty = true;
+    }
+
 }
 
 impl Widget for TextWidget {

@@ -42,7 +42,7 @@ pub enum Action {
         col: u64,
         ty: GestureType,
     },
-    Scroll(Range<i64>),
+    Scroll(Range<usize>),
     Repeat(Box<Action>, Quantity),
 }
 
