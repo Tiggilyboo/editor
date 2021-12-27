@@ -324,6 +324,12 @@ impl<'a> EventContext<'a> {
             if let Err(e) = theme.set_theme(theme_name) {
                 panic!("{}", e);
             }
+
+            self.with_editor(|ed, view, _| {
+                ed.theme_changed(&theme);
+                view.set_dirty(ed.get_buffer()); 
+            });
+            self.render_if_needed();
         }
     }
 

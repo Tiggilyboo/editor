@@ -33,7 +33,9 @@ fn get_filepath() -> Option<String> {
             return Some(last_arg.to_string())
         }
    }
-   None
+
+
+    None
 }
 
 fn main() {
@@ -49,7 +51,7 @@ fn main() {
 
     let filepath = get_filepath();
     if let Ok(mut editor) = editor.lock() {
-        editor.do_new_view(filepath);
+        editor.do_new_view(Some("src/main.rs".to_string()));
     }
 
     el.run(move |event: Event<'_, EditorEvent>, _, control_flow: &mut ControlFlow| {
@@ -64,7 +66,7 @@ fn main() {
                 screen_dimensions[0] = size.width as f32;
                 screen_dimensions[1] = size.height as f32;
 
-                if let Ok(mut editor) = editor.try_lock() {
+                if let Ok(mut editor) = editor.lock() {
                     // TODO: input is processed at f32, other event handling is 64...
                     editor.resize(size.width as f64, size.height as f64);
                 }
@@ -72,9 +74,9 @@ fn main() {
                 renderer.borrow().request_redraw();
             },
             Event::RedrawRequested(_window_id) => {
-                if let Ok(editor) = editor.try_lock() {
+                if let Ok(editor) = editor.lock() {
                     for view_widget in editor.get_dirty_views() {
-                        if let Ok(mut view_widget) = view_widget.try_lock() {
+                        if let Ok(mut view_widget) = view_widget.lock() {
                             view_widget.queue_draw(&mut renderer.borrow_mut());
                             view_widget.set_dirty(false);
                         }
@@ -90,27 +92,21 @@ fn main() {
                 | WindowEvent::MouseWheel { .. }
                 | WindowEvent::CursorMoved { .. }
                 | WindowEvent::ModifiersChanged(_) => {
-                    if let Ok(mut input) = input.try_lock() {
+                    if let Ok(mut input) = input.lock() {
                         input.update(event, screen_dimensions);
 
-                        if let Ok(mut editor) = editor.try_lock() {
+                        if let Ok(mut editor) = editor.lock() {
                             editor.process_input_actions(&input);   
                             if editor.requires_redraw() {
                                 renderer.borrow().request_redraw();
-                            } else {
-                                println!("Did not require redraw");
                             }
-                        } else {
-                            panic!("Unable to lock editor state");
                         }
-                    } else {
-                        panic!("Unable to lock input")
                     }
                 },
                 WindowEvent::Focused(focus) => {
-                    if let Ok(editor) = editor.try_lock() {
+                    if let Ok(editor) = editor.lock() {
                         for view_widget in editor.get_views() {
-                            if let Ok(mut view_widget) = view_widget.try_lock() {
+                            if let Ok(mut view_widget) = view_widget.lock() {
                                 view_widget.set_dirty(true)
                             }
                         }

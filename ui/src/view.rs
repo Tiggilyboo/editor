@@ -9,6 +9,7 @@ use std::sync::{
     Arc,
     Mutex,
 };
+use std::ops::Range;
 
 use settings::ViewWidgetSettings;
 use gutter::GutterWidget;
@@ -36,7 +37,6 @@ use super::text::TextWidget;
 use super::primitive::PrimitiveWidget;
 
 pub const CURSOR_TEXT: &str = "\u{2588}";
-
 
 pub struct ViewWidget {
     view_id: ViewId,
@@ -162,9 +162,11 @@ impl ViewWidget {
     }
 
     pub fn resize(&mut self, width: f32, height: f32) {
+        println!("resize view widget: {}, {}", width, height);
         self.background.set_size(width, height);
         self.gutter.set_height(height);
         self.update_viewport();
+        self.scroll_to(self.first_line, self.last_line);
 
         self.set_dirty(true);
     }
@@ -227,20 +229,22 @@ impl ViewWidget {
         let foreground = self.resources.lock().unwrap().foreground;
         let gutter_width = self.gutter.size().x;
 
-        let first_drawable_line = self.y_to_line(self.position.y);
-        let last_drawable_line = std::cmp::min(self.y_to_line(self.size().y), self.last_line);
+        let mut gutter_pos_y = None;
 
         self.line_widgets.clear();
-        let mut last_valid_line = self.first_line;
+
         if let Ok(style_map) = style_map.lock() {
-            for ix in first_drawable_line..last_drawable_line {
+            for ix in self.first_line..self.last_line {
                 if let Some(line) = line_cache.get_line(ix) {
                     let y = self.line_to_content_y(ix);
                     let mut line_widget = TextWidget::from_line(&line, scale, &style_map);
                     line_widget.set_position(gutter_width, y);
 
                     self.line_widgets.insert(ix, line_widget);
-                    last_valid_line = ix;
+
+                    if gutter_pos_y.is_none() {
+                        gutter_pos_y = Some(y);
+                    }
                 }
             }
         } else {
@@ -249,13 +253,14 @@ impl ViewWidget {
 
         if self.settings.show_gutter {
             // measure what the largest line number is and adjust the gutter width as required
-            let largest_item_width = self.measure_text(last_valid_line.to_string());
+            let last_line = line_cache.height();
+            let largest_item_width = self.measure_text(last_line.to_string());
 
+            self.gutter.set_position((0.0, gutter_pos_y.unwrap_or(0.0)).into());
             self.gutter.set_width(largest_item_width);
-            self.gutter.update(self.first_line, last_valid_line, scale, foreground);
+            self.gutter.update(self.first_line, self.last_line, scale, foreground);
         }
 
-        self.update_background();
         self.populate_cursors(line_cache, scale);
         self.set_dirty(true);
     }
@@ -265,40 +270,54 @@ impl ViewWidget {
     }
 
     pub fn scroll_to(&mut self, line: usize, _col: usize) {
-        let y = self.position.y + self.line_to_content_y(line);
+        let scale = self.get_scale();
         let h = self.size().y;
-        if y < self.scroll_offset {
-            self.scroll_offset = y;
-            self.set_dirty(true);
-        } else if y > self.scroll_offset + h { 
-            self.scroll_offset = y - h;
-            self.set_dirty(true);
+        let y = self.position.y + (line as f32 * scale);
+        let inv_scroll = -self.scroll_offset;
+
+        if y < inv_scroll - scale {
+            // for scrolling up
+            self.scroll_offset = -y + scale;
+        } else if y > inv_scroll + h - scale - scale {
+            // for scrolling down
+            self.scroll_offset = -y + h - scale - scale;
         }
 
+        println!("scrolled to to ln {} (y = {}) for offset in view widget: {}", line, y, self.scroll_offset);
+
+        self.set_dirty(true);
         self.update_viewport();
     }
 
     fn line_to_content_y(&self, line: usize) -> f32 {
-        self.position.y + (line as f32 * self.get_scale()) - self.scroll_offset
+        self.position.y 
+            + self.scroll_offset 
+            + (line as f32 * self.get_scale()) 
     }
 
     fn y_to_line(&self, y: f32) -> usize {
         let scale = self.get_scale();
-        let mut line = (y + self.scroll_offset - self.position.y) / scale;
+        let mut line = ((y - self.position.y - self.scroll_offset) / scale).floor();
         if line < 0.0 {
             line = 0.0;
         }
 
-        std::cmp::min(line as usize, self.last_line)
+        line as usize
     }
 
     pub fn update_viewport(&mut self) {
+        let height = self.size().y;
         let scale = self.get_scale();
         let first = self.y_to_line(self.position.y);
-        let last = first + (self.size().y / scale).floor() as usize;
+        let last = first + (height / scale).ceil() as usize;
+        println!("updated viewport: {}, {}", first, last);
 
         self.first_line = first;
         self.last_line = last;
+    }
+
+    pub fn get_viewport(&self) -> Range<usize> {
+        self.first_line..self.last_line 
     }
 }
 

@@ -96,7 +96,7 @@ impl GutterWidget {
 
     pub fn set_height(&mut self, height: f32) {
         let w = self.ln_number_background.size().x;
-        self.set_size(height, w);
+        self.set_size(w, height);
         self.set_dirty(true);
     }
 

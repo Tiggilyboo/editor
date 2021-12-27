@@ -90,10 +90,6 @@ fn create_frontend_thread(
                             panic!("Message buffer payload tried to update a view with different view_id: {:?}", msg_view_id);
                         }
                         if let Ok(mut line_cache) = cache.try_lock() {
-                            print!("Applying update to line cache: ");
-                            for l in update.ops.iter() {
-                                print!("{} ", l.first_line_number.unwrap_or(0));
-                            }
                             line_cache.apply_update(update);
 
                             if let Ok(mut view_widget) = view_widget.try_lock() {
@@ -104,6 +100,7 @@ fn create_frontend_thread(
                 },
                 Payload::Command(Command::Scroll { line, col }) => {
                     if let Ok(mut view_widget) = view_widget.try_lock() {
+                        println!("view widget scrolled to ln: {}", line);
                         view_widget.scroll_to(line, col);
                         view_widget.set_dirty(true);
                     }
@@ -308,7 +305,10 @@ impl EditorState {
             let path = PathBuf::from(path);
             if let Ok(text) = self.file_manager.open(&path, buffer_id) {
                 if let Some(mut context) = self.make_context(view_id) {
+                    context.view_init();
                     context.reload(text);
+                    context.finish_init();
+                    context.do_edit(Action::GoToLine(0));
                 }
             }
         }
@@ -331,6 +331,10 @@ impl EditorState {
                 if let Ok(mut view_widget) = view_widget.lock() {
                     view_widget.resize(width as f32, height as f32);
                     view_widget.set_dirty(true);
+                    
+                    let viewport = view_widget.get_viewport();
+                    self.make_context(*view_id).unwrap()
+                        .do_edit(Action::Scroll(viewport));
                 } else {
                     panic!("unable to lock view for resize");
                 }
