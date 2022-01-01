@@ -17,6 +17,8 @@ pub struct GutterWidget {
     height: usize,
     colour_foreground: ColourRGBA,
     colour_background: ColourRGBA,
+    pad_left: f32,
+    pad_right: f32,
 
     ln_number_text: TextWidget,
     ln_number_background: PrimitiveWidget,
@@ -44,7 +46,7 @@ impl Widget for GutterWidget {
 }
 
 impl GutterWidget {
-    pub fn new(position: Position, size: Size, colour_background: ColourRGBA, colour_foreground: ColourRGBA) -> Self {
+    pub fn new(position: Position, size: Size, font_scale: f32, colour_background: ColourRGBA, colour_foreground: ColourRGBA) -> Self {
         let ln_number_text = TextWidget::new().multiline();
         let ln_number_background = PrimitiveWidget::new(position, size, 0.3, colour_background);
 
@@ -57,6 +59,8 @@ impl GutterWidget {
             dirty: true,
             first_line: 0,
             height: 0,
+            pad_left: font_scale / 4.0,
+            pad_right: font_scale / 3.0,
         }
     }
 
@@ -68,6 +72,7 @@ impl GutterWidget {
         self.first_line = first_line;
         self.height = height;
         self.colour_foreground = foreground;
+        self.set_padding(scale / 4.0, scale / 4.0);
 
         let mut lines = Vec::with_capacity(height);
         for ln in first_line .. first_line + height {
@@ -90,7 +95,15 @@ impl GutterWidget {
 
     pub fn set_width(&mut self, width: f32) {
         let h = self.ln_number_background.size().y;
-        self.set_size(width, h);
+        let pad = self.pad_left + self.pad_right;
+        self.set_size(width + pad, h);
+        self.set_dirty(true);
+    }
+
+    pub fn set_padding(&mut self, left: f32, right: f32) {
+        self.pad_left = left;
+        self.pad_right = right;
+        self.set_position(self.position);
         self.set_dirty(true);
     }
 
@@ -101,13 +114,14 @@ impl GutterWidget {
     }
 
     pub fn set_position(&mut self, position: Position) {
+        let left = self.pad_left;
         self.ln_number_background.set_position(position.x, position.y);
-        self.ln_number_text.set_position(position.x, position.y);
+        self.ln_number_text.set_position(left + position.x, position.y);
         self.position = position;
         self.set_dirty(true);
     }
 
-    pub fn set_size(&mut self, width: f32, height: f32) {
+    fn set_size(&mut self, width: f32, height: f32) {
         self.ln_number_background.set_size(width, height);
         self.ln_number_text.set_linewrap_width(width);
     }

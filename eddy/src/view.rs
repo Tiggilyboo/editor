@@ -82,6 +82,7 @@ pub struct View {
     annotations: AnnotationStore,
 
     mode: Mode,
+    mode_pending: Option<Mode>,
 }
 
 /// Contains replacement string and replace options.
@@ -131,6 +132,7 @@ impl View {
             lc_shadow: LineCacheShadow::default(),
             annotations: AnnotationStore::new(),
             mode: Mode::Normal,
+            mode_pending: Some(Mode::Normal),
         }
     }
 
@@ -148,6 +150,7 @@ impl View {
 
     pub fn set_mode(&mut self, mode: Mode) {
         self.mode = mode;
+        self.mode_pending = Some(mode);
     }
 
     pub fn get_lines(&self) -> &Lines {
@@ -171,10 +174,6 @@ impl View {
         self.lines.set_wrap_width(text, wrap_width);
     }
 
-    pub fn needs_more_wrap(&self) -> bool {
-        !self.lines.is_converged()
-    }
-
     pub fn needs_wrap_in_visible_region(&self, text: &Rope) -> bool {
         if self.lines.is_converged() {
             false
@@ -187,7 +186,7 @@ impl View {
     pub fn do_edit(&mut self, text: &Rope, cmd: Action) {
         use self::Action::*;
         match cmd {
-            Action::SetMode(mode) => self.set_mode(mode),
+            SetMode(mode) => self.set_mode(mode),
             Move(motion, quantity) => self.do_move(text, motion, quantity, false),
             MoveSelection(motion, quantity) => self.do_move(text, motion, quantity, true),
             SelectAll => self.select_all(text),
@@ -743,9 +742,14 @@ impl View {
         let height = self.line_of_offset(text, text.len()) + 1;
         let plan = RenderPlan::create(height, self.first_line, self.height);
         self.send_update_for_plan(text, client, styles, style_spans, &plan, pristine);
+
         if let Some(new_scroll_pos) = self.scroll_to.take() {
             let (line, col) = self.offset_to_line_col(text, new_scroll_pos);
             client.scroll_to(self.view_id, line, col);
+        }
+       
+        if let Some(mode) = self.mode_pending.take() {
+            client.update_status(self.view_id, mode);
         }
     }
 

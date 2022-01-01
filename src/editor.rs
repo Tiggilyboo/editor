@@ -89,40 +89,42 @@ fn create_frontend_thread(
                         if msg_view_id != view_id {
                             panic!("Message buffer payload tried to update a view with different view_id: {:?}", msg_view_id);
                         }
-                        if let Ok(mut line_cache) = cache.try_lock() {
+                        if let Ok(mut line_cache) = cache.lock() {
                             line_cache.apply_update(update);
 
-                            if let Ok(mut view_widget) = view_widget.try_lock() {
+                            if let Ok(mut view_widget) = view_widget.lock() {
                                 view_widget.populate(&line_cache, style_map.clone());
                             }
                         }
                     }
                 },
-                Payload::Command(Command::Scroll { line, col }) => {
-                    if let Ok(mut view_widget) = view_widget.try_lock() {
-                        println!("view widget scrolled to ln: {}", line);
-                        view_widget.scroll_to(line, col);
-                        view_widget.set_dirty(true);
-                    }
-                },
-                Payload::Command(Command::Idle { .. }) => {
-                    println!("Idling...");
-                    std::thread::sleep(std::time::Duration::from_millis(2));
-                },
-                Payload::Command(Command::ShowHover { req_id, content }) => {
-                    println!("Command::ShowHover triggered: {} = {}", req_id, content);
-                    unimplemented!()
-                },
-                Payload::Command(Command::DefineStyle { style_id, style }) => {
-                    println!("DefineStyle: {}, {:?}", style_id, style);
-                    if let Ok(mut style_map) = style_map.try_lock() {
-                        assert!(style_id == style_map.add(&style))
-                    }
+                Payload::Command(cmd) => match cmd {
+                    Command::Scroll { line, col: _ } => {
+                        if let Ok(mut view_widget) = view_widget.lock() {
+                            view_widget.scroll_to(line);
+                            view_widget.set_dirty(true);
+                        }
+                    },
+                    Command::ShowHover { req_id, content } => {
+                        println!("Command::ShowHover triggered: {} = {}", req_id, content);
+                        unimplemented!()
+                    },
+                    Command::DefineStyle { style_id, style } => {
+                        println!("DefineStyle: {}, {:?}", style_id, style);
+                        if let Ok(mut style_map) = style_map.lock() {
+                            assert!(style_id == style_map.add(&style))
+                        }
+                    },
+                    Command::StatusUpdate { mode } => {
+                        if let Ok(mut view_widget) = view_widget.lock() {
+                            view_widget.status().set_mode(mode);
+                        }
+                    },
                 },
                 Payload::Request(Request::MeasureText { items }) => {
                     let mut resp = Vec::new();
 
-                    if let Ok(view_widget) = view_widget.try_lock() {
+                    if let Ok(view_widget) = view_widget.lock() {
                         for req in items.iter() {
                             let mut measurement = Vec::new();
                             for s in req.strings.iter() {
@@ -243,7 +245,7 @@ impl EditorState {
                 ctx.do_edit(action);
             }
         } else {
-            println!("No focused view set to process action: {:?}", action);
+            panic!("No focused view set to process action: {:?}", action);
         }
     }
 
@@ -308,7 +310,6 @@ impl EditorState {
                     context.view_init();
                     context.reload(text);
                     context.finish_init();
-                    context.do_edit(Action::GoToLine(0));
                 }
             }
         }
@@ -330,11 +331,6 @@ impl EditorState {
             if let Some(view_widget) = self.view_widgets.get(&view_id) {
                 if let Ok(mut view_widget) = view_widget.lock() {
                     view_widget.resize(width as f32, height as f32);
-                    view_widget.set_dirty(true);
-                    
-                    let viewport = view_widget.get_viewport();
-                    self.make_context(*view_id).unwrap()
-                        .do_edit(Action::Scroll(viewport));
                 } else {
                     panic!("unable to lock view for resize");
                 }

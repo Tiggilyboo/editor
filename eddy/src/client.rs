@@ -6,6 +6,7 @@ use flume::{
 };
 use super::{
     ViewId,
+    Mode,
     styles::Style,
     annotations::AnnotationSlice,
     line_cache::Line,
@@ -28,9 +29,6 @@ pub enum Command {
         line: usize,
         col: usize,
     },
-    Idle {
-        token: usize,
-    },
     ShowHover {
         req_id: usize,
         content: String,
@@ -38,6 +36,9 @@ pub enum Command {
     DefineStyle {
         style_id: usize,
         style: Style,
+    },
+    StatusUpdate {
+        mode: Mode,
     },
 }
 
@@ -88,10 +89,6 @@ impl Client {
         let payload = Payload::BufferUpdate(update.clone());
         self.tx.send(Message { view_id: Some(view_id), payload }).unwrap();
     }
-    pub fn schedule_idle(&self, token: usize) {
-        let payload = Payload::Command(Command::Idle { token });
-        self.tx.send(Message { view_id: None, payload }).unwrap();
-    }
     pub fn show_hover(&self, view_id: ViewId, req_id: usize, content: String) {
         let payload = Payload::Command(Command::ShowHover{ req_id, content });
         self.tx.send(Message { view_id: Some(view_id), payload }).unwrap();
@@ -99,6 +96,10 @@ impl Client {
     pub fn define_style(&self, style_id: usize, style: Style) {
         let payload = Payload::Command(Command::DefineStyle { style_id, style });
         self.tx.send(Message { view_id: None, payload }).unwrap();
+    }
+    pub fn update_status(&self, view_id: ViewId, mode: Mode) {
+        let payload = Payload::Command(Command::StatusUpdate { mode });
+        self.tx.send(Message { view_id: Some(view_id), payload }).unwrap();
     }
     pub fn get_message_stream(&self) -> &Mutex<Receiver<Message>> {
         &self.rx

@@ -33,7 +33,7 @@ use crate::line_offset::LineOffset;
 use crate::selection::InsertDrift;
 use crate::styles::ThemeStyleMap;
 use crate::editor::{
-    BufferId, ViewId, REWRAP_VIEW_IDLE_MASK,
+    BufferId, ViewId, 
 };
 use crate::view::View;
 use crate::width_cache::WidthCache;
@@ -261,13 +261,8 @@ impl<'a> EventContext<'a> {
         // This is largely similar to update_wrap_settings(), the only difference
         // being that the view is expected to be already initialized.
         self.rewrap();
-
-        if self.view.borrow().needs_more_wrap() {
-            self.schedule_rewrap();
-        }
-
         self.with_view(|view, text| view.set_dirty(text));
-        self.render()
+        self.render();
     }
 
     pub fn after_save(&mut self, _path: &Path) {
@@ -330,6 +325,8 @@ impl<'a> EventContext<'a> {
                 view.set_dirty(ed.get_buffer()); 
             });
             self.render_if_needed();
+        } else {
+            println!("Theme \"{}\" does not exist.", theme_name);
         }
     }
 
@@ -345,9 +342,6 @@ impl<'a> EventContext<'a> {
         if rewrap_immediately {
             self.rewrap();
             self.with_view(|view, text| view.set_dirty(text));
-        }
-        if self.view.borrow().needs_more_wrap() {
-            self.schedule_rewrap();
         }
     }
 
@@ -367,16 +361,7 @@ impl<'a> EventContext<'a> {
     /// Does a rewrap batch, and schedules follow-up work if needed.
     pub fn do_rewrap_batch(&mut self) {
         self.rewrap();
-        if self.view.borrow().needs_more_wrap() {
-            self.schedule_rewrap();
-        }
         self.render_if_needed();
-    }
-
-    fn schedule_rewrap(&self) {
-        let view_id: usize = self.view_id.into();
-        let token = REWRAP_VIEW_IDLE_MASK | view_id;
-        self.client.schedule_idle(token);
     }
 
     fn do_request_lines(&mut self, first: usize, last: usize) {

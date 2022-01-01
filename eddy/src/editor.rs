@@ -34,11 +34,7 @@ use super::styles::ThemeStyleMap;
 
 // TODO This could go much higher without issue but while developing it is
 // better to keep it low to expose bugs in the GC during casual testing.
-
 const MAX_UNDOS: usize = 300;
-pub(crate) const RENDER_VIEW_IDLE_MASK: usize = 1 << 25;
-pub(crate) const REWRAP_VIEW_IDLE_MASK: usize = 1 << 26;
-pub(crate) const FIND_VIEW_IDLE_MASK: usize = 1 << 27;
 
 pub type PluginId = usize;
 

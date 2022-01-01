@@ -1,6 +1,7 @@
 pub mod settings;
 pub mod resources;
 mod gutter;
+mod status;
 
 pub use resources::ViewResources;
 
@@ -13,6 +14,7 @@ use std::ops::Range;
 
 use settings::ViewWidgetSettings;
 use gutter::GutterWidget;
+use status::StatusWidget;
 
 use render::{
     Renderer,
@@ -44,6 +46,7 @@ pub struct ViewWidget {
     dirty: bool,
     first_line: usize,
     last_line: usize,
+    current_line: usize,
     scroll_offset: f32,
     settings: ViewWidgetSettings,
     
@@ -53,6 +56,7 @@ pub struct ViewWidget {
     selection_widgets: BTreeMap<usize, Vec<PrimitiveWidget>>,
     cursor_widgets: Vec<TextWidget>,
     gutter: GutterWidget,
+    status: StatusWidget,
 
     // shared
     resources: Arc<Mutex<ViewResources>>,
@@ -76,6 +80,7 @@ impl Widget for ViewWidget {
         self.background.set_dirty(dirty);
         self.line_widgets.set_dirty(dirty);
         self.gutter.set_dirty(dirty);
+        self.status.set_dirty(dirty);
 
         for cw in self.cursor_widgets.iter_mut() {
             cw.set_dirty(dirty); 
@@ -90,7 +95,13 @@ impl Widget for ViewWidget {
     fn queue_draw(&self, renderer: &mut Renderer) {
         self.background.queue_draw(renderer);
         self.line_widgets.queue_draw(renderer);
-        self.gutter.queue_draw(renderer);
+
+        if self.settings.show_gutter {
+            self.gutter.queue_draw(renderer);
+        }
+        if self.settings.show_status() {
+            self.status.queue_draw(renderer);
+        }
 
         for (_, sels) in self.selection_widgets.iter() {
             for sw in sels.iter() {
@@ -120,15 +131,26 @@ impl ViewWidget {
             0.0, 
             bg_colour);
 
+        let initial_font_scale = font_bounds.lock().unwrap().get_scale();
         let gutter_bg = resources.lock().unwrap().gutter_bg;
         let gutter_fg = resources.lock().unwrap().gutter;
         let gutter = GutterWidget::new(
             Position::default(),
             Size::default(),
+            initial_font_scale,
             gutter_bg, gutter_fg);
 
+        let mut status = StatusWidget::new(
+            Position::default(),
+            Size::default(),
+            initial_font_scale,
+            gutter_bg, gutter_fg);
+
+        if let Some(filepath) = filepath.clone() {
+            status.set_filepath(filepath);
+        }
+
         let settings = ViewWidgetSettings {
-            filepath: filepath.clone(),
             show_filepath: filepath.is_some(),
             show_gutter: true,
             show_line_info: true,
@@ -140,12 +162,14 @@ impl ViewWidget {
             position: Position::default(),
             first_line: 0,
             last_line: 0,
+            current_line: 0,
             scroll_offset: 0.0,
             dirty: true,
             settings,
             line_widgets,
             selection_widgets,
             gutter,
+            status,
             cursor_widgets: Vec::new(),
             background,
             resources,
@@ -165,9 +189,7 @@ impl ViewWidget {
         println!("resize view widget: {}, {}", width, height);
         self.background.set_size(width, height);
         self.gutter.set_height(height);
-        self.update_viewport();
-        self.scroll_to(self.first_line, self.last_line);
-
+        self.scroll_to(self.first_line);
         self.set_dirty(true);
     }
 
@@ -198,6 +220,9 @@ impl ViewWidget {
 
        let gutter_bg = self.resources.lock().unwrap().gutter_bg;
        self.gutter.set_background(gutter_bg);
+       self.status.set_background(gutter_bg);
+
+       self.set_dirty(true);
     }
 
     fn populate_cursors(&mut self, line_cache: &LineCache, scale: f32) {
@@ -253,12 +278,19 @@ impl ViewWidget {
 
         if self.settings.show_gutter {
             // measure what the largest line number is and adjust the gutter width as required
-            let last_line = line_cache.height();
-            let largest_item_width = self.measure_text(last_line.to_string());
+            let largest_item_width = self.measure_text(self.last_line.to_string());
 
             self.gutter.set_position((0.0, gutter_pos_y.unwrap_or(0.0)).into());
             self.gutter.set_width(largest_item_width);
             self.gutter.update(self.first_line, self.last_line, scale, foreground);
+        }
+
+        if self.settings.show_status() {
+            let h = self.size().y;
+            if self.status.position().y != h - scale {
+                self.status.set_position(0.0, h - scale);
+                self.status.populate();
+            }
         }
 
         self.populate_cursors(line_cache, scale);
@@ -269,21 +301,26 @@ impl ViewWidget {
         self.font_bounds.lock().unwrap().get_text_width(&text) 
     }
 
-    pub fn scroll_to(&mut self, line: usize, _col: usize) {
+    pub fn scroll_to(&mut self, line: usize) {
         let scale = self.get_scale();
         let h = self.size().y;
         let y = self.position.y + (line as f32 * scale);
         let inv_scroll = -self.scroll_offset;
 
-        if y < inv_scroll - scale {
+        if line == 0 {
+            self.scroll_offset = 0.0;
+        } else if y < inv_scroll + (scale / 3.0) {
             // for scrolling up
             self.scroll_offset = -y + scale;
         } else if y > inv_scroll + h - scale - scale {
             // for scrolling down
             self.scroll_offset = -y + h - scale - scale;
-        }
 
-        println!("scrolled to to ln {} (y = {}) for offset in view widget: {}", line, y, self.scroll_offset);
+            if self.settings.show_status() {
+                self.scroll_offset -= scale;
+            }
+        }
+        self.current_line = line;
 
         self.set_dirty(true);
         self.update_viewport();
@@ -305,15 +342,25 @@ impl ViewWidget {
         line as usize
     }
 
+    pub fn status(&mut self) -> &mut StatusWidget {
+        &mut self.status
+    }
+
     pub fn update_viewport(&mut self) {
         let height = self.size().y;
         let scale = self.get_scale();
         let first = self.y_to_line(self.position.y);
-        let last = first + (height / scale).ceil() as usize;
-        println!("updated viewport: {}, {}", first, last);
+        let mut line_height = (height / scale).ceil() as i32;
+
+        // -1 for status line if visible
+        if self.settings.show_status() {
+            if line_height > 0 {
+                line_height -= 1;
+            }
+        }
 
         self.first_line = first;
-        self.last_line = last;
+        self.last_line = first + line_height as usize;
     }
 
     pub fn get_viewport(&self) -> Range<usize> {
