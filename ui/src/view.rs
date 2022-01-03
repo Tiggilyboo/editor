@@ -27,7 +27,10 @@ use eddy::{
         LineCache,
         Selection,
     },
-    styles::ThemeStyleMap,
+    styles::{
+        ThemeStyleMap,
+        ThemeSettings,
+    },
 };
 use super::widget::{
     Widget,
@@ -150,30 +153,26 @@ impl ViewWidget {
             status.set_filepath(filepath);
         }
 
-        let settings = ViewWidgetSettings {
-            show_filepath: filepath.is_some(),
-            show_gutter: true,
-            show_line_info: true,
-            show_mode: true,
-        };
+        let mut settings = ViewWidgetSettings::default();
+        settings.show_filepath = filepath.is_some();
 
         Self {
             view_id,
             position: Position::default(),
-            first_line: 0,
-            last_line: 0,
-            current_line: 0,
-            scroll_offset: 0.0,
-            dirty: true,
             settings,
             line_widgets,
             selection_widgets,
             gutter,
             status,
-            cursor_widgets: Vec::new(),
             background,
             resources,
             font_bounds,
+            cursor_widgets: Vec::new(),
+            first_line: 0,
+            last_line: 0,
+            current_line: 0,
+            scroll_offset: 0.0,
+            dirty: true,
         }
     }
 
@@ -209,20 +208,19 @@ impl ViewWidget {
         }
     }
 
-    pub fn update_background(&mut self) {
-       let bg_colour = self.resources.lock().unwrap().background;
-       let current_colour = self.background.colour();
+    pub fn update_from_resources(&mut self) {
+        let bg_colour = self.resources.lock().unwrap().background;
+        let current_colour = self.background.colour();
 
-       if *current_colour != bg_colour {
-           self.background.set_colour(bg_colour);
-           self.background.set_dirty(true);
-       }
+        if *current_colour != bg_colour {
+            self.background.set_colour(bg_colour);
+            self.background.set_dirty(true);
+            self.set_dirty(true);
+        }
 
-       let gutter_bg = self.resources.lock().unwrap().gutter_bg;
-       self.gutter.set_background(gutter_bg);
-       self.status.set_background(gutter_bg);
-
-       self.set_dirty(true);
+        let gutter_bg = self.resources.lock().unwrap().gutter_bg;
+        self.gutter.set_background(gutter_bg);
+        self.status.set_background(gutter_bg);
     }
 
     fn populate_cursors(&mut self, line_cache: &LineCache, scale: f32) {
@@ -350,17 +348,17 @@ impl ViewWidget {
         let height = self.size().y;
         let scale = self.get_scale();
         let first = self.y_to_line(self.position.y);
-        let mut line_height = (height / scale).ceil() as i32;
 
-        // -1 for status line if visible
+        // -1 line for status if visible
+        let mut view_height = (height / scale).ceil() as i32;
         if self.settings.show_status() {
-            if line_height > 0 {
-                line_height -= 1;
+            if view_height > 0 {
+                view_height -= 1;
             }
         }
 
         self.first_line = first;
-        self.last_line = first + line_height as usize;
+        self.last_line = first + view_height as usize;
     }
 
     pub fn get_viewport(&self) -> Range<usize> {

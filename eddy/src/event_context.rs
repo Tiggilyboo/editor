@@ -108,7 +108,7 @@ impl<'a> EventContext<'a> {
         match action {
             NewView { .. }
             | Resize(..)
-            | SetTheme(..)
+            | SetTheme { .. }
             | RequestLines(..) => ActionTarget::Special,
 
             Delete(..)
@@ -171,8 +171,8 @@ impl<'a> EventContext<'a> {
             Action::RequestLines(first, last) => {
                 self.do_request_lines(first, last)
             }
-            Action::SetTheme(theme) => {
-                self.do_set_theme(&theme)
+            Action::SetTheme { theme_name } => {
+                self.do_set_theme(&theme_name)
             },
             _ => unreachable!(),
         }
@@ -319,6 +319,11 @@ impl<'a> EventContext<'a> {
             if let Err(e) = theme.set_theme(theme_name) {
                 panic!("{}", e);
             }
+            let theme_settings = theme.get_theme_settings().clone();
+
+            self.client.theme_changed(
+                theme_name.to_string(), 
+                theme_settings);
 
             self.with_editor(|ed, view, _| {
                 ed.theme_changed(&theme);

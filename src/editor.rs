@@ -77,7 +77,8 @@ fn create_frontend_thread(
     client: Arc<Client>,
     view_widget: Threaded<ViewWidget>,
     cache: Threaded<LineCache>,
-    style_map: Arc<Mutex<ThemeStyleMap>>,
+    style_map: Threaded<ThemeStyleMap>,
+    view_resources: Threaded<ViewResources>,
 ) -> JoinHandle<()> {
     std::thread::spawn(move || {
         println!("frontend_thread started...");
@@ -113,6 +114,18 @@ fn create_frontend_thread(
                         println!("DefineStyle: {}, {:?}", style_id, style);
                         if let Ok(mut style_map) = style_map.lock() {
                             assert!(style_id == style_map.add(&style))
+                        }
+                    },
+                    Command::ThemeChanged { theme_name, theme_settings } => {
+                        println!("ThemeChanged: {}", theme_name);
+                        if let Ok(mut view_resources) = view_resources.lock() {
+                            if let Ok(style_map) = style_map.lock() {
+                                view_resources.update_theme(&style_map, &theme_settings);
+                            }
+                        }
+                        if let Ok(mut view_widget) = view_widget.lock() {
+                            view_widget.update_from_resources();
+                            view_widget.set_dirty(true);
                         }
                     },
                     Command::StatusUpdate { mode } => {
@@ -320,6 +333,7 @@ impl EditorState {
             self.view_widgets.get(&view_id).unwrap().clone(),
             self.line_cache.get(&view_id).unwrap().clone(),
             self.style_map.clone(),
+            self.view_resources.clone(),
         ));
     }
 

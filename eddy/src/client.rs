@@ -7,7 +7,10 @@ use flume::{
 use super::{
     ViewId,
     Mode,
-    styles::Style,
+    styles::{
+        Style,
+        ThemeSettings,
+    },
     annotations::AnnotationSlice,
     line_cache::Line,
     width_cache::{
@@ -36,6 +39,10 @@ pub enum Command {
     DefineStyle {
         style_id: usize,
         style: Style,
+    },
+    ThemeChanged {
+        theme_name: String,
+        theme_settings: ThemeSettings,
     },
     StatusUpdate {
         mode: Mode,
@@ -95,6 +102,10 @@ impl Client {
     }
     pub fn define_style(&self, style_id: usize, style: Style) {
         let payload = Payload::Command(Command::DefineStyle { style_id, style });
+        self.tx.send(Message { view_id: None, payload }).unwrap();
+    }
+    pub fn theme_changed(&self, theme_name: String, theme_settings: ThemeSettings) {
+        let payload = Payload::Command(Command::ThemeChanged { theme_name, theme_settings });
         self.tx.send(Message { view_id: None, payload }).unwrap();
     }
     pub fn update_status(&self, view_id: ViewId, mode: Mode) {

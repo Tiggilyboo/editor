@@ -1,6 +1,9 @@
 use render::colour::ColourRGBA;
 use eddy::styles::ToRgbaFloat32;
-use crate::view::ThemeStyleMap;
+use crate::view::{
+    ThemeStyleMap,
+    ThemeSettings,
+};
 
 #[derive(Debug)]
 pub struct ViewResources {
@@ -28,56 +31,52 @@ impl Default for ViewResources {
 }
 
 impl ViewResources {
-    pub fn from(style_map: &ThemeStyleMap) -> Self {
+    pub fn update_theme(&mut self, style_map: &ThemeStyleMap, theme_settings: &ThemeSettings) {
         let default = style_map.get_default_style();
-        let settings = style_map.get_theme_settings();
-
-        println!("Theme settings: {:?}", settings);
-
-        let foreground = if let Some(fg) = settings.foreground {
+        
+        self.foreground = if let Some(fg) = theme_settings.foreground {
             fg.to_rgba_f32array()
         } else {
             default.fg_color.unwrap().to_rgba_f32array()
         };
-        let background = if let Some(bg) = settings.background {
+        self.background = if let Some(bg) = theme_settings.background {
             bg.to_rgba_f32array()
         } else {
             default.bg_color.unwrap().to_rgba_f32array()
         };
-        let caret = if let Some(cr) = settings.caret {
+        self.caret = if let Some(cr) = theme_settings.caret {
             cr.to_rgba_f32array()
         } else {
-            foreground
+            self.foreground
         };
-        let selection = if let Some(sl) = settings.selection_foreground {
+        self.selection = if let Some(sl) = theme_settings.selection_foreground {
             sl.to_rgba_f32array()
         } else {
-            background
+            self.background
         };
-        let selection_bg = if let Some(sl) = settings.selection {
+        self.selection_bg = if let Some(sl) = theme_settings.selection {
             sl.to_rgba_f32array()
         } else {
-            foreground
+            self.foreground
         };
-        let gutter_bg = if let Some(gt) = settings.gutter {
+        self.gutter_bg = if let Some(gt) = theme_settings.gutter {
             gt.to_rgba_f32array()
         } else {
-            background
+            self.background
         };
-        let gutter = if let Some(gt) = settings.gutter_foreground {
+        self.gutter = if let Some(gt) = theme_settings.gutter_foreground {
             gt.to_rgba_f32array()
         } else {
-            foreground
+            self.foreground
         };
+    }
 
-        Self {
-            foreground,
-            background,
-            caret,
-            selection,
-            selection_bg,
-            gutter,
-            gutter_bg
-        }
+    pub fn from(style_map: &ThemeStyleMap) -> Self {
+        let settings = style_map.get_theme_settings();
+        let mut resources = Self::default();
+
+        resources.update_theme(style_map, settings);
+
+        resources
     }
 }

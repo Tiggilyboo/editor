@@ -235,8 +235,8 @@ pub fn default_key_bindings() -> Vec<KeyBinding> {
         Semicolon, +Mode::Normal; Action::SetMode(Mode::Command);
 
         // Themes
-        F1, +Mode::Normal; Action::SetTheme("Solarized (dark)".into());
-        F2, +Mode::Normal; Action::SetTheme("Solarized (light)".into());
+        F1, +Mode::Normal; Action::SetTheme { theme_name: "Solarized (dark)".into() };
+        F2, +Mode::Normal; Action::SetTheme { theme_name: "Solarized (light)".into() };
         
         // Insert
         Back, +Mode::Insert; Action::Delete(Motion::Backward, Quantity::Character);

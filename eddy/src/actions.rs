@@ -13,7 +13,7 @@ pub enum Action {
     Resize(Size),
     RequestLines(usize, usize),
     SetMode(Mode),
-    SetTheme(String),
+    SetTheme { theme_name: String },
     Delete(Motion, Quantity),
     InsertChars(String),
     InsertNewline,

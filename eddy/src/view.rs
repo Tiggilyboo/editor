@@ -531,7 +531,6 @@ impl View {
     }
 
     fn get_or_def_style_id(&self, client: &Client, style_map: &StyleMap, style: &Style) -> usize {
-        
         let mut style_map = style_map.lock().unwrap();
         if let Some(ix) = style_map.lookup(style) {
             return ix;
