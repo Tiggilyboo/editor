@@ -9,6 +9,8 @@ render = { path = "./render" }
 eddy = { path = "./eddy" }
 ui = { path = "./ui" }
 dirs = "4.0"
+puffin = "0.12"
+puffin_http = "0.9"
 
 [dependencies.winit]
 version = "0.25"
