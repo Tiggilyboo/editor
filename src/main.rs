@@ -12,7 +12,7 @@ use editor::{
     EditorEvent,
 };
 use events::state::InputState;
-use ui::widget::Widget;
+use ui::widget::Drawable;
 
 use winit::{
     event_loop::{

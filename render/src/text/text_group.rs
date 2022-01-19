@@ -62,4 +62,15 @@ impl TextGroup {
         let old_bounds = self.bounds();
         self.section.bounds = (width, old_bounds.1).into();
     }
+
+    pub fn set_text(&mut self, text: String, scale: f32, colour: ColourRGBA) {
+        self.clear();
+        self.push(text, scale, colour);
+    }
+
+    pub fn set_scale(&mut self, scale: f32) {
+        for t in self.section.text.iter_mut() {
+            t.scale = scale.into();
+        }
+    }
 }

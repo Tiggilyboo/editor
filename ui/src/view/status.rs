@@ -1,88 +1,112 @@
+use std::collections::BTreeMap;
 use render::{
     Renderer,
     colour::ColourRGBA,
 };
-use eddy::Mode;
 use crate::widget::{
     Widget,
+    Drawable,
     Size,
     Position,
 };
-
 use crate::text::TextWidget;
-use crate::primitive::PrimitiveWidget;
-use crate::tree::WidgetTree;
 
-pub struct StatusWidgetModeStyle {
-    pub normal: ColourRGBA,
-    pub insert: ColourRGBA,
-    pub visual: ColourRGBA,
-    pub command: ColourRGBA,
+use crate::primitive::PrimitiveWidget;
+
+pub struct StatusItemWidget<T>
+where T: Widget + Send + Sync{
+    align: StatusItemAlign,
+    pub widget: T,
 }
 
-impl Default for StatusWidgetModeStyle {
-    fn default() -> Self {
-        Self {
-            normal: [0.0, 0.8, 0.0, 1.0].into(),
-            insert: [0.0, 0.0, 0.8, 1.0].into(),
-            visual: [0.4, 0.0, 0.4, 1.0].into(),
-            command: [0.0, 0.8, 0.0, 1.0].into(),
-        }
+impl <T> StatusItemWidget<T>
+where T: Widget + Send + Sync {
+    pub fn set_align(&mut self, parent: &T, align: StatusItemAlign) {
+        let parent_pos = parent.position();
+        let parent_size = parent.size();
+
+        self.align = align;
+        self.realign(parent_pos, parent_size);
+    }
+
+    pub fn realign(&mut self, parent_pos: Position, parent_size: Size) {
+
+        let (x, y) = match self.align {
+            StatusItemAlign::Left => (parent_pos.x, parent_pos.y),
+            StatusItemAlign::Right => (parent_pos.x + parent_size.x, parent_pos.y),
+            StatusItemAlign::Center => (parent_pos.x + parent_size.x * 0.5, parent_pos.y),
+        };
+
+        self.widget.set_position(x, y);
     }
 }
 
-pub struct StatusWidgetState {
-    pub mode: Mode,
-    pub filepath: String,
-    pub selected_line: usize,
-    pub line_count: usize,
+type WidgetTree<T> = BTreeMap<String, StatusItemWidget<T>>;
+
+impl <W> Drawable for WidgetTree<W>
+where W: Widget + Drawable + Send + Sync {
+    fn set_dirty(&mut self, dirty: bool) {
+        self.iter_mut().for_each(|(_, i)| i.widget.set_dirty(dirty));
+    }
+    fn dirty(&self) -> bool {
+        self.iter().any(|(_, i)| i.widget.dirty())
+    }
+    fn queue_draw(&self, renderer: &mut Renderer) {
+        self.iter().for_each(|(_, i)| i.widget.queue_draw(renderer));
+    }
+}
+
+pub enum StatusItemAlign {
+    Left,
+    Center,
+    Right,
 }
 
 pub struct StatusWidget {
     dirty: bool,
-    colour_foreground: ColourRGBA,
     colour_background: ColourRGBA,
     background: PrimitiveWidget,
     items: WidgetTree<TextWidget>,
-    status: Option<StatusWidgetState>,
-    mode_style: StatusWidgetModeStyle,
-    scale: f32,
 }
 
-impl Widget for StatusWidget {
+impl Drawable for StatusWidget {
    fn dirty(&self) -> bool {
        self.dirty
    }
+
    fn set_dirty(&mut self, dirty: bool) {
        self.background.set_dirty(dirty);
        self.items.set_dirty(dirty);
        self.dirty = dirty;
    }
+   
+   fn queue_draw(&self, renderer: &mut Renderer) {
+       self.background.queue_draw(renderer);
+       self.items.queue_draw(renderer);
+   }
+}
+impl Widget for StatusWidget {
    fn size(&self) -> Size {
        self.background.size()
    }
    fn position(&self) -> Position {
        self.background.position()
    }
-   fn queue_draw(&self, renderer: &mut Renderer) {
-       self.background.queue_draw(renderer);
-       self.items.queue_draw(renderer);
+   fn set_position(&mut self, x: f32, y: f32) {
+       self.background.set_position(x, y);
+       self.realign();
    }
 }
 
 impl StatusWidget {
-    pub fn new(position: Position, size: Size, scale: f32, colour_background: ColourRGBA, colour_foreground: ColourRGBA) -> Self {
-        let background = PrimitiveWidget::new(position, size, 0.3, colour_background);
+    pub fn new(position: Position, size: Size, depth: f32, colour_background: ColourRGBA) -> Self {
+        let background = PrimitiveWidget::new(position, size, depth, colour_background);
         let items = WidgetTree::new();
 
         Self {
             colour_background,
-            colour_foreground,
             background,
             items,
-            scale,
-            mode_style: StatusWidgetModeStyle::default(),
-            status: None,
             dirty: true,
         }
     }
@@ -96,53 +120,39 @@ impl StatusWidget {
         self.set_dirty(true);
     }
 
-    pub fn set_position(&mut self, x: f32, y: f32) {
-        self.background.set_position(x, y);
+    pub fn set_size(&mut self, width: f32, height: f32) {
+        self.background.set_size(width, height);
+        self.realign();
+        self.set_dirty(true);
     }
 
-    fn determine_mode_colour(&self) -> ColourRGBA {
-        if let Some(status) = &self.status {
-            match status.mode {
-                Mode::Normal => self.mode_style.normal,
-                Mode::Insert => self.mode_style.insert,
-                Mode::Visual => self.mode_style.visual,
-                Mode::Command => self.mode_style.command,
-                _ => self.mode_style.normal,
-            }
-        } else {
-            self.colour_background
-        }
+    pub fn set_scale(&mut self, scale: f32) {
+        self.items.iter_mut()
+            .for_each(|(_, i)| i.widget.set_scale(scale));
     }
 
-    pub fn populate(&mut self) {
-        self.items.clear();
+    pub fn add_text(&mut self, item_key: String) -> &mut StatusItemWidget<TextWidget> {
+        let item = StatusItemWidget {
+            align: StatusItemAlign::Left,
+            widget: TextWidget::new(),
+        };
 
-        if let Some(status) = &self.status {
-            {
-                let mode_text = format!("{:?}", status.mode);
-                let mode_colour = self.determine_mode_colour();
-                let mode_widget = TextWidget::with_text(mode_text, self.scale, mode_colour);
-                self.items.insert(0, mode_widget);
-            }
-            {
-                let file_text = status.filepath.clone();
-                let file_widget = TextWidget::with_text(file_text, self.scale, self.colour_foreground);
-                self.items.insert(1, file_widget);
-            }
-        } else {
-            return;
-        }
+        self.items.insert(item_key.clone(), item);
+        self.set_dirty(true);
+
+        self.get(item_key).unwrap()
     }
 
-    pub fn set_filepath(&mut self, filepath: String) {
-        if let Some(status) = &mut self.status {
-            status.filepath = filepath;
-        }
+    pub fn get(&mut self, item_key: String) -> Option<&mut StatusItemWidget<TextWidget>> {
+        self.items.get_mut(&item_key)
     }
 
-    pub fn set_mode(&mut self, mode: Mode) {
-        if let Some(status) = &mut self.status {
-            status.mode = mode;
+    fn realign(&mut self) {
+        let position = self.position();
+        let size = self.size();
+
+        for (_, i) in self.items.iter_mut() {
+            i.realign(position, size);
         }
     }
 }

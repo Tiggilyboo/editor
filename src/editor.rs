@@ -40,7 +40,7 @@ use eddy::{
     Rope,
 };
 use ui::{
-    widget::Widget,
+    widget::Drawable,
     view::{
         ViewWidget,
         ViewResources,
@@ -117,7 +117,6 @@ fn create_frontend_thread(
                         }
                     },
                     Command::ThemeChanged { theme_name, theme_settings } => {
-                        println!("ThemeChanged: {}", theme_name);
                         if let Ok(mut view_resources) = view_resources.lock() {
                             if let Ok(style_map) = style_map.lock() {
                                 view_resources.update_theme(&style_map, &theme_settings);
@@ -128,9 +127,17 @@ fn create_frontend_thread(
                             view_widget.set_dirty(true);
                         }
                     },
-                    Command::StatusUpdate { mode } => {
+                    Command::StatusUpdate { view_id: _, status_key, status_value } => {
+                        let fg = view_resources.lock().unwrap().foreground;
+
                         if let Ok(mut view_widget) = view_widget.lock() {
-                            view_widget.status().set_mode(mode);
+                            let scale = view_widget.get_scale();
+                            let status_widget = view_widget.status();
+
+                            if let Some(item_widget) = status_widget.get(status_key) {
+                                item_widget.widget.set_text(status_value, scale, fg);
+                            }
+                            status_widget.set_dirty(true);
                         }
                     },
                 },
@@ -251,7 +258,7 @@ impl EditorState {
     }
 
     fn process_action(&self, action: Action) {
-        println!("Action: {:?}", action);
+        //println!("Action: {:?}", action);
 
         if let Some(view_id) = self.focused_view_id {
             if let Some(mut ctx) = self.make_context(view_id) {
@@ -345,9 +352,9 @@ impl EditorState {
             if let Some(view_widget) = self.view_widgets.get(&view_id) {
                 if let Ok(mut view_widget) = view_widget.lock() {
                     view_widget.resize(width as f32, height as f32);
-                } else {
-                    panic!("unable to lock view for resize");
                 }
+            } else {
+                panic!("Unable to resize view_id {:?}", view_id);
             }
         }
     }

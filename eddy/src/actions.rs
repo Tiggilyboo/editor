@@ -31,7 +31,7 @@ pub enum Action {
     Lowercase,
     Duplicate(Quantity),
     GoToLine(u64),
-    Paste(String),
+    Paste,
     Replace(Quantity),
     Move(Motion, Quantity),
     MoveSelection(Motion, Quantity),
@@ -57,14 +57,5 @@ pub enum GestureType {
     Select { quantity: Quantity, multi: bool },
     SelectExtend { quantity: Quantity },
     Drag,
-
-    // Deprecated
-    PointSelect,
-    ToggleSel,
-    RangeSelect,
-    LineSelect,
-    WordSelect,
-    MultiLineSelect,
-    MultiWordSelect,
 }
 

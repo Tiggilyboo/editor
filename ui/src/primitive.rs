@@ -2,6 +2,7 @@ use super::widget::{
     Size,
     Position,
     Widget,
+    Drawable,
 };
 
 use render::{
@@ -27,7 +28,14 @@ impl Widget for PrimitiveWidget {
     fn size(&self) -> Size {
         self.size
     }
+    
+    fn set_position(&mut self, x: f32, y: f32) {
+        self.position.x = x;
+        self.position.y = y;
+    }
+}
 
+impl Drawable for PrimitiveWidget {
     fn dirty(&self) -> bool {
         self.dirty
     }
@@ -67,10 +75,6 @@ impl PrimitiveWidget {
         self.size.y = height;
     }
 
-    pub fn set_position(&mut self, x: f32, y: f32) {
-        self.position.x = x;
-        self.position.y = y;
-    }
 
     pub fn set_colour(&mut self, colour: ColourRGBA) {
         self.colour = colour;

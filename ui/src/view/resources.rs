@@ -14,6 +14,7 @@ pub struct ViewResources {
     pub selection_bg: ColourRGBA,
     pub gutter: ColourRGBA,
     pub gutter_bg: ColourRGBA,
+    pub line_highlight: ColourRGBA,
 }
 
 impl Default for ViewResources {
@@ -26,6 +27,7 @@ impl Default for ViewResources {
             selection: [0.1, 0.1, 0.1, 1.0],
             gutter: [0.7, 0.7, 0.7, 1.0],
             gutter_bg: [0.2, 0.2, 0.2, 1.0],
+            line_highlight: [0.15, 0.15, 0.15, 1.0],
         }
     }
 }
@@ -68,6 +70,11 @@ impl ViewResources {
             gt.to_rgba_f32array()
         } else {
             self.foreground
+        };
+        self.line_highlight = if let Some(lhl) = theme_settings.line_highlight {
+            lhl.to_rgba_f32array()
+        } else {
+            self.background
         };
     }
 

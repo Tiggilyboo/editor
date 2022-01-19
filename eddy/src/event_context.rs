@@ -125,15 +125,15 @@ impl<'a> EventContext<'a> {
             | DecreaseNumber 
             | Uppercase
             | Lowercase
-            | Paste(..)
+            | Paste
             | Replace(..) 
             | Repeat(..)
             | Duplicate(..) => ActionTarget::Buffer,
 
             SelectAll
-            | SetMode( .. )
-            | AddSelection(..)
             | CollapseSelections
+            | AddSelection(..)
+            | SetMode( .. )
             | GoToLine(..)
             | Move(..)
             | MoveSelection(..)

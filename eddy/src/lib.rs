@@ -60,10 +60,27 @@ pub enum Motion {
 #[derive(Debug, Clone, PartialEq, Copy)]
 pub enum Quantity {
     Character,
-    Line,
     Word,
-    Page,
+    Bracket,
+    Line,
     Selection,
+    Paragraph,
+    Page,
+    Document,
 }
 
+pub const STATUS_ITEM_FILEPATH: &str = "status_filepath";
+pub const STATUS_ITEM_MODE: &str = "status_mode";
+pub const STATUS_ITEM_LINEINFO: &str = "status_lineinfo";
 
+impl Into<String> for Mode {
+    fn into(self) -> String {
+        format!("{:?}", self)
+    }
+}
+
+impl std::fmt::Display for Mode {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}

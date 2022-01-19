@@ -4,6 +4,7 @@ pub struct ViewWidgetSettings {
     pub show_mode: bool,
     pub show_filepath: bool,
     pub show_line_info: bool,
+    pub show_line_highlight: bool,
 }
 
 impl Default for ViewWidgetSettings {
@@ -13,6 +14,7 @@ impl Default for ViewWidgetSettings {
             show_mode: true,
             show_filepath: true,
             show_line_info: true,
+            show_line_highlight: true,
         }
     }
 }

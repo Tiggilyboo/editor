@@ -40,6 +40,7 @@ use super::{
         UpdateOp,
     },
     line_cache::Line as LineUpdate,
+    STATUS_ITEM_MODE,
 };
 use rope::{
     spans::Spans,
@@ -82,7 +83,7 @@ pub struct View {
     annotations: AnnotationStore,
 
     mode: Mode,
-    mode_pending: Option<Mode>,
+    status_pending: Vec<(String, String)>,
 }
 
 /// Contains replacement string and replace options.
@@ -132,7 +133,7 @@ impl View {
             lc_shadow: LineCacheShadow::default(),
             annotations: AnnotationStore::new(),
             mode: Mode::Normal,
-            mode_pending: Some(Mode::Normal),
+            status_pending: Vec::new(),
         }
     }
 
@@ -150,7 +151,7 @@ impl View {
 
     pub fn set_mode(&mut self, mode: Mode) {
         self.mode = mode;
-        self.mode_pending = Some(mode);
+        self.status_pending.push((STATUS_ITEM_MODE.to_string(), mode.to_string()));
     }
 
     pub fn get_lines(&self) -> &Lines {
@@ -746,9 +747,9 @@ impl View {
             let (line, col) = self.offset_to_line_col(text, new_scroll_pos);
             client.scroll_to(self.view_id, line, col);
         }
-       
-        if let Some(mode) = self.mode_pending.take() {
-            client.update_status(self.view_id, mode);
+
+        while let Some((status_item_key, status_item_value)) = self.status_pending.pop() {
+            client.update_status(self.view_id, status_item_key, status_item_value);
         }
     }
 

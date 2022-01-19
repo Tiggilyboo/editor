@@ -1,5 +1,6 @@
 use crate::widget::{
     Widget,
+    Drawable,
     Position,
     Size,
 };
@@ -10,6 +11,7 @@ use eddy::{
         ToRgbaFloat32,
     },
 };
+use super::primitive::PrimitiveWidget;
 
 use render::{
     Renderer,
@@ -19,7 +21,10 @@ use render::{
 
 pub struct TextWidget {
     text_group: TextGroup,
+    background: Option<PrimitiveWidget>,
     dirty: bool,
+    pad_left: f32, 
+    pad_right: f32,
 }
 
 impl TextWidget {
@@ -27,6 +32,9 @@ impl TextWidget {
         Self {
             dirty: true,
             text_group: TextGroup::new(), 
+            background: None,
+            pad_left: 0.0,
+            pad_right: 0.0,
         } 
     }
 
@@ -37,17 +45,45 @@ impl TextWidget {
         Self {
             dirty: true,
             text_group, 
+            background: None,
+            pad_left: 0.0,
+            pad_right: 0.0,
         } 
     }
 
-    pub fn multiline(&mut self) -> Self {
+    pub fn with_multiline() -> Self {
         let mut text_group = TextGroup::new();
         text_group.set_multiline(true);
 
         Self {
             dirty: true,
             text_group,
+            background: None,
+            pad_left: 0.0,
+            pad_right: 0.0,
         }
+    }
+
+    pub fn with_background(background_colour: ColourRGBA, depth: f32) -> Self {
+        let mut me = Self::new();
+        me.set_background(background_colour, depth);
+
+        me
+    }
+
+    pub fn set_background(&mut self, background_colour: ColourRGBA, depth: f32) {
+        let background = PrimitiveWidget::new(
+            self.position(), 
+            self.size(),
+            depth,
+            background_colour);
+
+        self.background = Some(background);
+    }
+
+    pub fn set_padding(&mut self, pad_left: f32, pad_right: f32) {
+        self.pad_left = pad_left;
+        self.pad_right = pad_right; 
     }
 
     pub fn populate(&mut self, texts: Vec<String>, scale: f32, colour: ColourRGBA) {
@@ -130,12 +166,26 @@ impl TextWidget {
         Self {
             text_group, 
             dirty: true,
+            background: None,
+            pad_left: 0.0,
+            pad_right: 0.0,
         } 
     }
     
-    pub fn set_position(&mut self, x: f32, y: f32) {
-        self.text_group.set_screen_position(x, y);
-        self.dirty = true;
+
+    pub fn set_scale(&mut self, scale: f32) {
+        self.text_group.set_scale(scale);
+    }
+
+    pub fn set_text(&mut self, text: String, scale: f32, colour: ColourRGBA) {
+        self.text_group.set_text(text, scale, colour);
+    }
+
+    pub fn set_size(&mut self, width: f32, height: f32) {
+        self.set_linewrap_width(width);
+        if let Some(bg) = &mut self.background {
+            bg.set_size(self.pad_left + width + self.pad_right, height);
+        }
     }
 
     pub fn set_linewrap_width(&mut self, width: f32) {
@@ -149,11 +199,23 @@ impl Widget for TextWidget {
     fn position(&self) -> Position {
         self.text_group.screen_position().into()
     }
+    
+    fn set_position(&mut self, x: f32, y: f32) {
+        self.text_group.set_screen_position(x + self.pad_left, y);
+        if let Some(bg) = &mut self.background {
+            bg.set_position(x, y);
+        }
+        self.dirty = true;
+    }
 
     fn size(&self) -> Size {
-        self.text_group.bounds().into()
+        let mut size: Size = self.text_group.bounds().into();
+        size.x += self.pad_left + self.pad_right;
+
+        size
     }
-    
+}
+impl Drawable for TextWidget {
     fn dirty(&self) -> bool {
         self.dirty
     }
@@ -163,6 +225,9 @@ impl Widget for TextWidget {
     }
 
     fn queue_draw(&self, renderer: &mut Renderer) {
+        if let Some(bg) = &self.background {
+            bg.queue_draw(renderer);
+        }
         renderer
             .get_text_renderer().borrow()
             .queue_text(&self.text_group);

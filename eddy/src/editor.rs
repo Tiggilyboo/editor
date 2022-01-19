@@ -527,7 +527,7 @@ impl Editor {
             Action::InsertNewline => self.do_insert_newline(view),
             Action::InsertTab => self.do_insert_tab(view),
             Action::InsertChars(chars) => self.do_insert(view, &chars),
-            Action::Paste(chars) => self.do_paste(view, &chars),
+            Action::Paste => self.do_paste(view, &kill_ring.to_string()),
             Action::Yank => self.do_yank(view, kill_ring),
             Action::DuplicateLine => self.do_duplicate_line(view),
             Action::Duplicate(quantity) => match quantity {

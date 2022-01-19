@@ -6,7 +6,6 @@ use flume::{
 };
 use super::{
     ViewId,
-    Mode,
     styles::{
         Style,
         ThemeSettings,
@@ -45,7 +44,9 @@ pub enum Command {
         theme_settings: ThemeSettings,
     },
     StatusUpdate {
-        mode: Mode,
+        view_id: ViewId,
+        status_key: String,
+        status_value: String,
     },
 }
 
@@ -108,8 +109,8 @@ impl Client {
         let payload = Payload::Command(Command::ThemeChanged { theme_name, theme_settings });
         self.tx.send(Message { view_id: None, payload }).unwrap();
     }
-    pub fn update_status(&self, view_id: ViewId, mode: Mode) {
-        let payload = Payload::Command(Command::StatusUpdate { mode });
+    pub fn update_status(&self, view_id: ViewId, status_key: String, status_value: String) {
+        let payload = Payload::Command(Command::StatusUpdate { view_id, status_key, status_value });
         self.tx.send(Message { view_id: Some(view_id), payload }).unwrap();
     }
     pub fn get_message_stream(&self) -> &Mutex<Receiver<Message>> {
@@ -120,7 +121,6 @@ impl Client {
         self.holding.lock().unwrap().push(response);
     }
 
-    #[inline]
     pub fn measure_text(&self, request: &[WidthReq]) -> Result<WidthResponse, WidthError> {
         let payload = Payload::Request(Request::MeasureText { 
             items: request.to_vec(), 

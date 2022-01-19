@@ -223,9 +223,39 @@ pub fn region_movement(
             },
             _ => unimplemented!(),
         },
+        Quantity::Paragraph => match m {
+            Motion::Begin => {
+                let mut cursor = Cursor::new(text, r.end);
+                let offset = cursor.prev::<LinesMetric>().unwrap_or(0);
+                (offset, None)
+            },
+            Motion::End => {
+                let mut offset = r.end;
+                let mut cursor = Cursor::new(text, offset);
+                if let Some(next_para_offset) = cursor.next::<LinesMetric>() {
+                    if cursor.is_boundary::<LinesMetric>() {
+                        if let Some(eol) = text.prev_grapheme_offset(next_para_offset) {
+                            offset = eol;
+                        }
+                    } else if cursor.pos() == text.len() {
+                        offset = text.len();
+                    }
+                    (offset, None)
+                } else {
+                    //in this case we are already on a last line so just moving to EOL
+                    (text.len(), None)
+                }
+            },
+            _ => unimplemented!(),
+        },
         Quantity::Page => match m {
             Motion::Above => vertical_motion(r, lo, text, -scroll_height(height), modify),
             Motion::Below => vertical_motion(r, lo, text, scroll_height(height), modify),
+            _ => unimplemented!(),
+        },
+        Quantity::Document => match m {
+            Motion::Begin | Motion::First => (0, None),
+            Motion::End | Motion::Last => (text.len(), None),
             _ => unimplemented!(),
         },
         _ => unimplemented!(),
